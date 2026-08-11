@@ -1,0 +1,2 @@
+-- absichtlich leer: ersetzt Roblox' Standard-Regeneration.
+-- Verletzungen (Body-Shots) bleiben bis zum Health-Reset am Rundenstart.
