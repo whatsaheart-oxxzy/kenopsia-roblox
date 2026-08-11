@@ -1,0 +1,10 @@
+# Toolchain for this project, pinned so every machine builds the same way.
+# Install with: aftman install
+
+[tools]
+rojo = "rojo-rbx/rojo@7.7.0"
+# Key is capitalised to match the installed binary name (StyLua.exe); aftman
+# resolves the alias from the executable it was invoked as, and is case-sensitive.
+StyLua = "JohnnyMorganz/StyLua@2.5.2"
+selene = "Kampfkarren/selene@0.31.0"
+luau-lsp = "JohnnyMorganz/luau-lsp@1.69.0"

@@ -1,0 +1,51 @@
+# Rojo / Roblox build output
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+*.rbxm
+*.rbxmx
+
+# Tooling
+/.rojo/
+/sourcemap.json
+
+# Roblox API type definitions for luau-lsp. Regenerate with:
+#   curl -o globalTypes.d.luau https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.d.luau
+/globalTypes.d.luau
+
+# Editor
+/.vscode/
+/.idea/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Art working files - keep source art out of the code repo.
+# Imported Roblox assets are referenced by rbxassetid in src/shared/IconPool.luau.
+/art/**/*.blend
+/art/**/*.blend1
+/art/**/*.fbx
+
+# Licensed audio is staged locally for Roblox upload, not source distribution.
+/release/bird-hunting-audio/*.ogg
+
+# --- Phase 0 additions ---
+# Generated / temporary analysis + watch artifacts. None of these are inputs
+# to the build; all are reproducible.
+/.tmp_watch_machineparty/
+/.watch-audit-minefield/
+/.watch-audit-minefield-focus/
+/.watch-audit-minefield-focus-utf8/
+/.watch-audit-minefield-start/
+/graphify-out/
+
+# WEPPY writes its own place mirror + observability logs here. The
+# authoritative mirror is studio-src/, tracked in git.
+/weppy-project-sync/
+
+# selene's generated Roblox standard library (regenerate with
+# `selene generate-roblox-std`).
+/roblox.yml

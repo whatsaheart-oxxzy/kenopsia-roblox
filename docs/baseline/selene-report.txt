@@ -1,0 +1,181 @@
+﻿warning[unused_variable]: ReplicatedStorage is assigned a value, but never used
+  ┌─ studio-src\ReplicatedFirst\KenopsiaLoading.client.luau:6:7
+  │
+6 │ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+  │       ^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: BRIGHT is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\BloodFX.luau:14:7
+   │
+14 │ local BRIGHT = Color3.fromRGB(80, 0, 0)
+   │       ^^^^^^
+
+warning[unused_variable]: RunService is assigned a value, but never used
+  ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\MachineFlow.luau:4:7
+  │
+4 │ local RunService = game:GetService("RunService")
+  │       ^^^^^^^^^^
+
+warning[unused_variable]: Config is assigned a value, but never used
+  ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\MachineFlow.luau:6:7
+  │
+6 │ local Config = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("GameConfig"))
+  │       ^^^^^^
+
+warning[unused_variable]: roundIndex is defined, but never used
+    ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\TableManners.luau:151:38
+    │
+151 │ function TableManners.runRound(room, roundIndex)
+    │                                      ^^^^^^^^^^
+
+warning[unused_variable]: RUN_AFTER is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\XBotCharacters.server.luau:30:7
+   │
+30 │ local RUN_AFTER = 1.0 -- seconds of continuous movement before breaking into a run
+   │       ^^^^^^^^^
+
+error[incorrect_standard_library_use]: standard library global `CFrame.identity` does not contain the field `Lerp`
+    ┌─ studio-src\ReplicatedStorage\XBotAnimations\SequencePlayer.luau:165:17
+    │
+165 │                 out[name] = CFrame.identity:Lerp(pose, w)
+    │                             ^^^^^^^^^^^^^^^^^^^^
+
+error[if_same_then_else]: this has the same block as a previous if
+    ┌─ studio-src\StarterPlayer\StarterPlayerScripts\XBotAnimSync.client.luau:209:3
+    │
+207 │         if not gameProcessed and push and canPush then push:FireServer() end
+    │         -------------------------------------------------------------------- note: same as this
+208 │     elseif input.KeyCode == Enum.KeyCode.ButtonX then
+209 │         if not gameProcessed and push and canPush then push:FireServer() end
+    │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: legIndex is defined, but never used
+    ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\BirdHunting.luau:140:61
+    │
+140 │ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, guard)
+    │                                                             ^^^^^^^^
+
+warning[unused_variable]: legTotal is defined, but never used
+    ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\BirdHunting.luau:140:71
+    │
+140 │ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, guard)
+    │                                                                       ^^^^^^^^
+
+warning[unused_variable]: SoundService is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:10:7
+   │
+10 │ local SoundService = game:GetService("SoundService")
+   │       ^^^^^^^^^^^^
+
+warning[unused_variable]: MAX_RUNNER_SPEED is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:20:7
+   │
+20 │ local MAX_RUNNER_SPEED = 7
+   │       ^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: POSITION_SPEED_FACTOR is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:21:7
+   │
+21 │ local POSITION_SPEED_FACTOR = 2
+   │       ^^^^^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: POSITION_TOLERANCE is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:22:7
+   │
+22 │ local POSITION_TOLERANCE = 5
+   │       ^^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: PATH_SPEED_FACTOR is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:23:7
+   │
+23 │ local PATH_SPEED_FACTOR = 1.5
+   │       ^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: PATH_TOLERANCE is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:24:7
+   │
+24 │ local PATH_TOLERANCE = 12
+   │       ^^^^^^^^^^^^^^
+
+warning[unused_variable]: activeByUser is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:37:7
+   │
+37 │ local activeByUser = {}
+   │       ^^^^^^^^^^^^
+
+warning[unused_variable]: arenaBusy is assigned a value, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:38:7
+   │
+38 │ local arenaBusy = false
+   │       ^^^^^^^^^
+
+warning[unused_variable]: roomActive is defined, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:71:16
+   │
+71 │ local function roomActive(room)
+   │                ^^^^^^^^^^
+
+warning[unused_variable]: audienceOf is defined, but never used
+   ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:75:16
+   │
+75 │ local function audienceOf(room)
+   │                ^^^^^^^^^^
+
+warning[unscoped_variables]: `current` is not declared locally, and will be available in every scope
+    ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:273:2
+    │
+273 │     current = roundState
+    │     ^^^^^^^
+
+warning[unused_variable]: current is assigned a value, but never used
+    ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:273:2
+    │
+273 │     current = roundState
+    │     ^^^^^^^
+
+warning[unused_variable]: tooth is assigned a value, but never used
+    ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:419:7
+    │
+419 │         for tooth = 1, 6 do
+    │             ^^^^^
+
+warning[unused_variable]: uid is assigned a value, but never used
+    ┌─ studio-src\ServerScriptService\KenopsiaServer\Services\Minefield.luau:549:6
+    │
+549 │     for uid, s in livingOf(room) do
+    │         ^^^
+
+error[if_same_then_else]: this has the same block as a previous if
+    ┌─ studio-src\StarterPlayer\StarterPlayerScripts\KenopsiaClient.client.luau:652:3
+    │
+646 │         fireShot()
+    │         ---------- note: same as this
+    ·
+652 │         fireShot()
+    │         ^^^^^^^^^^
+
+error[if_same_then_else]: this has the same block as a previous if
+    ┌─ studio-src\StarterPlayer\StarterPlayerScripts\KenopsiaClient.client.luau:655:3
+    │    
+648 │   ╭         scoped = not scoped
+649 │   │         applyScope()
+    │   ╰────────────────────' note: same as this
+    ·   │
+655 │ ╭           scoped = not scoped
+656 │ │           applyScope()
+    │ ╰──────────────────────^
+
+error[if_same_then_else]: this has the same block as a previous if
+    ┌─ studio-src\StarterPlayer\StarterPlayerScripts\KenopsiaClient.client.luau:892:3
+    │
+890 │         setScanHeld(true)
+    │         ----------------- note: same as this
+891 │     elseif input.KeyCode == Enum.KeyCode.ButtonY and not sniperActive then
+892 │         setScanHeld(true)
+    │         ^^^^^^^^^^^^^^^^^
+
+Results:
+5 errors
+22 warnings
+0 parse errors
+

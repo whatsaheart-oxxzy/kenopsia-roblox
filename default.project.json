@@ -1,0 +1,83 @@
+{
+  "name": "Kenopsia",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedFirst": {
+      "$className": "ReplicatedFirst",
+      "KenopsiaLoading": { "$path": "studio-src/ReplicatedFirst/KenopsiaLoading.client.luau" }
+    },
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+
+      "Kenopsia": {
+        "$className": "Folder",
+        "Shared": {
+          "$className": "Folder",
+          "Config": {
+            "$className": "Folder",
+            "GameConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau" }
+          }
+        }
+      },
+
+      "KenopsiaAssets": {
+        "$className": "Folder",
+        "Effects": {
+          "$className": "Folder",
+          "Blood": {
+            "$className": "Folder",
+            "BloodEffect": { "$path": "studio-src/ReplicatedStorage/KenopsiaAssets/Effects/Blood/BloodEffect.luau" }
+          }
+        }
+      },
+
+      "XBotAnimations": {
+        "$className": "Folder",
+        "PublishedIds": { "$path": "studio-src/ReplicatedStorage/XBotAnimations/PublishedIds.luau" },
+        "SequencePlayer": { "$path": "studio-src/ReplicatedStorage/XBotAnimations/SequencePlayer.luau" }
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "KenopsiaServer": {
+        "$className": "Folder",
+        "Main": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Main.server.luau" },
+        "XBotCharacters": { "$path": "studio-src/ServerScriptService/KenopsiaServer/XBotCharacters.server.luau" },
+        "Services": {
+          "$className": "Folder",
+          "RoomService":   { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/RoomService.luau" },
+          "MachineFlow":   { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/MachineFlow.luau" },
+          "BirdHunting":   { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/BirdHunting.luau" },
+          "Minefield":     { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Minefield.luau" },
+          "TableManners":  { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/TableManners.luau" },
+          "BloodFX":       { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/BloodFX.luau" }
+        }
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "KenopsiaClient": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau" },
+        "XBotAnimSync":   { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/XBotAnimSync.client.luau" },
+        "MachineLayout":  { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/MachineLayout.client.luau" },
+        "GoreClient":     { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/GoreClient.client.luau" }
+      },
+
+      "StarterCharacterScripts": {
+        "$className": "StarterCharacterScripts",
+        "Health": { "$path": "studio-src/StarterPlayer/StarterCharacterScripts/Health.server.luau" }
+      },
+
+      "StarterCharacter": {
+        "$className": "Model",
+        "Animate": { "$path": "studio-src/StarterPlayer/StarterCharacter/Animate.client.luau" }
+      }
+    }
+  }
+}

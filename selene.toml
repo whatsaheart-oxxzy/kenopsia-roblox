@@ -1,0 +1,12 @@
+﻿# Static analysis for the authoritative Studio mirror (studio-src) only.
+# The legacy prototype under src/ is NOT shipping code; see docs/legacy.
+std = "roblox"
+
+[lints]
+# studio-src is a verbatim byte-for-byte export of live Studio source.
+# Formatting/style lints would only flag the original author's house style,
+# so they are disabled here. Correctness lints stay ON, in particular
+# undefined_variable, which is what catches implicit globals.
+multiple_statements = "allow"
+roblox_manual_fromscale_or_fromoffset = "allow"
+mixed_table = "allow"
