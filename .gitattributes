@@ -1,0 +1,5 @@
+# Studio stores Luau sources with LF. The studio-src mirror must stay
+# byte-identical to the live place, so never let git rewrite line endings.
+* -text
+*.luau text eol=lf
+*.lua  text eol=lf
