@@ -38,6 +38,11 @@ local activeByUser = {}
 local arenaBusy = false
 local TrialInput
 
+-- C1.a: this was an implicit global. It is now a module local, and the round
+-- state it points at carries its owning room/session so a stale or foreign
+-- packet cannot be serviced.
+local current = nil
+
 local function refs()
 	local dz = workspace:FindFirstChild("Dead Zone")
 	if not dz then return nil end
@@ -169,6 +174,14 @@ function Minefield.init()
 		local st = current
 		if not st then return end
 		if payload.trialId ~= "minefield" or payload.action ~= "pulse" then return end
+		-- C1.a: the round must still own this input. Reject unless the same
+		-- round is active, its room is still Playing, and input is open (only
+		-- true between GO and round end). A stale packet from a previous round
+		-- or an aborted match dies here instead of mutating live state.
+		if not st.acceptInput then return end
+		if not st.room or st.room.phase ~= "Playing" then return end
+		if st.sessionId and st.room.sessionId ~= st.sessionId then return end
+		if payload.roundToken ~= nil and payload.roundToken ~= st.roundToken then return end
 		local ps = st.state[player.UserId]
 		if not ps or ps.done then return end
 		-- ein Druck = ein Puls; Server-Cooldown gegen Spam
@@ -195,7 +208,7 @@ function Minefield.init()
 	end)
 end
 
-function Minefield.runRound(room, roundIndex)
+local function runRoundInner(room, roundIndex, guard)
 	local scores = {}
 	for _, mm in room.members do scores[mm.userId] = 0 end
 	local R = refs()
@@ -205,17 +218,82 @@ function Minefield.runRound(room, roundIndex)
 	end
 	local g = buildGrid(R)
 
+	-- C1.a/C1.d: one state object per round. It owns its room and session, and
+	-- carries the token every delayed callback is guarded against.
+	local roundState = {
+		state = {},
+		mines = {},
+		grid = g,
+		runtime = nil,
+		room = room,
+		sessionId = room.sessionId,
+		roundToken = ("DZ-%s-R%s-%d"):format(
+			tostring(room.sessionId), tostring(roundIndex or 1),
+			math.floor(os.clock() * 1000) % 100000),
+		acceptInput = false,
+		cleaned = false,
+	}
+	current = roundState
+
+	-- True only while this exact round still owns the arena and the match is
+	-- still Playing. Every loop, wait and delayed callback tests this.
+	local function active()
+		return current == roundState and roomActive(room)
+	end
+
+	local exitConn = nil
+	local MachineState = ReplicatedStorage.Kenopsia.Remotes:FindFirstChild("MachineState")
+
+	-- C1.e: the one teardown path. Idempotent; reached from the happy path,
+	-- from an abort, and from the xpcall handler in Minefield.runRound.
+	local function cleanup()
+		if roundState.cleaned then return end
+		roundState.cleaned = true
+		roundState.acceptInput = false
+		if exitConn then
+			exitConn:Disconnect()
+			exitConn = nil
+		end
+		if current == roundState then current = nil end
+		local spawnPos = workspace:FindFirstChild("SpawnLocation")
+			and workspace.SpawnLocation.Position or Vector3.new(0, 5, 0)
+		for _, s in livingOf(room) do
+			s.char:SetAttribute("XBotCrawl", false)
+			s.char:SetAttribute("XBotScanning", false)
+			s.char:SetAttribute("XBotMoves", "")
+			s.root.CFrame = CFrame.new(spawnPos + Vector3.new(math.random(-6, 6), 4, math.random(-6, 6)))
+		end
+		if roundState.runtime then
+			roundState.runtime:Destroy()
+			roundState.runtime = nil
+		end
+		-- REQ-DZ-03 (deferred): this global clear must become scoped. Moved
+		-- inside the single path so it cannot be skipped or run twice.
+		BloodFX.clear()
+		if MachineState then
+			for _, mm in room.members do
+				local plr = Players:GetPlayerByUserId(mm.userId)
+				if plr then MachineState:FireClient(plr, { kind = "role", role = "none" }) end
+			end
+		end
+	end
+	guard.cleanup = cleanup
+
 	announce(room, { kind = "announce", text = "SCAN AHEAD. WATCH YOUR STEP." })
 	task.wait(2.8)
+	-- C1.b: an abort during the announcement must not start a round.
+	if not active() then return scores end
 
 	-- Laufzeitordner: Minen, Krater, Effekte
 	local runtime = Instance.new("Folder")
 	runtime.Name = "DZ_Runtime"
 	runtime.Parent = R.dz
+	roundState.runtime = runtime
 
 	-- Layout: sichere Pfade frei, Rest zufaellig vermint (unsichtbar, unterirdisch)
 	local safe = carvePaths(g)
 	local mines = {}
+	roundState.mines = mines
 	for row = 3, g.rows - 1 do
 		for col = 1, g.cols do
 			if not safe[row .. ":" .. col] and math.random() < MINE_DENSITY then
@@ -236,6 +314,7 @@ function Minefield.runRound(room, roundIndex)
 	end
 
 	local state = {}
+	roundState.state = state
 	local subjects = livingOf(room)
 	local n = 0
 	for _, mm in room.members do
@@ -254,7 +333,6 @@ function Minefield.runRound(room, roundIndex)
 		end
 	end
 
-	local MachineState = ReplicatedStorage.Kenopsia.Remotes:FindFirstChild("MachineState")
 	if MachineState then
 		for _, mm in room.members do
 			local plr = Players:GetPlayerByUserId(mm.userId)
@@ -264,19 +342,25 @@ function Minefield.runRound(room, roundIndex)
 		end
 	end
 	for c = 3, 1, -1 do
+		-- C1.b: an abort during the countdown ends the round here.
+		if not active() then return scores end
 		announce(room, { kind = "count", n = c })
 		task.wait(1)
 	end
+	if not active() then return scores end
 	announce(room, { kind = "go" })
 
-	local roundState = { state = state, mines = mines, grid = g, runtime = runtime }
-	current = roundState
-	print("[DZ] go; members=" .. #room.members)
+	-- C1.a: sonar input opens only now, and only for this round.
+	roundState.acceptInput = true
+	print("[DZ] go; members=" .. #room.members .. " token=" .. roundState.roundToken)
 
 	local craterTpl = ServerStorage.KenopsiaAssets.Props.Minefield:FindFirstChild("MF_Crater")
 
 	local explode
 	explode = function(mine)
+		-- C1.d: a fuse or chain scheduled before an abort must not detonate
+		-- into a torn-down round.
+		if not active() then return end
 		if not mine.live then return end
 		mine.live = false
 		local pos = mine.pos
@@ -327,6 +411,9 @@ function Minefield.runRound(room, roundIndex)
 						tellOne(uid, { kind = "announce", style = "death", text = "YOU STEPPED WRONG." })
 						if R.cam then
 							task.delay(3.2, function()
+								-- C1.d: never strand a lobby player's camera on
+								-- the arena after the round was torn down.
+								if not active() then return end
 								tellOne(uid, { kind = "role", role = "spectate",
 									pos = { R.cam.Position.X, R.cam.Position.Y, R.cam.Position.Z },
 									look = { R.exit.Position.X, g.gTop, R.exit.Position.Z } })
@@ -352,7 +439,9 @@ function Minefield.runRound(room, roundIndex)
 	end
 
 	-- Exit
-	local exitConn = R.exit.Touched:Connect(function(hit)
+	exitConn = R.exit.Touched:Connect(function(hit)
+		-- C1.d: Touched can fire during teardown; an abort must not award an escape.
+		if not active() then return end
 		local char = hit and hit.Parent
 		local plr = char and Players:GetPlayerFromCharacter(char)
 		if not plr then
@@ -465,6 +554,10 @@ function Minefield.runRound(room, roundIndex)
 	local spin = 0
 	while os.clock() - t0 < FAILSAFE_TIME do
 		task.wait(0.05)
+		-- C1.c: break out the moment the match aborts. Previously this loop
+		-- only ended on all-done / crusher-past-exit / zero-members, so an
+		-- abort ran on until the 150s failsafe.
+		if not active() then break end
 		local now = os.clock()
 		local dt = now - lastTick
 		lastTick = now
@@ -505,6 +598,9 @@ function Minefield.runRound(room, roundIndex)
 						tellOne(uid, { kind = "announce", style = "death", text = "PROCESSED." })
 						if R.cam then
 							task.delay(3.2, function()
+								-- C1.d: never strand a lobby player's camera on
+								-- the arena after the round was torn down.
+								if not active() then return end
 								tellOne(uid, { kind = "role", role = "spectate",
 									pos = { R.cam.Position.X, R.cam.Position.Y, R.cam.Position.Z },
 									look = { R.exit.Position.X, g.gTop, R.exit.Position.Z } })
@@ -527,8 +623,14 @@ function Minefield.runRound(room, roundIndex)
 		if #room.members == 0 then break end
 	end
 	print("[DZ] round over, elapsed=" .. math.floor((os.clock() - t0) * 10) / 10)
-	current = nil
-	exitConn:Disconnect()
+	roundState.acceptInput = false
+
+	-- An aborted round scores nothing: the plan discards an incomplete
+	-- minigame's partial scores. Teardown is cleanup()'s job either way.
+	if not active() then
+		return scores
+	end
+
 	task.wait(2.4)
 
 	-- Wertung: Ziel > Fluchtreihenfolge > Distanz; CleanRun-Bonus ohne Scanner
@@ -544,16 +646,9 @@ function Minefield.runRound(room, roundIndex)
 		scores[uid] = sc
 	end
 
-	-- Aufraeumen: Krater/Minen weg, Attribute zurueck, zurueck zum Spawn
-	local spawnPos = workspace:FindFirstChild("SpawnLocation") and workspace.SpawnLocation.Position or Vector3.new(0, 5, 0)
-	for uid, s in livingOf(room) do
-		s.char:SetAttribute("XBotCrawl", false)
-		s.char:SetAttribute("XBotScanning", false)
-		s.char:SetAttribute("XBotMoves", "")
-		s.root.CFrame = CFrame.new(spawnPos + Vector3.new(math.random(-6, 6), 4, math.random(-6, 6)))
-	end
-	runtime:Destroy()
-	BloodFX.clear()
+	-- Round-complete card only. Player restore, runtime teardown, exit
+	-- disconnect and the role reset all belong to cleanup(), which the
+	-- wrapper below always runs exactly once.
 	if MachineState then
 		local now = os.clock()
 		for _, mm in room.members do
@@ -563,11 +658,28 @@ function Minefield.runRound(room, roundIndex)
 				if not (st and st.cardAt and now - st.cardAt < 6) then
 					MachineState:FireClient(plr, { kind = "announce", text = "ROUND " .. tostring(roundIndex or 1) .. " COMPLETE." })
 				end
-				MachineState:FireClient(plr, { kind = "role", role = "none" })
 			end
 		end
 	end
 	return scores
+end
+
+-- C1.e: every exit path - normal, cancelled, or thrown - runs cleanup exactly
+-- once before returning. A thrown round yields zeroed scores rather than
+-- propagating into MachineFlow's error path with no teardown.
+function Minefield.runRound(room, roundIndex)
+	local guard = {}
+	local ok, result = xpcall(function()
+		return runRoundInner(room, roundIndex, guard)
+	end, debug.traceback)
+	if guard.cleanup then pcall(guard.cleanup) end
+	if not ok then
+		warn("[DZ] round errored: " .. tostring(result))
+		local scores = {}
+		for _, mm in room.members do scores[mm.userId] = 0 end
+		return scores
+	end
+	return result
 end
 
 return Minefield

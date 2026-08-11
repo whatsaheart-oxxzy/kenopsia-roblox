@@ -219,43 +219,55 @@ end
 
 -- MATCH ----------------------------------------------------------------------
 local function runMatch(room)
-	local trial = trialById(room.trialId)
-	if not (trial and trial.ready) then
-		local pool = enabledTrials()
-		trial = pool[1]
-	end
-	if not trial then
-		warn("[MachineFlow] no ready trial at match start - aborting")
-		RoomServiceRef.abort(room, "NO READY TRIAL")
-		return
-	end
-
-	local ctx = buildContext(room, trial)
-	sessionsByRoomId[room.id] = ctx
-	for _, uid in ctx.participantUserIds do
-		activeByUser[uid] = ctx
-	end
-
+	-- C2: every route - setup, no-ready-trial, cancellation, completion and
+	-- trial error - leaves through the single finalizer below. `outcome` is
+	-- the one source of truth, so an aborted session is never logged as a
+	-- completed match.
+	local outcome = "completed" -- completed | cancelled | no-trial | error
+	local trial, ctx = nil, nil
 	local cleaned = false
-	-- Idempotent. Runs exactly once through the finally-style path below.
+
+	-- Must be safe before ctx exists: the no-trial route reaches it too.
 	local function cleanup()
 		if cleaned then return end
 		cleaned = true
-		setActiveTrial(ctx, "")
-		if trial.module.cleanup then
-			pcall(trial.module.cleanup, ctx)
-		end
-		for _, uid in ctx.participantUserIds do
-			if activeByUser[uid] == ctx then activeByUser[uid] = nil end
-		end
-		if sessionsByRoomId[room.id] == ctx then
-			sessionsByRoomId[room.id] = nil
+		if ctx then
+			setActiveTrial(ctx, "")
+			if trial and trial.module.cleanup then
+				pcall(trial.module.cleanup, ctx)
+			end
+			for _, uid in ctx.participantUserIds do
+				if activeByUser[uid] == ctx then activeByUser[uid] = nil end
+			end
+			if sessionsByRoomId[room.id] == ctx then
+				sessionsByRoomId[room.id] = nil
+			end
 		end
 		room.preSent = nil
 		tellRoom(room, { kind = "hide" })
 	end
 
 	local ok, err = xpcall(function()
+		-- Trial resolution moved inside the protected body. Previously a
+		-- missing trial called abort() and returned before cleanup existed,
+		-- stranding the room in Aborting with nothing to drive it out.
+		trial = trialById(room.trialId)
+		if not (trial and trial.ready) then
+			local pool = enabledTrials()
+			trial = pool[1]
+		end
+		if not trial then
+			warn("[MachineFlow] no ready trial at match start")
+			outcome = "no-trial"
+			return
+		end
+
+		ctx = buildContext(room, trial)
+		sessionsByRoomId[room.id] = ctx
+		for _, uid in ctx.participantUserIds do
+			activeByUser[uid] = ctx
+		end
+
 		-- BRIEFING
 		tell(ctx, { kind = "status", lines = {
 			"All subjects successfully briefed.",
@@ -356,14 +368,28 @@ local function runMatch(room)
 		hold(ctx, Config.Match.FinalBoardHold)
 	end, debug.traceback)
 
-	-- finally
+	-- FINALIZER. Exactly one route out, for every outcome.
 	cleanup()
 	if not ok then
-		warn(("[MachineFlow] session %s failed: %s"):format(tostring(ctx.sessionId), tostring(err)))
-		RoomServiceRef.abort(room, "TRIAL ERROR")
+		outcome = "error"
+	elseif outcome == "completed" and ctx and ctx.cancelled() then
+		-- hold() returns false on cancellation and the body returns cleanly,
+		-- so `ok` is true for an aborted session. Detect it explicitly rather
+		-- than mislabelling it "match complete".
+		outcome = "cancelled"
 	end
-	-- Both the clean and the aborted path land here exactly once.
-	RoomServiceRef.cleanupToWaiting(ok and "match complete" or "trial error")
+
+	if outcome == "error" then
+		warn(("[MachineFlow] session %s failed: %s")
+			:format(ctx and tostring(ctx.sessionId) or "<no-session>", tostring(err)))
+		RoomServiceRef.abort(room, "TRIAL ERROR")
+	elseif outcome == "no-trial" then
+		RoomServiceRef.abort(room, "NO READY TRIAL")
+	end
+
+	-- Reached on every route, including no-trial and error, so the room can
+	-- never be stranded in Aborting.
+	RoomServiceRef.cleanupToWaiting(outcome)
 
 	task.wait(0.4)
 	if room.phase == "Waiting" and #room.members > 0 then
