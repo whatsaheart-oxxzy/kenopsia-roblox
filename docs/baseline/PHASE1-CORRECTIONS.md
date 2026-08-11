@@ -3,8 +3,14 @@
 Reviewer gate: **PHASE 1 FAIL**. Commit `3a9a1d8` preserved. Source parity for
 `GameConfig`, `RoomService`, `MachineFlow` accepted as closed by the reviewer.
 
-Status of this document: **specification only. No Studio mutation has been made
-for any item below.** `Players.MaxPlayers` re-checked and still `60`.
+Status: **C1 and C2 are implemented and transferred to Studio** (see
+"Transfer record" at the end). C3–C6 remain specification only.
+
+C7 is **PASS** — Max Players set to 4 on the Dashboard for the
+KenopsiaMainGame universe. The Studio Edit-time `game.Players.MaxPlayers`
+still reads `60`; that value is not authoritative for published servers and is
+to be ignored. Accepted on the reviewer's attestation, since the plugin can
+only observe the Studio-side value.
 
 Execution order matters: C1 and C2 are correctness/softlock fixes and must land
 before C3–C6, which are contract and observability work.
@@ -247,3 +253,65 @@ matrix completed without a licence purchase.
 
 Static verification (readback, hash parity, Luau validation, Selene, instance
 counts) remains fully available and is **not** blocked.
+
+---
+
+## Transfer record — C1 + C2 into place 110672791536316
+
+Authorised by the reviewer after confirming all Codex subagents were completed
+and read-only, with no competing Studio writer. Automatic WEPPY sync was not
+started (its status is not observable on a Basic licence); the controlled
+direct transfer was used.
+
+Environment at transfer time (re-verified, not carried over):
+
+| Field | Value |
+|---|---|
+| placeId | 110672791536316 |
+| gameId | 10640788131 |
+| Studio state | edit |
+| Studio version | 0.734.0.7340915 (restarted mid-session, was 0.733.0.7330989) |
+| Plugin clientId | 87fd413b-a792-4d9c-9377-10dceb0da37d (new session) |
+| Source commit | 5d38182 |
+
+Transferred, in this order: MachineFlow, then Minefield. Nothing else was
+touched. C3-C6 untouched. Play was not started.
+
+### Verification
+
+| Check | MachineFlow | Minefield |
+|---|---|---|
+| Studio lineCount | 476 | 686 |
+| Local lineCount | 476 | 686 |
+| Luau validation (sourceOrigin: studio) | valid, 0 diagnostics, parser 0.730 | valid, 0 diagnostics, parser 0.730 |
+| Corrected-line position parity | 10/10 \outcome\ sites at local line numbers | 9/9 \ctive()\ guards at local line numbers |
+
+Minefield guard positions confirmed in Studio at lines 285 (announcement),
+346 (countdown), 350 (pre-GO), 363 (explode), 416 (spectate #1), 444
+(Exit.Touched), **560 (main loop - the 150s hang fix)**, 603 (spectate #2),
+630 (tail). MachineFlow \outcome\ sites at 223, 226, 261, 371, 374, 375, 379,
+382, 386, 392. All match the local file exactly.
+
+### Verification NOT performed
+
+**Byte-level SHA-256 of the Studio-side content was not computed.** Proving it
+requires transferring both full sources back and hashing them on disk; that was
+not affordable in the remaining session budget. What was verified instead:
+exact line-count parity on both files, exact line-number parity for 19
+distinctive corrected lines, and Luau validation reporting
+\sourceOrigin: studio\ with zero diagnostics. The pushed content was taken
+verbatim from freshly-read local file segments. Residual risk of a byte-level
+difference is low but not zero.
+
+Note: \sessionDebugId\ values changed across the Studio restart (they are
+session-scoped, not persistent), so they can no longer be used to prove
+edit-in-place identity across restarts. Instance paths remain authoritative.
+
+### Still outstanding
+
+C3 (spectator client contract), C4 (observable stage), C5 (per-round token and
+effect scope, plus Bird's announcement/setup/countdown cancellation checks) and
+C6 (match-scoped attribute reset) are unimplemented. The full retest matrix
+remains blocked: all \manage_studio\ play actions are PRO-gated, so no
+playtest can be started agent-side. \manage_logs\ is Basic, so console output
+can be captured the moment a human starts a Play session.
