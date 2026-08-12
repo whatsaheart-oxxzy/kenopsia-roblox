@@ -238,6 +238,100 @@ assertion now runs only when a routing block is present.
 
 ---
 
+## Reviewer HOLD/FAIL on §2 A–C — corrections applied
+
+Six findings. Five closed, one requires a manual Studio action.
+
+### 1. Five anchored accessory handles — FIXED
+
+`whitehairaccessory`, `Accessory (Meshes/PENDIENTESMIASMA)`,
+`Accessory (Cabello NOVA)`, `Accessory (CAT in head)` and `Accessory (NERD)`
+all had `Anchored = true` on their `Handle`. Each is welded to the rig by an
+`AccessoryWeld`, so **a single anchored handle anchors the entire character
+assembly** — every player would have spawned frozen.
+
+**This was a verification failure, not just a data defect.** Part B checked the
+seven R6 parts, found them unanchored, and reported the rig "ready". The six
+accessory handles were never examined, yet the conclusion was written as though
+the character had been checked. Scope of evidence must match scope of claim.
+
+Now: **0 of 13 BaseParts anchored**, verified by enumerating every `BasePart`
+descendant rather than a hardcoded list of the seven.
+
+### 2. `MenuPresenceService` missing from both source-of-truth files — FIXED
+
+It was absent from `kenopsia-dev.project.json` and from
+`docs/baseline/dev-script-map.json`. Consequences, exactly as the reviewer
+stated: a DEV Rojo build would have produced a `Main` requiring a module Rojo
+never creates, and the "full" parity run covered only the original 15 entries —
+so **the newest and least-proven file was the one nothing verified**.
+
+The map is now **generated from the `dev-src` tree** instead of hand-maintained,
+so it cannot drift from the file set again, and a check that every
+project.json `$path` target exists on disk now runs alongside it.
+
+Parity is now **16/16**.
+
+### 3. Both camera markers faced backwards — FIXED
+
+Created with identity rotation, whose `LookVector` is `-Z`, while both targets
+lie in `+Z`. Both are now aimed with a `lookAt` basis computed from live
+positions:
+
+| Marker | Target | LookVector |
+|---|---|---|
+| `LandingCamera` | `(134.250, 4.750, 15.125)` | `(-0.072, -0.247, 0.966)` |
+| `SessionCamera` | `SessionDisplay (138.9, 5.5, 25.15)` | `(0.000, -0.081, 0.997)` |
+
+The landing target is the measured midpoint between `CharacterAnchor` and the
+centroid of `Start`/`Settings`/`Credits`. It lands within **0.05 studs** of the
+spec's stated `(134.3, 4.8, 15.1)`, which independently confirms the derivation.
+
+### 4. Jumping state not restored exactly — FIXED
+
+`engage()` now captures
+`humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping)` with the other
+originals, and `release()` restores that captured value. Restoring a hardcoded
+`true` is a state *change* disguised as a restore.
+
+### 5. `AnimSaves` — DELETED (reviewer-approved)
+
+`StarterCharacter.AnimSaves` removed. `ServerStorage.RBX_ANIMSAVES` deliberately
+retained for later animation work, as directed.
+
+### 6. Template `PrimaryPart` — BLOCKED, needs one manual action
+
+Still `Head`. The runtime correction in `MenuPresenceService` is retained, but
+the reviewer also wants the saved template fixed, and **that cannot be done
+through MCP at any tier**:
+
+- `manage_properties_set` supports primitives, `Vector3`, `Color3`, `CFrame`,
+  `UDim2` and Enum strings — **there is no Instance type**.
+- `manage_properties_set_calculated` is PRO-gated and is for arithmetic.
+- The string `PrimaryPart` does not occur anywhere in the WEPPY server bundle,
+  so no command implements it.
+- Six value encodings were attempted; all rejected by the plugin with
+  *"BasePart expected, got string"*.
+
+**Manual step required:** in Studio, select `StarterPlayer.StarterCharacter`,
+and in Properties set `PrimaryPart` to its `HumanoidRootPart`.
+
+### Verification after corrections
+
+| Check | Result |
+|---|---|
+| Source parity | **16/16 MATCH** |
+| Anchored character parts | **0 of 13** |
+| `StarterCharacter.AnimSaves` | removed |
+| `LandingCamera` / `SessionCamera` LookVector `+Z` | **both true** |
+| Luau validation | **16/16 valid**, 0 diagnostics |
+| Selene | 0 errors, 46 warnings — unchanged from baseline |
+| Template `PrimaryPart` | **still `Head`** — manual action outstanding |
+
+The six placeholder Parts remain untouched.
+
+---
+
 ## Remaining in §2
 
 1. Promote `Workspace.Rig` → `StarterPlayer.StarterCharacter` (move + rename).
