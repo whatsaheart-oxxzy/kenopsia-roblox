@@ -16,13 +16,46 @@ Status legend: **OK** proven · **INF** inferred, needs a dated store record ·
 
 ## 1. Licence instruments on file
 
-| Instrument | Location | Covers | Terms |
-|---|---|---|---|
-| Pizza Doggy's Game Assets — License Agreement (PDF) | `Retro\` (root), `Retro\PSX Tech\`, `Retro\ROT - Horror Audio Bundle\`, `Retro\Rust & Blood - SFX Library\` | those three packs, explicitly | game use ✅ (commercial ok) · modification ✅ · standalone redistribution ❌ · inclusion in asset packs/bundles ❌ · attribution optional · other digital media = ask |
-| ~~`Retro\NOTES.txt` (CC0 1.0)~~ | — | — | **DOES NOT EXIST.** Claim void. Never cite it. |
+### Pizza Doggy's Game Assets — License Agreement (PDF) — covers **four** packs
 
-**Coverage gap:** roughly 30 further pack folders under `Retro\` carry no licence
-file. They are plausibly Pizza Doggy purchases — the folder
+Terms: game use ✅ (commercial ok) · modification ✅ · standalone redistribution
+❌ · inclusion in asset packs, templates or bundles ❌ · attribution optional ·
+other digital media = ask first.
+
+| PDF copy | Pack licensed | Provenance |
+|---|---|---|
+| `Retro\Game Asset License Agreement.pdf` (root) | **PSX Textures II** | `Downloads\PSX Textures II v1.6.zip` — 327.8 MB, 2026-08-06, present on disk |
+| `Retro\PSX Tech\...` | PSX Tech | in-folder |
+| `Retro\ROT - Horror Audio Bundle\...` | ROT — Horror Audio Bundle | in-folder |
+| `Retro\Rust & Blood - SFX Library\...` | Rust & Blood — SFX Library | in-folder |
+
+The root copy is **not orphaned** — it belongs to PSX Textures II. An earlier
+revision of this ledger described the coverage as "three packs" by treating the
+root copy as unattributed. Corrected.
+
+### The CC0 notice — what it actually covered
+
+| Instrument | Status |
+|---|---|
+| `Retro\NOTES.txt` (CC0 1.0 Universal) | **Not currently present**, and it never covered the packs in use |
+
+Two distinct facts, both required for the record:
+
+1. `NOTES.txt` is absent — not at the Retro root, not within four levels below
+   it, and no `.txt` exists at the Retro root at all.
+2. Earlier investigation associated that CC0 notice **only with
+   `LowPolyAssetPack_Free.zip`** — a free sample pack — and **never with the
+   arena packs this game ships**. Corroborated: `Downloads\LowPolyAssetPack_Free.zip`
+   (34.8 MB, 2026-08-06) is present, with `Retro\Example Scenes\LowPoly_Scenes_Free.blend`
+   as its unpacked remnant.
+
+The defect in `docs/legacy/ASSETS.md` was therefore **generalising a free sample
+pack's licence across a commercial library** — not a bare falsehood. That
+generalisation is void: CC0 permits redistribution, Pizza Doggy forbids it, so
+applying CC0 library-wide would licence-launder packs that explicitly forbid it.
+
+**Coverage gap:** roughly 29 further pack folders under `Retro\` carry no licence
+file. They are plausibly Pizza Doggy purchases — the folders
 `Pizza Doggy's Item Icons Making Setup` and
 `Item Icons - PSX Mega Pack, PSX Bunkers` tie that vendor to the PSX Mega Pack
 and PSX Bunkers lines — but **inference is not proof**. Each needs a dated copy
@@ -46,7 +79,7 @@ Every row below: **author/shop** = presumed Pizza Doggy audio packs
 `Echoes - Audio Super Kit`, `System Status Alerts & Misc`,
 `Super Retro Game OST`, `Special Ambiences`) — **INF** until each upload is
 traced back to its source file. **Permitted edit** ✅ and **permitted game use**
-✅ under the Pizza Doggy terms for the three proven packs.
+✅ under the Pizza Doggy terms for the four proven packs.
 **Universe permission** must be confirmed per id (uploaded audio defaults to
 private and plays silently with no error if the experience lacks permission) —
 **untested, Gate 7**.
@@ -64,17 +97,20 @@ private and plays silently with no error if the experience lacks permission) —
 
 `Ambience` folder exists and is **empty**.
 
-### Weapon audio — ids pinned by plan §3
+### Weapon audio — ids and volumes both frozen
 
-| Path | Asset id | Plan volume | **Live volume** | Licence |
-|---|---|---:|---:|---|
-| `SFX.SniperFire.Primary` | `118803023612410` | 0.95 | **1.45** | INF |
-| `SFX.SniperReload.Primary` | `83110281478101` | 0.75 | **1.70** | INF |
-| `SFX.BulletRicochet.Primary` | `83668417079973` | 0.80 | **1.10** | INF |
+| Path | Asset id | **Authoritative volume** | Licence |
+|---|---|---:|---|
+| `SFX.SniperFire.Primary` | `118803023612410` | **1.45** | INF |
+| `SFX.SniperReload.Primary` | `83110281478101` | **1.70** | INF |
+| `SFX.BulletRicochet.Primary` | `83668417079973` | **1.10** | INF |
 
-Ids match the plan exactly; **volumes do not**. Unresolved conflict between the
-Phase 1 preserve-volumes constraint and plan §3 — see
-`GATE0-BASELINE.md` §5. Decide before Gate 3.
+Ids match plan §3 exactly. The volumes deliberately **do not** — the reviewer
+ruled that the live values stand and the plan's 0.95 / 0.75 / 0.80 are not
+applied, because the plan's real test is relative (*"deutlich lauter als Musik"*)
+and these already pass it against music at 0.24–0.45. Existing music ducking
+unchanged. **Gate 3 may alter these only after a real listening test, and only to
+correct audible clipping.** See `GATE0-BASELINE.md` §5.
 
 ### UI and impact SFX
 
@@ -158,13 +194,13 @@ not a Gate 0 one. The read path is established and cheap:
 
 | # | Blocker | Gate | Resolution path |
 |---|---|---|---|
-| 1 | ~30 packs with no archived licence terms | 7 | Archive dated store records, or drop the affected assets |
+| 1 | ~29 packs with no archived licence terms | 7 | Archive dated store records, or drop the affected assets |
 | 2 | Bird trial music `71143122243344` | 3 / 7 | Prove or replace |
 | 3 | Sniper rifle model provenance | 3 / 7 | Prove, or rebuild as an original low-poly primitive weapon |
 | 4 | 12 XBot `KeyframeSequence`s | 5 / 7 | Likely dissolved by the original character; otherwise prove |
 | 5 | No Canteen audio or models exist | 4 | Create or licence original assets (`REQ-CP-04`) |
 | 6 | Universe permission untested for every uploaded id | 7 | Verify in a published DEV session — private audio fails silently |
-| 7 | Sniper volumes: plan says 0.95/0.75/0.80, live is 1.45/1.70/1.10 | 3 | Reviewer decision required |
+| ~~7~~ | ~~Sniper volumes conflict~~ | — | **RESOLVED at Gate 0** — live values 1.45 / 1.70 / 1.10 are authoritative; plan §3's lower numbers are not applied |
 
 ---
 

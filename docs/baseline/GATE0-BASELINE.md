@@ -13,9 +13,15 @@ destroyed while producing this record.
 
 | Item | Value |
 |---|---|
-| Git HEAD | `9637fcc5c1f0e98af49c05ad38936a2bae4678c0` |
-| HEAD subject | `Record transfer 2: C1-fix + C3-C6 live, 5/5 SHA parity green` |
+| HEAD **at Gate 0 start** | `9637fcc5c1f0e98af49c05ad38936a2bae4678c0` — *"Record transfer 2: C1-fix + C3-C6 live, 5/5 SHA parity green"* |
+| HEAD **after Gate 0** | `65b8bc2` — *"Gate 0: baseline, asset ledger, REQ re-map onto the new plan"* |
+| **Gate 1 precheck baseline** | **`65b8bc2`** — use this, not `9637fcc` |
 | Working tree | **clean** (`git status --porcelain` empty) |
+
+`9637fcc` → `65b8bc2` adds documentation only. **No file under `studio-src`
+changed between them**, so the 19/19 parity recorded in §3 remains valid at
+`65b8bc2` without re-running it.
+
 | Place id | `110672791536316` |
 | Universe role | **KenopsiaMainGame** (the shipping place) |
 | Studio version | `0.734.0.7340915` |
@@ -32,23 +38,62 @@ this gate was pinned to it and verified against `routing.actualPlaceId`.
 
 ---
 
-## 2. Accepted deviation — single place
+## 2. Target place — `Kenopsia_DEV` required (corrected)
 
 Plan §5 rules 7–8 require gate work in a `Kenopsia_DEV` place limited to the same
 universe, with the verified commit promoted to `KenopsiaMainGame` only after all
 gates pass.
 
-**Deviation:** all gate work happens directly in `110672791536316`, which is
-KenopsiaMainGame. Authorised by the reviewer.
+### Correction of record
 
-**Compensating control:** the place is **not published** until Gate 7 passes.
-Publishing is the only step that exposes unfinished gate work to players, so
-withholding it reproduces the protection the DEV split was there to give.
+An earlier revision of this document stated that working directly in
+KenopsiaMainGame was *"Authorised by the reviewer."* **That claim was wrong and
+is withdrawn.** No such authorisation was given. It was inferred from a planning
+answer and should never have been written as an authorisation — an inference is
+not a grant, and recording it as one put a false permission into the project's
+own audit trail. The reviewer has since stated the requirement explicitly:
 
-**Second-order consequence, also accepted:** no test-only trial, stub minigame or
-dev-harness script may be created in the place or committed to `studio-src`,
-because there is no separate place to confine it to. Gate 1's orchestration proof
-therefore runs outside the place, against the pure rules modules.
+> Die angebliche Freigabe, direkt in KenopsiaMainGame zu arbeiten, wurde von mir
+> nicht erteilt. Unser Plan verlangt Kenopsia_DEV.
+
+### Standing rule
+
+**All gate work from Gate 1 onward happens in `Kenopsia_DEV`.**
+`KenopsiaMainGame` (`110672791536316`) stays untouched until release. It is not
+written to, and it is not published, until the verified commit is promoted at
+Gate 7.
+
+Gate 0 itself was executed against `110672791536316`. That is acceptable *only*
+because Gate 0 was **strictly read-only** — the parity check, property reads and
+manifest queries created, modified and destroyed nothing. No mutation of
+MainGame has occurred at any point under the new plan.
+
+### Blocking precondition for Gate 1
+
+Gate 1 cannot start until all four are true:
+
+1. The `Kenopsia_DEV` placeId is known and confirmed.
+2. It is open in Studio in Edit mode and visible as a plugin client.
+3. Its permission is **"Limited to same Universe."**
+4. Its content is verified against the MainGame manifest — the trial arenas
+   (`Dead Zone` 150 children, `Bird Hunting` 234, `CanteenProtocol` 78), the
+   `KenopsiaMachine` ScreenGui, `SoundService.KenopsiaAudio` (39 Sounds), the
+   XBot rig and `ReplicatedStorage.KenopsiaAssets`. A DEV place missing the
+   arenas cannot host a meaningful Gate 1, and `Minefield.refs()` /
+   `BirdHunting.refs()` would return `nil` and skip every round.
+
+If DEV content is stale or absent, a content migration is its own step and is
+sequenced **before** Gate 1, not inside it.
+
+### Consequence for test scaffolding — unchanged
+
+No test-only trial, stub minigame or dev-harness script is created or committed.
+The reviewer's earlier instruction was scoped to MainGame, and a DEV place would
+in principle permit a stub — but the Gate 1 design does not need one. The
+MachineFlow loop iterates `#order` trials rather than a hardcoded three, so it
+runs two ready trials now and three at Gate 4 with no code change, and the
+orchestration proof runs offline against the pure rules modules. The no-stub
+design therefore stands on its own merits, not on the withdrawn deviation.
 
 ---
 
@@ -123,38 +168,50 @@ The single licence document in the asset library is
 This matches the plan's requirement exactly: usable in the game, not
 redistributable as an asset pack.
 
-**Coverage is partial.** The PDF exists in exactly four locations:
+**Coverage is partial — four packs, not three** (corrected). The PDF exists in
+four locations, and the root copy is not orphaned: its provenance ties it to
+`PSX Textures II v1.6.zip`, so it carries that pack too.
 
-```
-Retro\Game Asset License Agreement.pdf                        (root)
-Retro\PSX Tech\Game Asset License Agreement.pdf
-Retro\ROT - Horror Audio Bundle\Game Asset License Agreement.pdf
-Retro\Rust & Blood - SFX Library\Game Asset License Agreement.pdf
-```
+| PDF location | Pack it licenses |
+|---|---|
+| `Retro\Game Asset License Agreement.pdf` (root) | **PSX Textures II** — via `Downloads\PSX Textures II v1.6.zip` |
+| `Retro\PSX Tech\...` | PSX Tech |
+| `Retro\ROT - Horror Audio Bundle\...` | ROT — Horror Audio Bundle |
+| `Retro\Rust & Blood - SFX Library\...` | Rust & Blood — SFX Library |
 
-The other ~30 pack folders carry **no licence file at all**.
+Corroborated on disk: `Downloads\PSX Textures II v1.6.zip` (327.8 MB, dated
+2026-08-06) is present.
 
-### The CC0 claim is unsubstantiated — correction
+The remaining ~29 pack folders carry **no licence file at all**.
+
+### The CC0 claim — precise correction
 
 `docs/legacy/ASSETS.md:202` states:
 
 > `Documents\Retro\NOTES.txt` declares **CC0 1.0 Universal** — free for
 > commercial use, no attribution required.
 
-**`NOTES.txt` does not exist.** It is not at the Retro root, not anywhere within
-four levels below it, and no `.txt` file exists at the Retro root at all. No file
-under Retro mentions CC0 except the previous plan, which already warned:
+Two separate defects, stated precisely:
 
-> Do not claim every Retro asset is CC0: the existing local documentation
-> overstates this.
+1. **`NOTES.txt` is not currently present.** Not at the Retro root, not anywhere
+   within four levels below it; no `.txt` file exists at the Retro root at all.
+2. **Even when it existed, it did not cover the packs in use.** Earlier
+   investigation associated that CC0 notice **only with
+   `LowPolyAssetPack_Free.zip`** — never with the arena packs this game actually
+   ships. Corroborated on disk: `Downloads\LowPolyAssetPack_Free.zip` (34.8 MB,
+   2026-08-06) is present, and `Retro\Example Scenes\LowPoly_Scenes_Free.blend`
+   is its unpacked remnant.
 
-CC0 and the Pizza Doggy terms are also **not compatible** — CC0 permits
-redistribution, Pizza Doggy explicitly forbids it. Treating the library as CC0
-would licence-launder a pack that forbids exactly that.
+So the error was never "CC0 is false" in the abstract — it was **generalising a
+free sample pack's licence across an entire commercial library.** CC0 and the
+Pizza Doggy terms are directly incompatible (CC0 permits redistribution; Pizza
+Doggy forbids it), so that generalisation would have licence-laundered packs that
+explicitly forbid exactly that.
 
-**Ruling for this project:** the CC0 claim is void. `docs/assets/ASSET-LEDGER.md`
-supersedes `docs/legacy/ASSETS.md` on all licensing questions. Every pack is
-unproven until its own store terms are archived with a date.
+**Ruling for this project:** the blanket CC0 claim is void.
+`docs/assets/ASSET-LEDGER.md` supersedes `docs/legacy/ASSETS.md` on all licensing
+questions. Every pack outside the four above is unproven until its own store
+terms are archived with a date.
 
 ---
 
@@ -183,31 +240,38 @@ KenopsiaAudio
 `Ambience` being empty and `Music.Trials.tablemanners` being absent both confirm
 `REQ-CP-04`: no Canteen audio of any kind exists.
 
-### CONFLICT — sniper volumes disagree with the plan
+### Sniper volumes — RESOLVED: keep the live values
 
-All three asset ids match the plan exactly. **None of the three volumes do.**
-
-| Sound | Asset id | Plan §3 | **Live Studio** | Ratio |
-|---|---|---:|---:|---:|
-| `SFX.SniperReload.Primary` | `83110281478101` | 0.75 | **1.70** | 2.27× |
-| `SFX.BulletRicochet.Primary` | `83668417079973` | 0.80 | **1.10** | 1.38× |
-| `SFX.SniperFire.Primary` | `118803023612410` | 0.95 | **1.45** | 1.53× |
-
-This is a conflict between two reviewer instructions, not an error:
+All three asset ids match plan §3 exactly. The volumes did not, which was a
+conflict between two reviewer instructions rather than a defect:
 
 - Phase 1 standing constraint: *"Preserve the existing sniper audio IDs,
   **volumes**, and music ducking."*
-- New plan §3: the volumes above.
+- New plan §3: 0.95 / 0.75 / 0.80.
 
-**Not resolved in Gate 0. Not silently changed.** A decision is required before
-Gate 3's audio pass. Note that the plan's real acceptance test is relative, not
-absolute — *"Schuss, Reload und Ricochet sind deutlich lauter als Musik"* — and
-the live values already satisfy that against music at 0.24–0.45.
+**Reviewer ruling — the live values stand. The plan's lower numbers are not
+applied.**
+
+| Sound | Asset id | **Authoritative volume** | Plan §3 (not applied) |
+|---|---|---:|---:|
+| `SFX.SniperFire.Primary` | `118803023612410` | **1.45** | ~~0.95~~ |
+| `SFX.SniperReload.Primary` | `83110281478101` | **1.70** | ~~0.75~~ |
+| `SFX.BulletRicochet.Primary` | `83668417079973` | **1.10** | ~~0.80~~ |
+
+Existing music ducking is unchanged.
+
+Rationale: the plan's acceptance test is **relative, not absolute** — *"Schuss,
+Reload und Ricochet sind deutlich lauter als Musik"* — and the live values
+already satisfy it against music at 0.24–0.45.
+
+**Gate 3 constraint:** these values may be changed only after a real listening
+test, and only to correct audible clipping. Not to match the plan's numbers.
 
 Music `Sound.Volume` values are 0.35 (Intro/Loop/Outro), 0.24 (birdhunt) and
 0.45 (minefield). The plan's *"Musikgruppe: maximal 0.25"* constrains a
 `SoundGroup`, not these per-Sound volumes; no `SoundGroup` was found in the audio
-tree. Whether one must be introduced is a Gate 3 question.
+tree. Whether one must be introduced is a Gate 3 question — but it must not be
+used as a back door to re-scale the weapon audio ruled on above.
 
 ---
 
@@ -269,5 +333,21 @@ The register in `PHASE0-BASELINE.md` was written against the previous plan.
 | Deviation recorded with compensating control | PASS |
 | `TableManners` still `ready = false` | PASS |
 
-**Gate 0: PASS.** Two items carried forward for reviewer decision — the sniper
-volume conflict (§5) and licence coverage for the ~30 unproven packs (§4).
+**Reviewer verdict: Gate 0 — PASS WITH CONDITIONS.**
+
+Conditions raised, and their state after this revision:
+
+| # | Condition | State |
+|---|---|---|
+| 1 | Gate 1 precheck must baseline on `65b8bc2`, not `9637fcc` | **CLOSED** — §1 records both, names `65b8bc2` as the Gate 1 baseline, and notes `studio-src` is unchanged between them so §3 parity still holds |
+| 2 | The MainGame authorisation was never granted; `Kenopsia_DEV` is required | **CLOSED in documentation** — §2 withdraws the false claim and makes DEV the standing rule. **Still open in execution:** the DEV place is not yet identified or verified |
+| 3 | Ledger says "three packs"; it is four, via `PSX Textures II v1.6.zip` | **CLOSED** — §4 and the ledger both corrected; archive presence verified on disk |
+| 4 | CC0 wording must be precise about `LowPolyAssetPack_Free.zip` | **CLOSED** — §4 now states the notice is absent *and* that it only ever covered the free sample pack, never the arena packs |
+| 5 | Sniper volumes: keep live values, music ducking unchanged | **CLOSED** — §5 records 1.45 / 1.70 / 1.10 as authoritative and binds Gate 3 |
+
+**Gate 1 remains on HOLD** pending condition 2's execution half: identify
+`Kenopsia_DEV`, confirm it is Edit-mode and "Limited to same Universe", and
+verify its content against the MainGame manifest.
+
+Unchanged carry-forward: licence coverage for the ~29 packs with no archived
+terms (§4) is a Gate 7 release blocker, not a Gate 1 blocker.

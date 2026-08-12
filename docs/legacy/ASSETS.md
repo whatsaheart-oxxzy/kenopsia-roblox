@@ -1,8 +1,12 @@
 > **SUPERSEDED FOR LICENSING — see `docs/assets/ASSET-LEDGER.md`.**
-> The CC0 claim in the "Licensing" section below is **void**: the `NOTES.txt` it
-> cites does not exist, and the one licence instrument that does exist
-> (Pizza Doggy's Game Assets) forbids redistribution, which CC0 permits. Do not
-> cite this file for licence questions. Verified at Gate 0, 2026-08-12.
+> The blanket CC0 claim in the "Licensing" section below is **void**. The
+> `NOTES.txt` it cites is not currently present, and that CC0 notice only ever
+> applied to `LowPolyAssetPack_Free.zip` — a free sample pack — **never to the
+> arena packs this game ships**. The licence that does govern them
+> (Pizza Doggy's Game Assets, covering PSX Textures II, PSX Tech, ROT and
+> Rust & Blood) forbids redistribution, which CC0 permits, so the two cannot be
+> applied together. Do not cite this file for licence questions.
+> Verified at Gate 0, 2026-08-12.
 
 # Asset import list
 
