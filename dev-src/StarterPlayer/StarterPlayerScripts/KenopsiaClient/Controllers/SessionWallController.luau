@@ -318,6 +318,11 @@ function SessionWallController:buildRoom()
 		local r = self:remote("RoomLeaveRequest")
 		if r then r:FireServer() end
 		self.room = { hostUserId = 0, members = {} }
+		-- Re-render before leaving the page. Clearing self.room without this
+		-- leaves the previous roster drawn on the hidden Room page, so the next
+		-- visit flashes the OLD occupants for a frame before the first
+		-- RoomState arrives.
+		self:renderRoster()
 		self:go("Select")
 	end)
 end

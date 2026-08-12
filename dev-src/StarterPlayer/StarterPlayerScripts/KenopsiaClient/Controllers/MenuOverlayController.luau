@@ -357,8 +357,12 @@ function MenuOverlayController:buildSettings()
 	local _, body = self:buildCard("Settings", "SETTINGS")
 	self.settingRows = {}
 
-	local function row(order, height)
-		local r = flatPanel(body, "Row")
+	-- Rows are named after the setting they carry. Naming them all "Row" makes
+	-- them unaddressable by path -- a lookup resolves the first and silently
+	-- returns the wrong control, which is the same trap the arena's four
+	-- identical "Wall" parts set. Not worth repeating in code we own.
+	local function row(order, height, key)
+		local r = flatPanel(body, "Row_" .. tostring(key or order))
 		r.Size = UDim2.new(1, -4, 0, height or Theme.Touch.Min)
 		r.LayoutOrder = order
 		r.BackgroundTransparency = 0.4
@@ -382,7 +386,7 @@ function MenuOverlayController:buildSettings()
 	end
 
 	local function toggleRow(order, label, key, onChange)
-		local r = row(order)
+		local r = row(order, nil, key)
 		rowLabel(r, label)
 		local b = Instance.new("TextButton")
 		b.AutoButtonColor = false
@@ -418,7 +422,7 @@ function MenuOverlayController:buildSettings()
 	-- is stored 0..1 because that is what the effect consumes, but the spec
 	-- states it as a percentage, so it is shown x100.
 	local function sliderRow(order, label, key, min, max, step, fmt, displayScale, onChange)
-		local r = row(order)
+		local r = row(order, nil, key)
 		rowLabel(r, label)
 		local minus = Instance.new("TextButton")
 		minus.AutoButtonColor = false
