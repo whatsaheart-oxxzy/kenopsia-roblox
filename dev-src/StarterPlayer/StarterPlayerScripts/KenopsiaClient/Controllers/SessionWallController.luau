@@ -349,12 +349,15 @@ function SessionWallController:quickJoin()
 	self.publicNote.Text = "SEARCHING..."
 	self.publicNote.TextColor3 = Theme.Street.Sage
 	r:FireServer()
-	-- If no RoomState arrives the request found nothing and produced nothing.
-	-- See the note in GATE-M1-SECTION3.md: the current server-side quickJoin
-	-- creates a public room on a miss, so this timeout is the honest fallback
-	-- rather than a promise the server cannot currently break.
-	task.delay(1.5, function()
-		if self.page == "Select" and #self.room.members == 0 then
+	-- The server now answers a miss with LobbyError, so this is only a
+	-- last-resort unstick: if the request is dropped or rate-limited, nothing
+	-- ever replies and "SEARCHING..." would otherwise sit there forever.
+	-- Keyed on the Select page still being visible rather than on self.page,
+	-- for the same reason setNote is.
+	task.delay(2, function()
+		local sel = self.pages.Select
+		if sel and sel.Visible and #self.room.members == 0
+			and self.publicNote.Text == "SEARCHING..." then
 			self.publicNote.Text = PUBLIC_EMPTY
 			self.publicNote.TextColor3 = Theme.Street.Denim
 		end
@@ -373,8 +376,25 @@ function SessionWallController:connect()
 	r:FireServer(box.Text)
 end
 
+-- Routes by what is ACTUALLY VISIBLE, not by the remembered page.
+--
+-- Routing on self.page looks equivalent and is not: if the recorded page ever
+-- disagrees with the visible one -- a desync, or simply an error arriving after
+-- the player has navigated away -- the message is written to a hidden label and
+-- the player is shown nothing at all while believing the action did nothing.
+-- Reading visibility is self-correcting and cannot drift.
 function SessionWallController:setNote(text, isError)
-	local target = self.page == "Join" and self.joinNote or self.publicNote
+	local target
+	for name, page in self.pages do
+		if page.Visible then
+			target = page:FindFirstChild("Note")
+			if target then
+				self.page = name -- heal the record while we are here
+				break
+			end
+		end
+	end
+	target = target or self.publicNote
 	if not target then return end
 	target.Text = text
 	target.TextColor3 = isError and Theme.Street.Error or Theme.Street.Sage
