@@ -187,7 +187,103 @@ three session actions appear on the wall → then delete.
 
 ---
 
+## §3B corrections after the live test (COMPLETE)
+
+Reviewer HOLD after Play. Landing, rig, camera move and the `PlayerGui`
+SurfaceGui all confirmed working; no runtime errors. Five items raised, all
+closed.
+
+### 1. Six placeholder Parts deleted
+
+They rendered **in front of** the new menu and physically blocked the click on
+`HOST SESSION`. Deletion approved once the replacements were proven to render.
+
+`Workspace` went 17 → 11 direct children. Diffed against
+`dev-instance-tree-after-s2f.csv`: **exactly the six removed, nothing added,
+nothing else lost.** `MenuStage` (11 descendants) and `MainMenuWAll`
+(`Wall_01..04`) both intact.
+
+> **Tooling note.** All six delete calls returned `Instance not found`, yet the
+> instances were gone and the child count dropped by exactly six. The return
+> value and the effect disagreed. The outcome was confirmed by diffing the
+> manifest rather than by trusting the response — worth remembering, because a
+> delete that reports failure while succeeding would otherwise invite a retry
+> that destroys something else.
+
+### 2. `SessionDisplay` resized to fit the frame
+
+`8 × 7 × 0.2` → **`8 × 5.4 × 0.2`**. At FOV 38 and 8.65 studs the old height
+overflowed the view, clipping the `SESSION` heading and the `BACK` button.
+Centre unchanged at `(138.9, 5.5, 25.15)`; **camera and FOV untouched**, as
+directed.
+
+The wall's layout is entirely `Scale`-based, so it reflowed to the new aspect
+with no code change — which is exactly why relative layouts were specified.
+
+### 3. `PUBLIC SESSION` — option (a), server changed
+
+`RoomService.quickJoin` no longer creates a room on a miss. The `else` branch
+now sends `fail(player, "NO OPEN ROOM IN THIS SERVER")`.
+
+Creating a room on a miss made *"join something that exists"* and *"create
+something new"* the same action, which is why the client could never report an
+empty result honestly. `HOST SESSION → PUBLIC ROOM` is now the only create path,
+and the two actions have genuinely distinct jobs. The client message stops being
+dead code.
+
+### 4. Camera failure fallback
+
+`goTo` now returns whether the move actually **started**, and also fails when the
+marker is missing — not only when the camera is. `goToSession` / `goToLanding`
+forward that result, and `startSession` branches on it.
+
+Landing is hidden before the move begins and `onArrive` would never fire on a
+failure, so without this the player was left on a bare street with no menu and
+no way back. On failure the landing panel is restored and a neutral message is
+shown — internal-fault wording, not blame.
+
+### 5. Reduced motion — comment corrected, behaviour kept
+
+The reviewer is right on both counts: the behaviour is correct and the comment
+was wrong. `hardCut` awaits the fade-**in**, applies the pose, then starts the
+fade-out **without** awaiting it — so `onArrive` lands at ~`CUT_FADE`, not
+`2 × CUT_FADE`. That ordering is better than the one the comment described: the
+wall appears behind black and is already in place as the cover clears, instead
+of popping in afterwards. Only the description changed.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Source parity | **19/19 MATCH** |
+| Luau validation | **19/19 valid**, 0 diagnostics |
+| Selene | 0 errors, 46 warnings — baseline |
+| Placeholder Parts | **0 remaining** |
+| Workspace diff | exactly 6 removed, 0 added |
+| `MenuStage` / `MainMenuWAll` | intact |
+| `SessionDisplay` | `8 × 5.4 × 0.2`, centre unchanged |
+
+Manifest: `docs/baseline/dev-instance-tree-after-s3b.csv`.
+
+---
+
 ## §3C — coordinator and removals (next)
+
+The shake question, answered from the code: **it does not survive.** `self.shake`
+is applied in exactly one place — `MenuController.luau:935-937`, inside
+`startAmbient`'s permanent `RenderStepped` loop, which §4 deletes. Every consumer
+is itself on the §4 removal list: `RedWash` (:995), the RGB title ghosts (:1014),
+the tape dropouts (:1032). It has no independent existence.
+
+The one call worth rescuing is `kick(1)` at `:707` inside `reject()` — that is
+**error feedback**, not horror dressing. `SessionWallController:setNote(…, isError)`
+plus `SoundBank.denied()` and `MenuOverlayController:setNotice(…, isError)`
+already replace it, so nothing is silently lost. The other two calls
+(`playPowerOn`, `playBoot`) are the horror boot itself.
+
+§3C also removes the duplicate `RoomState` / `LobbyError` listeners: both
+`MenuController` and `SessionWallController` currently subscribe, which is
+harmless while the old CRT screens still exist but must not survive the split.
 
 `TerminalScreen` becomes its own `SurfaceGui` under `PlayerGui` with
 `Adornee = MenuStage.SessionDisplay`, `AlwaysOnTop = false`, `Active = true`,
