@@ -315,3 +315,58 @@ C6 (match-scoped attribute reset) are unimplemented. The full retest matrix
 remains blocked: all \manage_studio\ play actions are PRO-gated, so no
 playtest can be started agent-side. \manage_logs\ is Basic, so console output
 can be captured the moment a human starts a Play session.
+---
+
+## Transfer record 2 — C1-fix + C3-C6 into place 110672791536316
+
+Source commit `f0d736d`. Serial transfer, one writer at a time, in the
+reviewer-mandated order, halting on the first parity failure. Automatic WEPPY
+sync not started; controlled direct transfer used. Play never started.
+
+Environment (re-verified at launch): placeId 110672791536316, gameId
+10640788131, placeVersion 340, Studio 0.734.0.7340915, state `edit`, one
+connected plugin client (255bf81c-4d7c-4849-89af-9c4a19e796c1, alias studio-1).
+
+### Result — 5/5 PASS, all byte-identical
+
+| # | File | Lines | Bytes | SHA-256 (Studio == local) | Luau |
+|---|---|---|---|---|---|
+| 1 | RoomService.luau | 503 | 15,378 | `8D14D4BB2009116B54CB3C96F39C6ACCCCC896CE2C392EAE0BAF1F183D273A33` | valid, 0 diags |
+| 2 | MachineFlow.luau | 523 | 17,276 | `9A94A0A79043C3C70B1886D4E68ECDBB8D3572435577258EFDEAFBE0AA345EE6` | valid, 0 diags |
+| 3 | Minefield.luau | 702 | 24,394 | `AE7C1865D2BBCA5260245CE33E1D8D929A573AFEA7B61863F47D34DAAC1475D1` | valid, 0 diags |
+| 4 | BirdHunting.luau | 730 | 26,150 | `4676A31DA9D4AC00F770DB01B477B7DFE6129E292345B73713056A067397ABFD` | valid, 0 diags |
+| 5 | KenopsiaClient.client.luau | 2,038 | 67,214 | `E4FA32CCD870180928B979F503CE5E335513850992E638F0FFB623E0ECA2B10A` | valid, 0 diags |
+
+Parser 0.730, `sourceOrigin: studio`, `versionVerified: true`,
+`truncated: false` on every validation. RoomService and BirdHunting both
+additionally reported a line-by-line comparison of NO_DIFFERENCE.
+
+### Method notes worth keeping
+
+- Each transfer ran in its own fresh context: read local -> hash -> push in ONE
+  `set_source` call -> full readback -> write readback BOM-free/LF to a temp
+  file -> SHA-256 both sides -> `validate`.
+- Two agents added a **staging guard** on their own initiative: they hashed
+  their reconstructed payload against the mirror *before* pushing, so the exact
+  bytes were proven correct pre-write rather than only detected post-write.
+- Oversized readbacks were range-fetched and rejoined in order (MachineFlow
+  1-200/201-400/401-523; Minefield 1-350/351-702), each seam joined with a
+  single LF.
+- `set_source` returns a **different** lineCount convention than
+  `get_source` (453 vs 503, 482 vs 523, 663 vs 702). It is not a corruption
+  signal and was ignored by instruction.
+- `Minefield.luau` line 18 is the one intentionally space-indented line in the
+  file (a comment continuation); it was preserved verbatim.
+- Post-check on every file: `git status --porcelain` empty and HEAD still
+  `f0d736d`, confirming the transfer never wrote to `studio-src`.
+
+### State
+
+Studio and `studio-src` are byte-identical for all five files at commit
+`f0d736d`. C1-fix, C3, C4, C5 and C6 are live. C7 was accepted earlier on the
+reviewer's Dashboard attestation.
+
+**Runtime tests remain the only outstanding verification.** Every
+`manage_studio` play action is PRO-gated, so no playtest can be started
+agent-side. `manage_logs` is Basic, so server and client console output can be
+captured as soon as a human starts a Play session.
