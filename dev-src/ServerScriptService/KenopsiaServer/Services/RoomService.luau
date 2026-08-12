@@ -239,7 +239,12 @@ local function quickJoin(player)
 		leave(player)
 		addMember(best, player)
 	else
-		createRoom(player, true)
+		-- Quick join must NOT silently host on a miss. Creating a room here made
+		-- "join something that exists" and "create something new" the same
+		-- action, so the client could never report an empty result honestly.
+		-- HOST SESSION -> PUBLIC ROOM is the explicit create path; this one only
+		-- ever joins.
+		fail(player, "NO OPEN ROOM IN THIS SERVER")
 	end
 end
 

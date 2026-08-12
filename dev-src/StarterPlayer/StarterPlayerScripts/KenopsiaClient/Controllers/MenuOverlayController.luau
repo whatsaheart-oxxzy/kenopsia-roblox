@@ -567,15 +567,52 @@ function MenuOverlayController:startSession()
 	self:go("TransitionToSession")
 	-- The landing actions must not remain clickable behind the moving camera.
 	self:setPanelVisible("Landing", false)
-	if self.scene then
-		self.scene.goToSession({ onArrive = function()
-			if self.state ~= "TransitionToSession" then return end
-			self.state = "SessionSelect"
-			if self.onEnterSession then self.onEnterSession() end
-		end })
-	elseif self.onEnterSession then
+
+	if not self.scene then
+		self:abortToLanding("SCENE UNAVAILABLE")
+		return
+	end
+
+	-- goToSession returns false when the scene is inactive or the camera/marker
+	-- is missing. Landing is already hidden at this point and onArrive will
+	-- never fire, so without this branch the player is left staring at the
+	-- street with no menu and no way back. Fail visibly, not silently.
+	local started = self.scene.goToSession({ onArrive = function()
+		if self.state ~= "TransitionToSession" then return end
 		self.state = "SessionSelect"
-		self.onEnterSession()
+		if self.onEnterSession then self.onEnterSession() end
+	end })
+
+	if not started then
+		self:abortToLanding("SESSION VIEW UNAVAILABLE")
+	end
+end
+
+-- Restore the landing screen after a failed transition and say so plainly.
+-- Neutral wording: this is an internal fault, not something the player did.
+function MenuOverlayController:abortToLanding(reason)
+	self.stack = {}
+	self.state = "Landing"
+	self:setPanelVisible("Landing", true)
+	self:focusFirst("Landing")
+	self:setNotice(reason, true)
+	SoundBank.denied()
+end
+
+function MenuOverlayController:setNotice(text, isError)
+	local panel = self.panels.Landing
+	local notice = panel and panel:FindFirstChild("ContentNotice")
+	if not notice then return end
+	if not self._noticeDefault then self._noticeDefault = notice.Text end
+	notice.Text = text or self._noticeDefault
+	notice.TextColor3 = isError and Theme.Street.Error or Theme.Street.Sage
+	if isError then
+		task.delay(4, function()
+			if notice.Parent then
+				notice.Text = self._noticeDefault
+				notice.TextColor3 = Theme.Street.Sage
+			end
+		end)
 	end
 end
 

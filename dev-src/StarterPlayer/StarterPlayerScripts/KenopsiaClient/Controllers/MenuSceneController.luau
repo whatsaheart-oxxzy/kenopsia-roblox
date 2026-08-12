@@ -182,18 +182,24 @@ local function applyPose(markerName, fov, animate)
 	state.tween:Play()
 end
 
+-- Returns true only if the move actually started. Callers hide UI on the way
+-- into a move, so a silent false here would leave the player on a bare scene
+-- with no menu and no way back. They must branch on the result.
 local function goTo(pose, opts)
 	opts = opts or {}
-	if not state.active then return end
-	if not takeCamera() then return end
+	if not state.active then return false end
+	if not takeCamera() then return false end
+	if not marker(pose == "Session" and "SessionCamera" or "LandingCamera") then
+		return false
+	end
 	state.pose = pose
 	local markerName = pose == "Session" and "SessionCamera" or "LandingCamera"
 	local fov = pose == "Session" and SESSION_FOV or LANDING_FOV
 
-	-- onArrive fires when the camera has actually finished moving, on every
-	-- path. Callers must not guess the duration with their own task.delay --
-	-- the reduced-motion route takes 2 x CUT_FADE, not MOVE_TIME, and a guessed
-	-- delay would reveal the wall mid-move for accessibility users.
+	-- onArrive fires when the camera has reached its destination, on every path.
+	-- Callers must not guess the duration with their own task.delay: the three
+	-- routes settle at wildly different times (instant, ~CUT_FADE, MOVE_TIME),
+	-- and a guessed delay would reveal the wall mid-move.
 	local arrive = opts.onArrive
 	local function fire()
 		if arrive then task.spawn(arrive) end
@@ -203,6 +209,12 @@ local function goTo(pose, opts)
 		applyPose(markerName, fov, false)
 		fire()
 	elseif reducedMotion() then
+		-- Reduced motion: fade to black over CUT_FADE, move the camera while
+		-- covered, then fade back. onArrive fires as soon as the camera has
+		-- MOVED -- i.e. after the fade-in and the cut, not after the fade-out.
+		-- That is deliberate: the wall then appears behind black and is already
+		-- there as the cover clears, instead of popping in afterwards. So the
+		-- arrival latency here is ~CUT_FADE, not 2 x CUT_FADE.
 		task.spawn(function()
 			hardCut(function() applyPose(markerName, fov, false) end)
 			fire()
@@ -220,10 +232,11 @@ local function goTo(pose, opts)
 			fire()
 		end
 	end
+	return true
 end
 
-function MenuSceneController.goToSession(opts) goTo("Session", opts) end
-function MenuSceneController.goToLanding(opts) goTo("Landing", opts) end
+function MenuSceneController.goToSession(opts) return goTo("Session", opts) end
+function MenuSceneController.goToLanding(opts) return goTo("Landing", opts) end
 function MenuSceneController.currentPose() return state.pose end
 
 -- OTHER PLAYERS --------------------------------------------------------------
