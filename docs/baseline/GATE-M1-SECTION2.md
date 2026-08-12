@@ -332,6 +332,81 @@ The six placeholder Parts remain untouched.
 
 ---
 
+## Parts D / E / F — `MenuSceneController` (COMPLETE, transferred)
+
+One new client module owns the 3D half of the menu, matching the split the spec
+defines: camera, local player hiding, menu lighting. It owns nothing in the 2D
+UI. Activation is observed from `KenopsiaMenuActive` and never set by the client.
+
+### D — camera flow
+
+- `Scriptable` takeover; `CameraType`, `CameraSubject` and `FieldOfView` saved
+  **once per activation**. Re-capturing after going Scriptable would save our own
+  state as the original and make release a no-op that strands the player on a
+  scripted camera.
+- Landing FOV **48**, session FOV **38**.
+- **One tween drives `CFrame` and `FieldOfView` together**, 0.85 s Cubic/InOut.
+  That is what keeps it reading as a single camera push rather than a pan with a
+  separate zoom riding on top.
+- Reduced motion (Animations off **or** Reduce Effects on): 0.15 s fade, hard
+  cut — never a shortened tween.
+- Full restore on release. If a character exists the camera is handed back to its
+  `Humanoid` rather than to a subject captured before the character spawned.
+- `reducedMotion()` accepts both `ReduceFlicker` (current key) and
+  `ReduceEffects` (the name the §3 UI pass renames it to), so the accessibility
+  path survives that rename instead of silently reverting to animated.
+
+### E — other players hidden locally
+
+`LocalTransparencyModifier` on every `BasePart` and `Decal` of every other
+player — client-side only, nothing changes on the server. Bound per character
+through `DescendantAdded`, so accessories and limbs that stream in after
+`CharacterAdded` stay hidden **without a per-frame sweep**, which the performance
+rules exclude.
+
+### F — lighting
+
+Client-side `ColorCorrectionEffect` created on engage, destroyed on release
+(saturation −0.28, contrast +0.08, brightness −0.02, cool tint).
+
+Three muted practicals under `MenuStage.MenuLights`, palette-aligned, no neon and
+no decorative red:
+
+| Lamp | Position | Colour | Brightness / Range |
+|---|---|---|---|
+| `Lamp_Character` | `(131.5, 9.5, 14.0)` | signal amber `210,169,74` | 1.6 / 24 |
+| `Lamp_Landing` | `(139.0, 10.0, 14.0)` | off-white `216,208,190` | 1.2 / 18 |
+| `Lamp_SessionWall` | `(139.0, 9.0, 23.0)` | faded denim `96,114,122` | 1.4 / 20 |
+
+**No global time-of-day change.** `Lighting` verified byte-identical to baseline
+afterwards: `ClockTime 14.5`, `Brightness 3`, `GlobalShadows true`,
+`FogEnd 100000`.
+
+### Tooling hardening
+
+The registration check is now **bidirectional**: every `dev-src` file must appear
+in `kenopsia-dev.project.json`, and every project.json `$path` must exist on
+disk. That closes the gap class that let `MenuPresenceService` go unregistered —
+an unregistered file now fails loudly instead of silently sitting outside the
+parity run.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Source parity | **17/17 MATCH** |
+| Luau validation | **17/17 valid**, 0 diagnostics |
+| Selene | 0 errors, 46 warnings — unchanged from baseline |
+| Registered files | 17/17, all `$path` targets exist |
+| Anchored character parts | **0 of 13** |
+| Template `PrimaryPart` | **`HumanoidRootPart`** |
+| `Lighting` vs baseline | unchanged |
+| Placeholder Parts | **6 present, untouched** |
+
+Manifest: `docs/baseline/dev-instance-tree-after-s2f.csv` (1,028 instances).
+
+---
+
 ## Remaining in §2
 
 1. Promote `Workspace.Rig` → `StarterPlayer.StarterCharacter` (move + rename).
