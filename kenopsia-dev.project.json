@@ -37,6 +37,10 @@
 
     "StarterPlayer": {
       "$className": "StarterPlayer",
+      "StarterCharacter": {
+        "$className": "Model",
+        "Animate": { "$path": "dev-src/StarterPlayer/StarterCharacter/Animate.client.luau" }
+      },
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "KenopsiaClient": {
@@ -54,14 +58,6 @@
             "Theme":     { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Theme.luau" }
           }
         }
-      }
-    },
-
-    "Workspace": {
-      "$className": "Workspace",
-      "Rig": {
-        "$className": "Model",
-        "Animate": { "$path": "dev-src/Workspace/Rig/Animate.client.luau" }
       }
     }
   }
