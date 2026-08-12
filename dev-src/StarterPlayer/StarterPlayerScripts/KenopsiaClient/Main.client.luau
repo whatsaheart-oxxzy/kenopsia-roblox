@@ -45,7 +45,7 @@ if not sceneOk then warn("[Kenopsia] menu scene disabled this session") end
 -- so the new panel and the legacy CRT settings screen cannot disagree while
 -- both exist during the §3 transition. Appliers delegate to the methods that
 -- already own each effect rather than reimplementing them.
-local overlayOk, overlay = xpcall(function()
+local overlayOk = xpcall(function()
 	return MenuOverlayController.new({
 		scene = MenuSceneController,
 		settings = menu.settings,
