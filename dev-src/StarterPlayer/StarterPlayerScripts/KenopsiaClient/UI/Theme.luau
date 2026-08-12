@@ -13,6 +13,36 @@ Theme.Color = {
 	White      = Color3.fromHex("D8FFE8"),
 }
 
+-- STREET RETRO (Gate M1 §3).
+-- The palette for the new 3D main menu. Deliberately separate from Theme.Color
+-- above: the old CRT screens still render until the §3 removal pass, and
+-- overwriting the phosphor palette in place would restyle them mid-flight.
+-- No decorative red anywhere -- Error is burnt orange, and it is the only warm
+-- signal besides Amber.
+Theme.Street = {
+	Ink      = Color3.fromHex("171A18"), -- deepest ground
+	Asphalt  = Color3.fromHex("292C2A"), -- raised surface
+	OffWhite = Color3.fromHex("D8D0BE"), -- primary text
+	Sage     = Color3.fromHex("6F8870"), -- secondary text, rules
+	Amber    = Color3.fromHex("D2A94A"), -- focus / active
+	Denim    = Color3.fromHex("60727A"), -- cool accent, disabled
+	Error    = Color3.fromHex("B56A45"), -- burnt orange, never red
+}
+
+-- Hard, flat surfaces: minimal rounding, crisp outlines, offset drop shadows.
+-- No glass, no blur, no neon.
+Theme.StreetRadius = { None = 0, Soft = 2 }
+Theme.StreetStroke = { Hairline = 1, Normal = 2 }
+Theme.StreetShadow = { Offset = 3, OffsetLarge = 4 }
+
+-- Interactive sizing. Roblox's own floor is 44px; the menu holds itself to 48,
+-- and primary actions to 56-64.
+Theme.Touch = { Min = 48, Action = 56, ActionLarge = 64 }
+
+-- Denk One for display type, Code for status lines and room codes.
+Theme.TitleFont = Enum.Font.DenkOne
+Theme.MonoFont = Enum.Font.Code
+
 Theme.Font = Enum.Font.Code
 Theme.Text = { Title = 96, Heading = 58, Body = 38, Small = 28, Tiny = 22 }
 Theme.Pad  = { XS = 6, S = 12, M = 20, L = 34, XL = 56 }

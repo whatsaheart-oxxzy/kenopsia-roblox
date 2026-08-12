@@ -50,6 +50,7 @@
           "Controllers": {
             "$className": "Folder",
             "MenuController":  { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuController.luau" },
+            "MenuOverlayController": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuOverlayController.luau" },
             "MenuSceneController": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuSceneController.luau" },
             "TrialController": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/TrialController.luau" }
           },
