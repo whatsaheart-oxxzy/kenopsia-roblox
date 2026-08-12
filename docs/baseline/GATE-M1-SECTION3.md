@@ -267,7 +267,89 @@ Manifest: `docs/baseline/dev-instance-tree-after-s3b.csv`.
 
 ---
 
-## §3C — coordinator and removals (next)
+## §3C — coordinator and removals (COMPLETE, transferred)
+
+`MenuController`: **1,087 → 240 lines**, 847 removed.
+
+It now owns exactly two things: the CRT monitor surface the **trial** screens
+live on plus the `show()` contract `TrialController` calls, and the settings
+appliers the overlay delegates to. Landing belongs to `MenuOverlayController`,
+the session flow to `SessionWallController`, camera and character to
+`MenuSceneController`.
+
+### Removed from source, not merely made unreachable
+
+Horror boot and "5 OF 4 FOUND" · the forced six-second content-warning sequence ·
+`RedWash` · `BloodDrips` · `BleedTop` / `BleedBottom` · VHS chrome (`REC`, `SP`,
+tracking, corrupted dates) · RGB title ghosts · tape dropouts · random camera
+kicks and the shake they drove · 12 Hz static swapping · **the permanent
+`RenderStepped` loop** that ran all of it every frame whether or not anything was
+visible.
+
+Verified absent across the whole client: `shake`, `kick`, `startAmbient`,
+`playPowerOn`, `playBoot`, `showWarning`, `RedWash`, `BloodDrips`, `BleedTop`,
+`BleedBottom`, `TapeDamage`, `VhsChrome`, `StaticPreload`, `enterMainMenu`.
+**No `RenderStepped` connection remains anywhere in the client** — the only
+textual hit is the comment recording its removal.
+
+### Instances deleted, each confirmed by re-query
+
+`Overlay.RedWash`, `Overlay.BloodDrips`, `Overlay.BleedTop`,
+`Overlay.BleedBottom`, `Overlay.TapeDamage`, `Content.VhsChrome`,
+`Screens.Boot`, `Screens.ContentWarning`, and
+`Background.StaticPreload` (the 8-image pool the 12 Hz swapper fed from — the
+code was gone but the instances remained, caught by a place-wide sweep rather
+than assumed).
+
+Kept deliberately: `VigTop/Bottom/Left/Right` and `PhosphorWash`, which are CRT
+framing for the trial screens and are still driven by `applyIntensity`.
+
+Place manifest: **998 baseline → 1,028 peak → 931**.
+
+### The shake — answered
+
+Removed, not kept. It was applied in exactly one place, inside the deleted
+`RenderStepped` loop, and every consumer it modulated (`RedWash`, RGB ghosts,
+tape dropouts) is itself on the removal list. Its one legitimate use — feedback
+on a rejected action — is served by `MenuOverlayController:setNotice` and
+`SessionWallController:setNote`.
+
+### Duplicate listeners resolved
+
+`MenuController` no longer subscribes to `LobbyError` at all, and its `RoomState`
+handler is trial-path only: `Starting` → countdown, `Playing` → trial screen,
+`Waiting` → drop the monitor. Roster, room code, visibility and ready state
+belong to `SessionWallController`. **One listener per concern** instead of two
+racing to render the same payload.
+
+### The CRT frame is gone from the menu without deleting the trial surface
+
+The monitor starts hidden and is raised only by `show()`. The landing view is the
+3D street and nothing else, while the trial screens keep the surface they need.
+No boot sequence, no content-warning gate, no power-on animation — the player is
+in the street menu immediately.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Source parity | **19/19 MATCH** |
+| Luau validation | **19/19 valid**, 0 diagnostics |
+| Selene | 0 errors, **45 warnings** (was 46) |
+| Selene in Kenopsia-authored files | **zero** — all 45 are in Roblox's stock `Animate` |
+| Horror instances place-wide | **all absent** |
+| `TrialController` contract | `show()`, `focusFirst`, `.screens` all present |
+
+### Left in place, proposed not taken
+
+The `MainMenu`, `Settings`, `Credits`, `Create` and `Join` Frames are now dead —
+nothing shows them. They are **not** on the §4 removal list, so deleting them is
+a separate cleanup for the reviewer to authorise rather than something to take
+unilaterally.
+
+---
+
+## §3D — cursor (next)
 
 The shake question, answered from the code: **it does not survive.** `self.shake`
 is applied in exactly one place — `MenuController.luau:935-937`, inside
