@@ -1,3 +1,9 @@
+> **SUPERSEDED FOR LICENSING — see `docs/assets/ASSET-LEDGER.md`.**
+> The CC0 claim in the "Licensing" section below is **void**: the `NOTES.txt` it
+> cites does not exist, and the one licence instrument that does exist
+> (Pizza Doggy's Game Assets) forbids redistribution, which CC0 permits. Do not
+> cite this file for licence questions. Verified at Gate 0, 2026-08-12.
+
 # Asset import list
 
 Everything below already exists in `C:\Users\Asus\Documents\Retro`. Nothing here needs to be modelled from scratch.
