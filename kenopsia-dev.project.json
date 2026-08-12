@@ -25,6 +25,7 @@
         "Main": { "$path": "dev-src/ServerScriptService/KenopsiaServer/Main.server.luau" },
         "Services": {
           "$className": "Folder",
+          "MenuPresenceService": { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/MenuPresenceService.luau" },
           "PartyRegistry":   { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/PartyRegistry.luau" },
           "PlaylistService": { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/PlaylistService.luau" },
           "RoomService":     { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/RoomService.luau" },

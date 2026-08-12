@@ -84,6 +84,10 @@ local function engage(player, character)
 		autoRotate = humanoid.AutoRotate,
 		displayDistanceType = humanoid.DisplayDistanceType,
 		rootAnchored = root.Anchored,
+		-- Capture the ACTUAL prior value. Restoring a hardcoded `true` would
+		-- silently re-enable jumping for a character that had it disabled for
+		-- some other reason, which is a state change disguised as a restore.
+		jumpingEnabled = humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping),
 		collide = {},
 	}
 	for _, part in partsOf(character) do
@@ -138,7 +142,9 @@ local function release(player)
 	humanoid.JumpHeight = saved.jumpHeight
 	humanoid.AutoRotate = saved.autoRotate
 	humanoid.DisplayDistanceType = saved.displayDistanceType
-	pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true) end)
+	pcall(function()
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, saved.jumpingEnabled)
+	end)
 end
 
 -- Public: the trial/teleport path calls this to take the character back.
