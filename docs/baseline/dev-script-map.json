@@ -10,6 +10,7 @@
     "ServerScriptService/KenopsiaServer/Services/TrialTarget.luau":  "ServerScriptService.KenopsiaServer.Services.TrialTarget",
     "StarterPlayer/StarterCharacter/Animate.client.luau":  "StarterPlayer.StarterCharacter.Animate",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.MenuController",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuSceneController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.MenuSceneController",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/TrialController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.TrialController",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Main.client.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Main",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Motion.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.UI.Motion",
