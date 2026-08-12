@@ -77,8 +77,10 @@ Full tree (998 instances): `docs/baseline/dev-instance-tree.csv`.
 
 ```
 Workspace          KenopsiaRuntime{ActiveMap, ActiveEffects, Debug}, Audios,
-                   Terrain, CameraPart, SpawnLocation, Baseplate, Camera,
-                   Floor, Wall, Rig, MainMenuWAll, Start, Settings, Credits
+   (17 children)   Terrain, CameraPart, SpawnLocation, Baseplate, Camera,
+                   Floor, Wall, Rig, MainMenuWAll,
+                   Start, Settings, Credits,
+                   Host Session, Join Session, Public Session
 StarterGui         KenopsiaGui{Components, Templates, TerminalScreen,
                    Backdrop, Monitor}, KenopsiaCursor{Cursor}
 Lighting           Sky, SunRays, Atmosphere, Bloom, DepthOfField
@@ -119,23 +121,56 @@ Children: `Head`, `Torso`, `Left Arm`, `Right Arm`, `Left Leg`, `Right Leg`,
 An anchored `Torso` on a `StarterCharacter` would freeze the character's physics
 outright. Both must be corrected before the rig is promoted.
 
-### 3.3 Menu button parts — **three found, spec says six**
+### 3.3 Menu button parts — **six found**, as specified
 
-| Part | Anchored | Transparency | Color | Size |
-|---|---|---:|---|---|
-| `Workspace.Start` | **false** | 0 | `(163,162,165)` | `(5, 1, 0.5)` |
-| `Workspace.Settings` | **false** | 0 | `(163,162,165)` | `(5, 1, 0.5)` |
-| `Workspace.Credits` | **false** | 0 | `(163,162,165)` | `(5, 1, 0.5)` |
+`Workspace` has **17 direct children**. All six placeholder button Parts are
+present, in two groups of three:
 
-All three are unanchored and would fall on the first physics step. They match the
-spec's description of *"unbefestigte weiße Button-Parts"* — but there are **three
-of them, not six**. `Workspace.MainMenuWAll` contains only four Parts, **all
-named `Wall`** (identically named, therefore unaddressable by index — the same
-trap as MainGame's eight identical `Plate` parts).
+| Part | Group | Position | Size | Anchored | CanCollide | Color |
+|---|---|---|---|---|---|---|
+| `Start` | Landing | `(138.9, 8.5, 15.15)` | `5 × 1 × 0.5` | **false** | true | `(163,162,165)` |
+| `Settings` | Landing | `(138.9, 5.5, 15.15)` | `5 × 1 × 0.5` | **false** | true | `(163,162,165)` |
+| `Credits` | Landing | `(138.9, 2.5, 15.15)` | `5 × 1 × 0.5` | **false** | true | `(163,162,165)` |
+| `Public Session` | Session wall | `(138.9, 7.5, 25.15)` | `5 × 1 × 0.5` | **false** | true | `(163,162,165)` |
+| `Join Session` | Session wall | `(138.9, 5.5, 25.15)` | `5 × 1 × 0.5` | **false** | true | `(163,162,165)` |
+| `Host Session` | Session wall | `(138.9, 3.5, 25.15)` | `5 × 1 × 0.5` | **false** | true | `(163,162,165)` |
 
-**Discrepancy flagged, not assumed away.** Either the count in the spec is
-approximate, or three further button parts are expected and absent. Confirm
-before removal so nothing is deleted that the spec still wants.
+All six are **bare Parts**: unanchored, collidable, `Orientation (0,0,0)`, and
+carrying **no GUI, no ProximityPrompt and no ClickDetector**. Unanchored means
+they fall on the first physics step. They are placeholders, not controls.
+
+Layout: landing trio at `Z = 15.15` on 3-stud vertical spacing; session-wall trio
+at `Z = 25.15` on 2-stud spacing; all share `X = 138.9`.
+
+**This confirms the spec's camera numbers were derived from these parts.** The
+`SessionCamera` look-target `(138.9, 5.5, 25.15)` is exactly `Join Session`'s
+position — the middle of the wall trio — which pins where `SessionDisplay` must
+sit.
+
+Full 12-component `CFrame` composition reference:
+`docs/baseline/dev-menu-button-cframes.csv`.
+
+> **Correction.** An earlier revision of this section reported "three found, spec
+> says six" and raised a discrepancy. That was wrong. The Studio scan was
+> correct and `dev-instance-tree.csv` contained all six the whole time; the
+> defect was in this summary, which dropped the three `* Session` parts. No
+> discrepancy exists.
+
+**Separate, real issue:** `Workspace.MainMenuWAll` contains four Parts **all
+named `Wall`**. Identically named siblings are unaddressable by path — a
+property read on `Workspace.MainMenuWAll.Wall` always resolves the first one, so
+the other three cannot be read or written individually. Verified: all four
+returned identical values. They must be given unique names in §2 before anything
+can be done to them individually.
+
+### 3.3a Reading `CFrame` correctly
+
+`manage_properties_get` returns `CFrame` as a **12-element array**
+`[x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22]`, not an object with
+`.x/.y/.z`. Reading it like a `Vector3` yields **silent zeros** rather than an
+error — this produced a first capture where all six parts appeared to sit at the
+origin. `Position` and `Orientation` do return `{x, y, z}` objects. Any future
+capture must destructure `CFrame` by index.
 
 ### 3.4 `TerminalScreen` — renders nowhere today
 
@@ -225,10 +260,32 @@ spec named only accessories, but clothing is the same class of asset.
 
 **Gate M1 §1: PASS. No DEV mutation performed.**
 
-Carried into §2, for reviewer confirmation first:
+Reviewer verdict: **Gate M1 §1 — PASS**, conditional on the §3.3 documentation
+correction, which is applied above.
 
-1. The **three vs six** button-part discrepancy (§3.3).
-2. `Workspace.Rig` needs `PrimaryPart` → `HumanoidRootPart` and
+Carried into §2 as work items (no open questions remain):
+
+1. `Workspace.Rig` needs `PrimaryPart` → `HumanoidRootPart` and
    `Torso.Anchored` → false before it can serve as `StarterCharacter` (§3.2).
-3. Disabling the "Real" materials requires reassigning `Workspace.Wall` and
+2. Disabling the "Real" materials requires reassigning `Workspace.Wall` and
    `Workspace.Floor` to `RETRO_*` variants, not only touching the variants (§3.6).
+3. `MainMenuWAll`'s four identically-named `Wall` Parts must be uniquely renamed
+   before any of them can be addressed individually (§3.3).
+4. `CameraPart` must become an invisible, non-colliding, non-querying marker
+   with no cast shadow (§3.1).
+
+### §2 execution order, as directed
+
+Replace before delete. Nothing is removed until its replacement is fully in
+place:
+
+1. Capture the six placeholder `CFrame`s as the composition reference — **done**,
+   `docs/baseline/dev-menu-button-cframes.csv`.
+2. Build the minimal 2D landing menu (`START`, `SETTINGS`, `CREDITS`).
+3. Build the wall `SurfaceGui` on the new `SessionDisplay`
+   (`HOST SESSION`, `JOIN SESSION`, `PUBLIC SESSION`).
+4. **Only then** remove the six raw placeholder Parts.
+5. Keep `MainMenuWAll`; rename its four `Wall` Parts uniquely.
+6. Create no missing Parts — all six already exist.
+7. Keep the smooth camera move (0.85 s Cubic/InOut, CFrame and FOV together),
+   with the reduced-motion hard cut retained as the accessibility path.
