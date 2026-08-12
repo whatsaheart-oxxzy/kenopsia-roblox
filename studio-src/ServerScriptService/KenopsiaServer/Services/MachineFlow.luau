@@ -199,9 +199,23 @@ end
 
 -- Lobby presentation while Waiting: roulette, then the info/ready panel.
 local function preFlow(room)
+	-- C4: the lobby pre-flow runs while the room is still Waiting, so there is
+	-- no sessionId yet and the Playing-gated setter cannot be used. room.token
+	-- is the Waiting-phase epoch; capture it before the first yield and let
+	-- RoomService reject the write if a countdown - or a whole match - moved the
+	-- room on while this thread was parked in the task.wait below.
+	local waitingToken = room.token
 	local trial, icons, chosenIdx = runSelection(room)
-	if not trial then return end
+	if not trial then
+		-- P3 fix: clear the flag on the way out. The boot watchdog only spawns
+		-- preFlow when `not room.preShown`, so leaving it set here would
+		-- permanently disable the lobby roulette for the life of the server
+		-- once no trial is ready.
+		room.preShown = nil
+		return
+	end
 
+	RoomServiceRef.setWaitingStage(waitingToken, "Selecting")
 	room.preSent = room.preSent or {}
 	for _, m in room.members do room.preSent[m.userId] = true end
 	tellRoom(room, { kind = "selection", icons = icons, chosen = chosenIdx })
@@ -226,6 +240,11 @@ local function runMatch(room)
 	local outcome = "completed" -- completed | cancelled | no-trial | error
 	local trial, ctx = nil, nil
 	local cleaned = false
+	-- Latches once the match has genuinely finished and its scores are written.
+	-- From that point the result is immutable: a player leaving during the
+	-- final-board presentation must not retroactively relabel a completed match
+	-- as cancelled.
+	local scoresCommitted = false
 
 	-- Must be safe before ctx exists: the no-trial route reaches it too.
 	local function cleanup()
@@ -268,7 +287,24 @@ local function runMatch(room)
 			activeByUser[uid] = ctx
 		end
 
+		-- C6: KenopsiaSessionScore/Wins are MATCH-scoped, not server-scoped.
+		-- Zero them once here, for this match's participant snapshot. Without
+		-- this they accumulate for the lifetime of the server and the lobby
+		-- roster reads as a career total instead of this match's result.
+		-- REVISIT WITH THE THREE-TRIAL PLAYLIST (REQ-REG-01): once a session
+		-- runs three shuffled trials these counters must carry ACROSS the
+		-- trials of one session, so the reset has to stay HERE, before the
+		-- first trial, and must never move into a per-trial loop.
+		for _, uid in ctx.participantUserIds do
+			local plr = Players:GetPlayerByUserId(uid)
+			if plr then
+				plr:SetAttribute("KenopsiaSessionScore", 0)
+				plr:SetAttribute("KenopsiaSessionWins", 0)
+			end
+		end
+
 		-- BRIEFING
+		RoomServiceRef.setStage(ctx.sessionId, "Briefing")
 		tell(ctx, { kind = "status", lines = {
 			"All subjects successfully briefed.",
 			"Likelyhood of subjects understanding briefing: 90%",
@@ -281,6 +317,7 @@ local function runMatch(room)
 		if not hold(ctx, 6.5) then return end
 
 		-- TRIAL
+		RoomServiceRef.setStage(ctx.sessionId, "Trial")
 		local totals = {}
 		local rounds = trial.roundsForPlayerCount(#ctx.participantUserIds)
 		for roundIndex = 1, rounds do
@@ -332,9 +369,11 @@ local function runMatch(room)
 					})
 				end
 				table.sort(standings, function(a, b) return a.score > b.score end)
+				RoomServiceRef.setStage(ctx.sessionId, "Score")
 				tell(ctx, { kind = "score", board = standings })
 				if not hold(ctx, 5.5) then return end
 				tell(ctx, { kind = "hide" })
+				RoomServiceRef.setStage(ctx.sessionId, "Trial")
 			end
 		end
 
@@ -342,6 +381,7 @@ local function runMatch(room)
 
 		-- FINAL SCORE: the ranked cumulative board is the result. No separate
 		-- winner banner.
+		RoomServiceRef.setStage(ctx.sessionId, "FinalScore")
 		local board = {}
 		for _, m in room.members do
 			table.insert(board, {
@@ -364,6 +404,10 @@ local function runMatch(room)
 			end
 		end
 		tell(ctx, { kind = "score", board = board })
+		-- Scores are written and the board is out. The match is finished; the
+		-- hold below is presentation only, so nothing after this point may
+		-- downgrade the result.
+		scoresCommitted = true
 		if trial.module.park then pcall(trial.module.park) end
 		hold(ctx, Config.Match.FinalBoardHold)
 	end, debug.traceback)
@@ -372,10 +416,13 @@ local function runMatch(room)
 	cleanup()
 	if not ok then
 		outcome = "error"
-	elseif outcome == "completed" and ctx and ctx.cancelled() then
+	elseif outcome == "completed" and not scoresCommitted and ctx and ctx.cancelled() then
 		-- hold() returns false on cancellation and the body returns cleanly,
 		-- so `ok` is true for an aborted session. Detect it explicitly rather
 		-- than mislabelling it "match complete".
+		-- Gated on scoresCommitted: once the final board is out the match is
+		-- finished, and someone quitting during the 12s presentation hold must
+		-- not turn a played-out match into "cancelled".
 		outcome = "cancelled"
 	end
 

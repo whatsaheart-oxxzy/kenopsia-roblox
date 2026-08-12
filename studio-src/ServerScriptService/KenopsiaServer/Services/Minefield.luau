@@ -174,14 +174,21 @@ function Minefield.init()
 		local st = current
 		if not st then return end
 		if payload.trialId ~= "minefield" or payload.action ~= "pulse" then return end
-		-- C1.a: the round must still own this input. Reject unless the same
-		-- round is active, its room is still Playing, and input is open (only
-		-- true between GO and round end). A stale packet from a previous round
-		-- or an aborted match dies here instead of mutating live state.
+		-- C1.a: the round must still own this input.
+		--   acceptInput  - open only between GO and round end.
+		--   phase        - kills packets belonging to an aborted match.
+		--   sessionId    - the round's snapshot must still match the room's.
+		--   roundToken   - MANDATORY. The server hands this token to clients in
+		--                  the round's role payload and refuses any pulse that
+		--                  does not echo it exactly, so a packet replayed from
+		--                  an earlier round is rejected even if it arrives while
+		--                  a later round is live and accepting input.
+		-- The token is a freshness check, not an authorisation check: it does
+		-- not replace the role, membership, phase and rate checks around it.
 		if not st.acceptInput then return end
 		if not st.room or st.room.phase ~= "Playing" then return end
-		if st.sessionId and st.room.sessionId ~= st.sessionId then return end
-		if payload.roundToken ~= nil and payload.roundToken ~= st.roundToken then return end
+		if st.room.sessionId ~= st.sessionId then return end
+		if payload.roundToken ~= st.roundToken then return end
 		local ps = st.state[player.UserId]
 		if not ps or ps.done then return end
 		-- ein Druck = ein Puls; Server-Cooldown gegen Spam
@@ -337,7 +344,10 @@ local function runRoundInner(room, roundIndex, guard)
 		for _, mm in room.members do
 			local plr = Players:GetPlayerByUserId(mm.userId)
 			if plr then
-				MachineState:FireClient(plr, { kind = "role", role = "runner", frozen = true, camDir = g.dir, camStyle = "top" })
+				-- C1.a: hand this round's token to the client. KenopsiaClient
+				-- stores it and echoes it on every pulse; the TrialInput guard
+				-- rejects anything that does not match.
+				MachineState:FireClient(plr, { kind = "role", role = "runner", frozen = true, camDir = g.dir, camStyle = "top", roundToken = roundState.roundToken })
 			end
 		end
 	end
@@ -674,10 +684,16 @@ function Minefield.runRound(room, roundIndex)
 	end, debug.traceback)
 	if guard.cleanup then pcall(guard.cleanup) end
 	if not ok then
+		-- Teardown has already run, so it is safe to re-raise. Propagate the
+		-- ORIGINAL traceback: MachineFlow's finalizer then sets outcome="error"
+		-- and aborts the match. Cancellation is a normal return path and never
+		-- arrives here - only genuine exceptions do.
+		-- The first cut swallowed these and returned zeroed scores. That was
+		-- wrong: MachineFlow saw a clean round, so a broken Dead Zone repeated
+		-- the same throw for all 10 rounds (~45s of black screen) and then
+		-- reported a final board of zeros with no player-visible error.
 		warn("[DZ] round errored: " .. tostring(result))
-		local scores = {}
-		for _, mm in room.members do scores[mm.userId] = 0 end
-		return scores
+		error(result, 0)
 	end
 	return result
 end

@@ -188,6 +188,17 @@ setLookSpeed(lookSpeedLevel)
 local session = 0
 local myReady = false
 local maxPlayers = 4
+-- C3: true while this client is on the bench (present in RoomState.spectators,
+-- absent from members). Module scope because updateReadyVisual() is also called
+-- from showInfo(), which never sees a RoomState payload.
+local amSpectator = false
+-- Captured on first use so the spectator notice can be undone without assuming
+-- what the GUI ships in TopTicker.Text.
+local tickerDefaultText = nil
+-- C1.a: this round's server-issued token. Arrives on the role payload and must
+-- be echoed on every TrialInput packet; the server rejects anything that does
+-- not match. Cleared on role="none" so a stale token can never be replayed.
+local trialRoundToken = nil
 local pendingRunner = false
 
 -- SESSION SETTINGS + UI AUDIO -----------------------------------------------
@@ -798,7 +809,12 @@ local function firePulse()
 	if now < pulseReadyAt then return end
 	pulseReadyAt = now + 0.9
 	if TrialInput then
-		TrialInput:FireServer({ trialId = "minefield", action = "pulse" })
+		-- C1.a: echo this round's token. Without it the server rejects the pulse.
+		TrialInput:FireServer({
+			trialId = "minefield",
+			action = "pulse",
+			roundToken = trialRoundToken,
+		})
 	end
 	sfx("Click")
 	local char = player.Character
@@ -1211,9 +1227,32 @@ end)
 -- READY PANEL ---------------------------------------------------------------
 
 local function updateReadyVisual()
+	-- C3: three states now - DIM while benched, AMBER when ready, PHOSPHOR when
+	-- seated and not ready. DIM is the same inert colour vacant roster rows use.
+	local colour = amSpectator and DIM or (myReady and AMBER or PHOSPHOR)
 	local stroke = info.Btn_READY:FindFirstChildOfClass("UIStroke")
-	info.Btn_READY.TextColor3 = myReady and AMBER or PHOSPHOR
-	if stroke then stroke.Color = myReady and AMBER or PHOSPHOR end
+	info.Btn_READY.TextColor3 = colour
+	if stroke then stroke.Color = colour end
+	-- FindFirstChildOfClass is not recursive, so the stroke above never reaches
+	-- Btn_READY.Inner.UIStroke; paint it too or the dimming reads wrong.
+	local inner = info.Btn_READY:FindFirstChild("Inner")
+	local innerStroke = inner and inner:FindFirstChildOfClass("UIStroke")
+	if innerStroke then innerStroke.Color = colour end
+	-- A benched player must not fire ReadyReq, and on console must not hold
+	-- gamepad focus either: MachineLayout.focusScreen filters candidates on
+	-- .Selectable, NOT .Active, so clearing Active alone would park console
+	-- selection on a dead button and re-select it on every Info.Visible change.
+	info.Btn_READY.Active = not amSpectator
+	info.Btn_READY.Selectable = not amSpectator
+	if amSpectator and GuiService.SelectedObject == info.Btn_READY then
+		GuiService.SelectedObject = info:FindFirstChild("Btn_SETTINGS")
+	end
+	-- MachineLayout parents an A-button glyph named PadHint into this button on
+	-- console; hide it while the button is dead so it stops advertising a prompt.
+	local hint = info.Btn_READY:FindFirstChild("PadHint")
+	if hint then
+		hint.Visible = (not amSpectator) and machine:GetAttribute("Platform") == "Console"
+	end
 end
 
 local function updateRoster(members)
@@ -1258,6 +1297,11 @@ local function updateRoster(members)
 end
 
 info.Btn_READY.Activated:Connect(function()
+	-- C3: guard BEFORE sfx, so a benched player gets no confirmation sound for
+	-- a press that does nothing. The server already rejects it via LobbyError,
+	-- but this client never connects to LobbyError, so that rejection is
+	-- invisible today.
+	if amSpectator then return end
 	sfx("Submit")
 	ReadyReq:FireServer(not myReady)
 end)
@@ -1266,8 +1310,35 @@ end)
 RoomState.OnClientEvent:Connect(function(p)
 	if type(p) ~= "table" then return end
 	maxPlayers = p.maxPlayers or 4
+	-- C3: seat vs bench is decided from THIS payload only, never from stale
+	-- state. p.spectators is an ARRAY OF USERIDS (RoomService.publicState builds
+	-- it with table.insert over the spectator set), NOT a map - never index it
+	-- by UserId.
+	local inMembers = false
 	for _, m in p.members or {} do
-		if m.userId == player.UserId then myReady = m.ready == true end
+		if m.userId == player.UserId then
+			inMembers = true
+			myReady = m.ready == true
+		end
+	end
+	local inSpectators = false
+	for _, id in p.spectators or {} do
+		if id == player.UserId then inSpectators = true end
+	end
+	if not inMembers then
+		-- The old loop only wrote myReady from inside the members scan, so a
+		-- benched player kept whatever value it held when last seated and the
+		-- button could stay lit AMBER. A bench player holds no ready flag.
+		myReady = false
+	end
+	amSpectator = inSpectators and not inMembers
+	-- TopTicker is a TextLabel under Info that no script writes, so it can carry
+	-- the notice with no contention. NextLabel cannot: showInfo() typewrites
+	-- into it from a task.spawn and would overwrite this within ~1s.
+	local ticker = info:FindFirstChild("TopTicker")
+	if ticker then
+		if tickerDefaultText == nil then tickerDefaultText = ticker.Text end
+		ticker.Text = amSpectator and "SPECTATING // NEXT MATCH" or tickerDefaultText
 	end
 	updateRoster(p.members or {})
 	updateReadyVisual()
@@ -1619,6 +1690,19 @@ MachineState.OnClientEvent:Connect(function(p)
 			return
 		end
 		spectateCF = nil
+		-- C1.a: adopt this round's token, or drop it when the round ends.
+		trialRoundToken = p.roundToken
+		if p.role == "none" then
+			-- C5 companion: CountText is written by the "count" handler and
+			-- hidden ONLY by the "go" handler. An aborted leg now returns
+			-- before GO, so without this the frozen "3"/"2"/"1" stays on screen
+			-- indefinitely. hideAll() does not touch CountText - it is a
+			-- sibling under `machine`, not under the screens hideAll clears -
+			-- so MachineFlow's {kind="hide"} does not clear it either. Both
+			-- Bird's C5 bails and Dead Zone's C1 bails end with role="none".
+			local c = machine:FindFirstChild("CountText")
+			if c then c.Visible = false end
+		end
 		sniperActive = p.role == "sniper"
 		if not sniperActive then setHunterSetup(false) end
 		setSniperRig(sniperActive)

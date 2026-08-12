@@ -37,6 +37,10 @@ local room = {
 	countdown = nil,
 	token = 0,
 	sessionId = nil,
+	-- C4: observable sub-phase. nil whenever the room is idle; "Selecting" is
+	-- written by the lobby pre-flow while Waiting, the rest by MachineFlow while
+	-- Playing. Never assigned directly outside the two setters below.
+	stage = nil,         -- nil | "Selecting" | "Briefing" | "Trial" | "Score" | "FinalScore"
 	members = {},        -- ordered: { userId, displayName, ready }
 	spectators = {},     -- [userId] = true; joined during a match
 	participants = nil,  -- snapshot: { [userId] = true } taken at match start
@@ -91,6 +95,7 @@ local function publicState()
 		isPublic = true,
 		hostUserId = room.members[1] and room.members[1].userId or nil,
 		phase = room.phase,
+		stage = room.stage,
 		countdown = room.countdown,
 		maxPlayers = Config.Room.MaxPlayers,
 		members = members,
@@ -167,6 +172,7 @@ end
 local function toWaiting()
 	room.phase = "Waiting"
 	room.countdown = nil
+	room.stage = nil
 	room.sessionId = nil
 	room.participants = nil
 	room.requiredMinimum = nil
@@ -358,6 +364,42 @@ end
 -- Cancellation predicate handed to trials/MachineFlow.
 function RoomService.cancelled(sessionId)
 	return room.phase ~= "Playing" or room.sessionId ~= sessionId
+end
+
+-- C4: stage writes -----------------------------------------------------------
+-- Two setters, one per owning phase. They can never both accept a write: each
+-- demands a phase the other rejects, and the room has exactly one phase. Inside
+-- a setter the guard and the write happen in the same resumption with no yield
+-- between them, so a stale caller is REJECTED rather than delayed - there is no
+-- window in which its write lands after its guard passed.
+local IN_MATCH_STAGES = { Briefing = true, Trial = true, Score = true, FinalScore = true }
+
+-- Playing-phase stages. The sessionId IS the token: this is the same test
+-- cancelled() applies, so a thread left over from a dead session cannot write.
+function RoomService.setStage(sessionId, stage)
+	if not IN_MATCH_STAGES[stage] then return false end
+	if room.phase ~= "Playing" then return false end
+	if room.sessionId ~= sessionId then return false end
+	if room.stage == stage then return true end
+	room.stage = stage
+	broadcast()
+	return true
+end
+
+-- Waiting-phase stage. The lobby pre-flow runs before a session exists, so it
+-- has no sessionId to present. room.token is the Waiting-phase epoch: it is
+-- bumped by every lifecycle move, including Waiting -> Starting and back again,
+-- so a pre-flow that yielded across a countdown fails this test exactly the way
+-- a dead session fails setStage. "Selecting" is the only stage reachable here,
+-- which keeps an in-match stage from ever being written from the lobby path.
+function RoomService.setWaitingStage(token, stage)
+	if stage ~= "Selecting" then return false end
+	if room.phase ~= "Waiting" then return false end
+	if room.token ~= token then return false end
+	if room.stage == stage then return true end
+	room.stage = stage
+	broadcast()
+	return true
 end
 
 function RoomService.finishRun(_room)

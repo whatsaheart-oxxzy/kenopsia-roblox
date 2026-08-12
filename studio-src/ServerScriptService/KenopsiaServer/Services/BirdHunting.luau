@@ -132,6 +132,14 @@ local function livingOf(room)
 	return out
 end
 
+-- C5: the same liveness test C1 gave Minefield. Bird has no session or
+-- round-ownership token, so this is room-based only. A nil phase still counts as
+-- active, which keeps the direct/solo test calls working, and it folds in the
+-- member-drain check the main loop already does at the bottom.
+local function roomActive(room)
+	return #room.members > 0 and (room.phase == nil or room.phase == "Playing")
+end
+
 -- create SniperFire/SniperAim at server boot so clients can WaitForChild them
 function BirdHunting.init()
 	ensureRemote()
@@ -141,9 +149,14 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 	ensureRemote()
 	local R = refs()
 	local scores = {}
+	-- C5: zero every participant up front, so any cancellation bail below can
+	-- simply `return scores` and hand MachineFlow a complete, zeroed table - the
+	-- same shape the arena-incomplete path and BirdHunting.runRound already
+	-- produce. The normal scoring loop at the end overwrites every key, so this
+	-- cannot mask a real score.
+	for _, m in room.members do scores[m.userId] = 0 end
 	if not (R and R.start and R.exit and R.post) then
 		warn("[BirdHunting] arena incomplete - round skipped")
-		for _, m in room.members do scores[m.userId] = 0 end
 		return scores
 	end
 
@@ -277,6 +290,10 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 	tellAll({ kind = "announce", text = sniperName and (sniperName .. " IS THE HUNTER.") or "THE TOWER IS UNMANNED. RUN." })
 	task.wait(2.8)
 	tellAll({ kind = "hide" })
+	-- C5: the room can abort during the 2.8s hunter card. Bail before anyone is
+	-- frozen, posed or teleported. guard.cleanup is already armed, so this
+	-- return runs cleanupRound through the wrapper - it is not a bare return.
+	if not roomActive(room) then return scores end
 
 	local subjects = livingOf(room)
 	local lane = 0
@@ -496,12 +513,22 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 		if hunter then
 			MachineState:FireClient(hunter, { kind = "huntersetup" })
 			task.wait(4)
+			-- C5: 4s is the single longest unguarded window in the leg. Without
+			-- this an abort here still reaches the countdown and the GO.
+			if not roomActive(room) then return scores end
 		end
 	end
 	for n = 3, 1, -1 do
+		-- C5: top of the body, so an abort mid-count never pushes another
+		-- number to clients.
+		if not roomActive(room) then return scores end
 		tellAll({ kind = "count", n = n })
 		task.wait(1)
 	end
+	-- C5: point of no return. Past this line the round is committed - runners
+	-- are unfrozen to MAX_RUNNER_SPEED, roundState.active goes true (unblocking
+	-- SniperFire), and the beam, Heartbeat and exit-Touched connections exist.
+	if not roomActive(room) then return scores end
 	tellAll({ kind = "go" })
 	-- Mirror the client unlock on the server. This keeps authoritative movement,
 	-- crouch validation, and anti-teleport state in agreement from the first frame.
