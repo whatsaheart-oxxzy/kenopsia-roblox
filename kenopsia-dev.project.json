@@ -1,0 +1,68 @@
+{
+  "name": "KenopsiaDev",
+  "servePlaceIds": [129909297895850],
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Kenopsia": {
+        "$className": "Folder",
+        "Shared": {
+          "$className": "Folder",
+          "Config": {
+            "$className": "Folder",
+            "GameConfig": { "$path": "dev-src/ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau" }
+          }
+        }
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "KenopsiaServer": {
+        "$className": "Folder",
+        "Main": { "$path": "dev-src/ServerScriptService/KenopsiaServer/Main.server.luau" },
+        "Services": {
+          "$className": "Folder",
+          "PartyRegistry":   { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/PartyRegistry.luau" },
+          "PlaylistService": { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/PlaylistService.luau" },
+          "RoomService":     { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/RoomService.luau" },
+          "TrialCanteen":    { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/TrialCanteen.luau" },
+          "TrialQuality":    { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/TrialQuality.luau" },
+          "TrialTarget":     { "$path": "dev-src/ServerScriptService/KenopsiaServer/Services/TrialTarget.luau" }
+        }
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "KenopsiaClient": {
+          "$className": "Folder",
+          "Main": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Main.client.luau" },
+          "Controllers": {
+            "$className": "Folder",
+            "MenuController":  { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuController.luau" },
+            "TrialController": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/TrialController.luau" }
+          },
+          "UI": {
+            "$className": "Folder",
+            "Motion":    { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Motion.luau" },
+            "SoundBank": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/SoundBank.luau" },
+            "Theme":     { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Theme.luau" }
+          }
+        }
+      }
+    },
+
+    "Workspace": {
+      "$className": "Workspace",
+      "Rig": {
+        "$className": "Model",
+        "Animate": { "$path": "dev-src/Workspace/Rig/Animate.client.luau" }
+      }
+    }
+  }
+}

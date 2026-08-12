@@ -1,0 +1,286 @@
+﻿warning[unused_variable]: Neck is assigned a value, but never used
+  ┌─ dev-src\Workspace\Rig\Animate.client.luau:9:7
+  │
+9 │ local Neck = Torso:WaitForChild("Neck")
+  │       ^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:100:5
+    │
+100 │     if (animTable[name] ~= nil) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:112:5
+    │
+112 │     if (config ~= nil) then
+    │        ^^^^^^^^^^^^^^^
+
+warning[unused_variable]: child is defined, but never used
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:114:80
+    │
+114 │         table.insert(animTable[name].connections, config.ChildAdded:connect(function(child) configureAnimationSet(name, fileList) end))
+    │                                                                                      ^^^^^
+
+warning[unused_variable]: child is defined, but never used
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:115:82
+    │
+115 │         table.insert(animTable[name].connections, config.ChildRemoved:connect(function(child) configureAnimationSet(name, fileList) end))
+    │                                                                                        ^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:118:7
+    │
+118 │             if (childPart:IsA("Animation")) then
+    │                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: property is defined, but never used
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:119:82
+    │
+119 │                 table.insert(animTable[name].connections, childPart.Changed:connect(function(property) configureAnimationSet(name, fileList) end))
+    │                                                                                              ^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:123:8
+    │
+123 │                 if (weightObject == nil) then
+    │                    ^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:137:5
+    │
+137 │     if (animTable[name].count <= 0) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:154:5
+    │
+154 │     if (fileList ~= nil) then
+    │        ^^^^^^^^^^^^^^^^^
+
+warning[deprecated]: standard library function `script.ChildAdded.connect` is deprecated
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:159:1
+    │
+159 │ script.ChildAdded:connect(scriptChildModified)
+    │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+    = lowercase methods have been superseded by uppercase ones
+    = try: Connect(scriptChildModified)
+
+warning[deprecated]: standard library function `script.ChildRemoved.connect` is deprecated
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:160:1
+    │
+160 │ script.ChildRemoved:connect(scriptChildModified)
+    │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+    = lowercase methods have been superseded by uppercase ones
+    = try: Connect(scriptChildModified)
+
+warning[unused_variable]: i is assigned a value, but never used
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:167:6
+    │
+167 │     for i,track in ipairs(animTracks) do
+    │         ^
+
+warning[unused_variable]: jumpMaxLimbVelocity is assigned a value, but never used
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:189:7
+    │
+189 │ local jumpMaxLimbVelocity = 0.75
+    │       ^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:197:5
+    │
+197 │     if (emoteNames[oldAnim] ~= nil and emoteNames[oldAnim] == false) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:203:5
+    │
+203 │     if (currentAnimKeyframeHandler ~= nil) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:207:5
+    │
+207 │     if (currentAnimTrack ~= nil) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:223:5
+    │
+223 │     if (frameName == "End") then
+    │        ^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:227:6
+    │
+227 │         if (emoteNames[repeatAnim] ~= nil and emoteNames[repeatAnim] == false) then
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: origRoll is assigned a value, but never used
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:241:8
+    │
+241 │     local origRoll = roll
+    │           ^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:243:8
+    │
+243 │     while (roll > animTable[animName][idx].weight) do
+    │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:251:5
+    │
+251 │     if (anim ~= currentAnimInstance) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:253:6
+    │
+253 │         if (currentAnimTrack ~= nil) then
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:270:6
+    │
+270 │         if (currentAnimKeyframeHandler ~= nil) then
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:288:5
+    │
+288 │     if (frameName == "End") then
+    │        ^^^^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: origRoll is assigned a value, but never used
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:298:9
+    │
+298 │         local origRoll = roll
+    │               ^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:300:9
+    │
+300 │         while (roll > animTable[animName][idx].weight) do
+    │               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:307:6
+    │
+307 │         if (toolAnimInstance ~= anim) then
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:309:7
+    │
+309 │             if (toolAnimTrack ~= nil) then
+    │                ^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:333:5
+    │
+333 │     if (currentToolAnimKeyframeHandler ~= nil) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:339:5
+    │
+339 │     if (toolAnimTrack ~= nil) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:393:5
+    │
+393 │     if (jumpAnimTime <= 0) then
+    │        ^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:437:5
+    │
+437 │     if (toolAnim == "None") then
+    │        ^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:442:5
+    │
+442 │     if (toolAnim == "Slash") then
+    │        ^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:447:5
+    │
+447 │     if (toolAnim == "Lunge") then
+    │        ^^^^^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: moveSit is defined, but never used
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:453:10
+    │
+453 │ function moveSit()
+    │          ^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:473:7
+    │
+473 │     if (jumpAnimTime > 0) then
+    │        ^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:477:5
+    │
+477 │     if (pose == "FreeFall" and jumpAnimTime <= 0) then
+    │        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:479:9
+    │
+479 │     elseif (pose == "Seated") then
+    │            ^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:482:9
+    │
+482 │     elseif (pose == "Running") then
+    │            ^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:484:9
+    │
+484 │     elseif (pose == "Dead" or pose == "GettingUp" or pose == "FallingDown" or pose == "Seated" or pose == "PlatformStanding") then
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:492:5
+    │
+492 │     if (setAngles) then
+    │        ^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:546:10
+    │
+546 │         elseif (string.sub(msg, 1, 3) == "/e ") then
+    │                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:548:10
+    │
+548 │         elseif (string.sub(msg, 1, 7) == "/emote ") then
+    │                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[parenthese_conditions]: lua does not require parentheses around conditions
+    ┌─ dev-src\Workspace\Rig\Animate.client.luau:552:6
+    │
+552 │         if (pose == "Standing" and emoteNames[emote] ~= nil) then
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[unused_variable]: Theme is assigned a value, but never used
+  ┌─ dev-src\StarterPlayer\StarterPlayerScripts\KenopsiaClient\Controllers\MenuController.luau:9:7
+  │
+9 │ local Theme = require(UI.Theme)
+  │       ^^^^^
+
+Results:
+0 errors
+46 warnings
+0 parse errors

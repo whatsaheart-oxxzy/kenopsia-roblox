@@ -172,6 +172,33 @@ loose in the live `Workspace` — remove before release.
 
 ---
 
+## 3b. `DEV_ONLY` — Kenopsia_DEV rig appearance
+
+Place `129909297895850`. Flagged per Gate M1 §1.5. These are catalog or
+user-created appearance assets on `Workspace.Rig` with **no ownership or licence
+record in this project**.
+
+| Instance | Class | Status |
+|---|---|---|
+| `Accessory (NERD)` | Accessory | **DEV_ONLY** |
+| `Accessory (CAT in head)` | Accessory | **DEV_ONLY** |
+| `Accessory (Soulers Keychain)` | Accessory | **DEV_ONLY** |
+| `Accessory (Meshes/PENDIENTESMIASMA)` | Accessory | **DEV_ONLY** |
+| `whitehairaccessory` | Accessory | **DEV_ONLY** |
+| `Accessory (Cabello NOVA)` | Accessory | **DEV_ONLY** |
+| `Shirt` | Shirt | **DEV_ONLY** |
+| `Pants` | Pants | **DEV_ONLY** |
+
+**Rule:** acceptable inside `Kenopsia_DEV` while that place is limited to the
+same universe. **Before any public release**, ownership must be evidenced or the
+parts replaced. `Shirt` and `Pants` are included deliberately — Gate M1 §1.5
+named only accessories, but clothing carries identical exposure.
+
+This block is expected to be retired wholesale by the Gate 5 original character,
+in the same way the XBot `KeyframeSequence` block is.
+
+---
+
 ## 4. Models, meshes and textures — not yet enumerated
 
 | Asset | Where | Status |

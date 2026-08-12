@@ -1,0 +1,17 @@
+﻿{
+    "ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau":  "ReplicatedStorage.Kenopsia.Shared.Config.GameConfig",
+    "ServerScriptService/KenopsiaServer/Main.server.luau":  "ServerScriptService.KenopsiaServer.Main",
+    "ServerScriptService/KenopsiaServer/Services/PartyRegistry.luau":  "ServerScriptService.KenopsiaServer.Services.PartyRegistry",
+    "ServerScriptService/KenopsiaServer/Services/PlaylistService.luau":  "ServerScriptService.KenopsiaServer.Services.PlaylistService",
+    "ServerScriptService/KenopsiaServer/Services/RoomService.luau":  "ServerScriptService.KenopsiaServer.Services.RoomService",
+    "ServerScriptService/KenopsiaServer/Services/TrialCanteen.luau":  "ServerScriptService.KenopsiaServer.Services.TrialCanteen",
+    "ServerScriptService/KenopsiaServer/Services/TrialQuality.luau":  "ServerScriptService.KenopsiaServer.Services.TrialQuality",
+    "ServerScriptService/KenopsiaServer/Services/TrialTarget.luau":  "ServerScriptService.KenopsiaServer.Services.TrialTarget",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.MenuController",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/TrialController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.TrialController",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Main.client.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Main",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Motion.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.UI.Motion",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/SoundBank.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.UI.SoundBank",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Theme.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.UI.Theme",
+    "Workspace/Rig/Animate.client.luau":  "Workspace.Rig.Animate"
+}
