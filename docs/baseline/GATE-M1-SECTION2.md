@@ -148,6 +148,96 @@ The rig is structurally valid to promote.
 
 ---
 
+## Part B — rig promoted to `StarterCharacter` (COMPLETE)
+
+`Workspace.Rig` → `StarterPlayer` → renamed `StarterCharacter`.
+
+| Check | Result |
+|---|---|
+| Parts | 13 (7 R6 + 6 accessory handles) |
+| `Motor6D` | 6 |
+| `Humanoid` / `Animate` | 1 / 1 |
+| `Accessory` | 6 |
+| `HumanoidRootPart.Anchored` | false |
+| Left behind in `Workspace` | **nothing** |
+
+This removes the second dummy from the scene, as the spec requires.
+
+Source realigned with `git mv` to
+`dev-src/StarterPlayer/StarterCharacter/Animate.client.luau`;
+`kenopsia-dev.project.json` updated. Parity re-verified **15/15**, and
+`Animate`'s hash is unchanged at `F388A285E9660C66` — the move preserved content
+byte-for-byte.
+
+`AnimSaves` (`ObjectValue` → `ServerStorage.RBX_ANIMSAVES.Rig`) was **left in
+place**. It is animation-editor residue and harmless; removing it is a deletion
+and deletions are reviewer-gated in this gate.
+
+---
+
+## Part C — `MenuPresenceService` (COMPLETE, transferred)
+
+New `ModuleScript` at
+`ServerScriptService.KenopsiaServer.Services.MenuPresenceService`, started from
+`Main` after `RoomService` (so `roomOf()` is live before the first character
+binds) and after `PlaylistService` (so a run already in flight is not mistaken
+for a menu state).
+
+Decisions worth keeping:
+
+- **`KenopsiaMenuActive` is written only here.** Clients read it; they never
+  decide it.
+- **Original `Humanoid` values are captured at engage time, not hardcoded.**
+  Changing the rig's `WalkSpeed` or `JumpPower` in Studio therefore cannot
+  silently break `release()`.
+- **Re-engaging the same character is an explicit no-op.** Without that guard the
+  reconciliation loop would overwrite the saved values with the already-frozen
+  ones, and `release()` would restore `WalkSpeed = 0` as though it were original.
+- **`PrimaryPart` is set on every `CharacterAdded`**, not on the template, since
+  the MCP property layer has no Instance type. Strictly more robust: it survives
+  respawns and does not depend on the template being authored correctly.
+- **The root is anchored at runtime only** and always unanchored by `release()`.
+  It is the only reliable way to stop drift and shoving when up to four
+  characters share one collision-free anchor. The rig template stays unanchored,
+  which is what the gate requires.
+- **A 1 s reconciliation loop re-derives presence.** `RoomService.finishRun()`
+  returns a room to `Waiting` without firing an event, and adding a signal to
+  `RoomService` is outside this gate's scope. The loop also heals anything the
+  event path misses. Safe because engage and release are both idempotent.
+- **A room in `Starting` still shows the menu**; the countdown plays over it.
+  Only `Playing` releases.
+
+---
+
+## Transfer defect found and fixed — non-ASCII corruption
+
+The first transfer of `MenuPresenceService` **failed parity**, and the failure
+mode is worth recording because it is close to invisible:
+
+- identical character count (7,808), identical line count (225);
+- the only difference was at index 39, where the source's `§` arrived as `�`.
+
+Cause: PowerShell 5.1's `Invoke-RestMethod` encodes a **string** body as
+ISO-8859-1 unless a charset is declared. Every non-ASCII character in every
+transfer would have been silently mangled — and because length and line count
+survive, nothing but a byte-exact hash would have caught it.
+
+Fix in `tools/weppy.ps1`: the request body is now converted with
+`[System.Text.Encoding]::UTF8.GetBytes()` and sent as bytes with
+`application/json; charset=utf-8`. **Do not revert this to a string body.**
+
+Re-transferred: **2/2 MATCH**.
+
+A second, smaller wrapper defect surfaced alongside it: `Invoke-Weppy` asserted
+`routing.actualPlaceId` unconditionally, but `manage_scripts_validate` returns no
+routing block, so every valid result was reported as a routing failure. The
+assertion now runs only when a routing block is present.
+
+**Luau validation: 16/16 `valid`, 0 diagnostics.**
+**Selene: 0 errors, 46 warnings — unchanged from the §1 baseline.**
+
+---
+
 ## Remaining in §2
 
 1. Promote `Workspace.Rig` → `StarterPlayer.StarterCharacter` (move + rename).

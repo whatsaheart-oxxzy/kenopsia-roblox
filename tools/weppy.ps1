@@ -53,8 +53,14 @@ function Invoke-Weppy {
     } | ConvertTo-Json -Depth 10 -Compress
 
     try {
+        # PowerShell 5.1's Invoke-RestMethod encodes a STRING body as ISO-8859-1
+        # unless a charset is declared, which silently mangles every non-ASCII
+        # character on the way out -- a transferred script keeps its exact length
+        # and line count while "§" becomes "�". Sending explicit UTF-8 bytes
+        # is the only reliable fix; do not revert this to a string body.
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
         $r = Invoke-RestMethod -Uri "http://127.0.0.1:$port/execute" -Method POST `
-             -Body $body -ContentType "application/json" -TimeoutSec $TimeoutSec -ErrorAction Stop
+             -Body $bytes -ContentType "application/json; charset=utf-8" -TimeoutSec $TimeoutSec -ErrorAction Stop
     } catch {
         return [pscustomobject]@{ ok = $false; error = "HTTP: $($_.Exception.Message)"; data = $null }
     }
@@ -62,12 +68,17 @@ function Invoke-Weppy {
     if (-not $r.success) {
         return [pscustomobject]@{ ok = $false; error = [string]$r.error; data = $null }
     }
-    # The only proof the call hit the intended place.
-    if ([int64]$r.routing.actualPlaceId -ne $PlaceId) {
-        return [pscustomobject]@{
-            ok = $false
-            error = "ROUTING MISMATCH: asked $PlaceId, hit $($r.routing.actualPlaceId) ($($r.routing.actualPlaceName))"
-            data = $null
+    # The only proof the call hit the intended place. Some commands
+    # (manage_scripts_validate) legitimately return no routing block, so assert
+    # only when one is present -- asserting unconditionally turned every valid
+    # validate result into a false failure.
+    if ($null -ne $r.routing -and $null -ne $r.routing.actualPlaceId) {
+        if ([int64]$r.routing.actualPlaceId -ne $PlaceId) {
+            return [pscustomobject]@{
+                ok = $false
+                error = "ROUTING MISMATCH: asked $PlaceId, hit $($r.routing.actualPlaceId) ($($r.routing.actualPlaceName))"
+                data = $null
+            }
         }
     }
     return [pscustomobject]@{ ok = $true; error = $null; data = $r.data; routing = $r.routing }
