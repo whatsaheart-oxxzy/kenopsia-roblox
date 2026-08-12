@@ -12,6 +12,7 @@
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.MenuController",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuOverlayController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.MenuOverlayController",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuSceneController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.MenuSceneController",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/SessionWallController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.SessionWallController",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/TrialController.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Controllers.TrialController",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/Main.client.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.Main",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Motion.luau":  "StarterPlayer.StarterPlayerScripts.KenopsiaClient.UI.Motion",

@@ -190,14 +190,35 @@ local function goTo(pose, opts)
 	local markerName = pose == "Session" and "SessionCamera" or "LandingCamera"
 	local fov = pose == "Session" and SESSION_FOV or LANDING_FOV
 
+	-- onArrive fires when the camera has actually finished moving, on every
+	-- path. Callers must not guess the duration with their own task.delay --
+	-- the reduced-motion route takes 2 x CUT_FADE, not MOVE_TIME, and a guessed
+	-- delay would reveal the wall mid-move for accessibility users.
+	local arrive = opts.onArrive
+	local function fire()
+		if arrive then task.spawn(arrive) end
+	end
+
 	if opts.instant then
 		applyPose(markerName, fov, false)
+		fire()
 	elseif reducedMotion() then
-		task.spawn(hardCut, function()
-			applyPose(markerName, fov, false)
+		task.spawn(function()
+			hardCut(function() applyPose(markerName, fov, false) end)
+			fire()
 		end)
 	else
 		applyPose(markerName, fov, true)
+		local tween = state.tween
+		if tween then
+			tween.Completed:Once(function(playbackState)
+				-- A cancelled tween means another move superseded this one, so
+				-- the caller must not be told it arrived here.
+				if playbackState == Enum.PlaybackState.Completed then fire() end
+			end)
+		else
+			fire()
+		end
 	end
 end
 

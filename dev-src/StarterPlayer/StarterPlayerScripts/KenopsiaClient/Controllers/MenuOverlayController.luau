@@ -565,10 +565,29 @@ end
 function MenuOverlayController:startSession()
 	if self.state ~= "Landing" then return end
 	self:go("TransitionToSession")
-	if self.scene then self.scene.goToSession() end
 	-- The landing actions must not remain clickable behind the moving camera.
 	self:setPanelVisible("Landing", false)
-	if self.onEnterSession then self.onEnterSession() end
+	if self.scene then
+		self.scene.goToSession({ onArrive = function()
+			if self.state ~= "TransitionToSession" then return end
+			self.state = "SessionSelect"
+			if self.onEnterSession then self.onEnterSession() end
+		end })
+	elseif self.onEnterSession then
+		self.state = "SessionSelect"
+		self.onEnterSession()
+	end
+end
+
+-- The wall's BACK hands control back here: return to the landing camera and
+-- restore the landing panel.
+function MenuOverlayController:returnToLanding()
+	self.stack = {}
+	if self.state then self:setPanelVisible(self.state, false) end
+	self.state = "Landing"
+	self:setPanelVisible("Landing", true)
+	self:focusFirst("Landing")
+	if self.scene then self.scene.goToLanding() end
 end
 
 function MenuOverlayController:destroy()

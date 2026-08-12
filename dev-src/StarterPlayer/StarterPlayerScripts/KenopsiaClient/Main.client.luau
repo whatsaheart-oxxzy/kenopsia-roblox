@@ -8,6 +8,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local MenuController = require(script.Parent.Controllers.MenuController)
 local MenuSceneController = require(script.Parent.Controllers.MenuSceneController)
 local MenuOverlayController = require(script.Parent.Controllers.MenuOverlayController)
+local SessionWallController = require(script.Parent.Controllers.SessionWallController)
 local TrialController = require(script.Parent.Controllers.TrialController)
 
 local gui = playerGui:WaitForChild("KenopsiaGui", 20)
@@ -45,7 +46,7 @@ if not sceneOk then warn("[Kenopsia] menu scene disabled this session") end
 -- so the new panel and the legacy CRT settings screen cannot disagree while
 -- both exist during the §3 transition. Appliers delegate to the methods that
 -- already own each effect rather than reimplementing them.
-local overlayOk = xpcall(function()
+local overlayOk, overlay = xpcall(function()
 	return MenuOverlayController.new({
 		scene = MenuSceneController,
 		settings = menu.settings,
@@ -60,6 +61,26 @@ end, function(err)
 	return nil
 end)
 if not overlayOk then warn("[Kenopsia] landing overlay disabled this session") end
+
+-- The wall terminal. It is revealed only from the camera's onArrive callback,
+-- never on a timer, so the reduced-motion path (2 x fade, not a 0.85 s tween)
+-- cannot show it mid-move.
+if overlayOk and overlay then
+	local wallOk, wall = xpcall(function()
+		return SessionWallController.new({
+			scene = MenuSceneController,
+			onBack = function() overlay:returnToLanding() end,
+		})
+	end, function(err)
+		warn("[Kenopsia] session wall failed to start:\n" .. debug.traceback(tostring(err), 2))
+		return nil
+	end)
+	if wallOk and wall then
+		overlay.onEnterSession = function() wall:reveal() end
+	else
+		warn("[Kenopsia] session wall disabled this session")
+	end
+end
 
 local trialOk = xpcall(function()
 	return TrialController.new(menu)
