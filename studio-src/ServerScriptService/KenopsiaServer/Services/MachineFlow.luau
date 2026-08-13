@@ -6,12 +6,15 @@
 -- and unwinds through a finally-style cleanup on either a clean finish or an
 -- abort.
 --
--- Phase 1 introduces the session/token/cancellation infrastructure and the
--- declarative trial registry. It deliberately does NOT change how a trial
--- plays: BirdHunting and Minefield are still invoked with their existing
--- signatures, and each match still runs one roulette-picked trial. Threading
--- RoundContext into the trial modules, and running three shuffled trials per
--- match, belong to their own phases (REQ-REG-01, plan section 2).
+-- Gate 1 turns the single roulette-picked trial into a SESSION: every enabled
+-- trial is played once, in a seed-shuffled order, with no return to the lobby
+-- between them. The loop iterates #order rather than a hardcoded three, so it
+-- runs two trials today and three the moment Canteen flips to ready = true at
+-- Gate 4 -- with no change to this file.
+--
+-- The trial modules are still invoked with their EXISTING signatures. Threading
+-- RoundContext into them belongs to Gates 2/3/4; here Contexts supplies the
+-- tokens and the cleanup scopes, and a thin adapter feeds the old calls.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -19,6 +22,13 @@ local Config = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("
 local BirdHunting = require(script.Parent.BirdHunting)
 local Minefield = require(script.Parent.Minefield)
 local TableManners = require(script.Parent.TableManners)
+local Contexts = require(script.Parent.Contexts)
+
+local Shared = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+local Rules = Shared:WaitForChild("Rules")
+local Pacing = require(Rules:WaitForChild("Pacing"))
+local Playlist = require(Rules:WaitForChild("Playlist"))
+local Scoring = require(Rules:WaitForChild("Scoring"))
 
 local MachineFlow = {}
 
@@ -38,7 +48,6 @@ local TRIALS = {
 		tagline = "A BULLET WITH YOUR NAME ON IT.",
 		ready = true,
 		showInterRoundScore = false,
-		roundsForPlayerCount = function(_n) return 5 end,
 		module = BirdHunting,
 	},
 	{
@@ -49,21 +58,27 @@ local TRIALS = {
 		tagline = "SCAN AHEAD. WATCH YOUR STEP.",
 		ready = true,
 		showInterRoundScore = false,
-		roundsForPlayerCount = function(_n) return 10 end,
 		module = Minefield,
 	},
 	{
 		-- REQ-CP-01..04: arena markers, refs() lookup, mechanic and audio are
-		-- all outstanding. ready = false keeps it out of the roulette. Do not
+		-- all outstanding. ready = false keeps it out of the playlist. Do not
 		-- flip this until its acceptance gate passes.
-		id = "tablemanners",
+		--
+		-- The id is "canteen", NOT "tablemanners". "Table Manners" is the name
+		-- the reference game uses for this minigame, and carrying it in the
+		-- shipped source is the copyright exposure REQ-IP-01 exists to remove.
+		-- Playlist.Ids agrees, and tests/rules.lua asserts that the old spelling
+		-- is rejected so it cannot quietly come back. The MODULE is still
+		-- TableManners.luau; it is replaced wholesale by CanteenProtocol at
+		-- Gate 4, which is where that file is renamed.
+		id = "canteen",
 		displayName = "CANTEEN PROTOCOL",
 		icon = "Saw",
 		subtitle = "RATION ISSUED. EAT ONLY WHEN UNOBSERVED._",
 		tagline = "FREEZE WHEN THE INSPECTOR LOOKS.",
 		ready = false,
 		showInterRoundScore = false,
-		roundsForPlayerCount = function(_n) return 5 end,
 		module = TableManners,
 	},
 }
@@ -102,7 +117,9 @@ local function newRoundToken(sessionId)
 	return ("%s#R%d"):format(sessionId, roundCounter)
 end
 
-local function buildContext(room, trial)
+-- Session-level. effectScope is rewritten per trial by the loop, because FX
+-- must be cleared per trial scope and never globally (REQ-DZ-03).
+local function buildContext(room)
 	local audience = RoomServiceRef.audience(room)
 	local participantUserIds = {}
 	for _, m in room.members do
@@ -117,7 +134,7 @@ local function buildContext(room, trial)
 		room = room,
 		audience = audience,
 		participantUserIds = participantUserIds,
-		effectScope = ("%s:%s"):format(sessionId, trial.id),
+		effectScope = sessionId,
 		cancelled = function()
 			return RoomServiceRef.cancelled(sessionId)
 		end,
@@ -232,18 +249,37 @@ local function preFlow(room)
 end
 
 -- MATCH ----------------------------------------------------------------------
+
+-- The trials this session will play, in seed-shuffled order.
+--
+-- Playlist.order permutes ALL THREE ids; the filter drops whatever is not
+-- schedulable while preserving the shuffled relative order of the rest. That is
+-- why the loop below needs no knowledge of how many trials exist: two survive
+-- the filter today, three the moment Canteen passes Gate 4.
+local function playableOrder(seed)
+	local enabled = {}
+	for _, t in enabledTrials() do
+		enabled[t.id] = t
+	end
+	local out = {}
+	for _, id in Playlist.order(seed) do
+		local t = enabled[id]
+		if t then table.insert(out, t) end
+	end
+	return out
+end
+
 local function runMatch(room)
-	-- C2: every route - setup, no-ready-trial, cancellation, completion and
-	-- trial error - leaves through the single finalizer below. `outcome` is
-	-- the one source of truth, so an aborted session is never logged as a
-	-- completed match.
+	-- C2: every route - setup, no-trial, cancellation, completion and trial
+	-- error - leaves through the single finalizer below. `outcome` is the one
+	-- source of truth, so an aborted session is never logged as completed.
 	local outcome = "completed" -- completed | cancelled | no-trial | error
-	local trial, ctx = nil, nil
+	local ctx, session = nil, nil
+	local activeTrial = nil
 	local cleaned = false
-	-- Latches once the match has genuinely finished and its scores are written.
-	-- From that point the result is immutable: a player leaving during the
-	-- final-board presentation must not retroactively relabel a completed match
-	-- as cancelled.
+	-- Latches once the SESSION has finished and its final board is out. It is
+	-- deliberately NOT set per trial: a player leaving during trial 2 must still
+	-- cancel the match, and only the final board makes the result immutable.
 	local scoresCommitted = false
 
 	-- Must be safe before ctx exists: the no-trial route reaches it too.
@@ -252,8 +288,8 @@ local function runMatch(room)
 		cleaned = true
 		if ctx then
 			setActiveTrial(ctx, "")
-			if trial and trial.module.cleanup then
-				pcall(trial.module.cleanup, ctx)
+			if activeTrial and activeTrial.module.cleanup then
+				pcall(activeTrial.module.cleanup, ctx)
 			end
 			for _, uid in ctx.participantUserIds do
 				if activeByUser[uid] == ctx then activeByUser[uid] = nil end
@@ -262,39 +298,43 @@ local function runMatch(room)
 				sessionsByRoomId[room.id] = nil
 			end
 		end
+		-- Cancelling the session runs every scope still open beneath it, so a
+		-- round that was mid-flight when the match died cannot leave a delayed
+		-- callback behind still holding a live context.
+		if session then session:cancel() end
 		room.preSent = nil
 		tellRoom(room, { kind = "hide" })
 	end
 
 	local ok, err = xpcall(function()
-		-- Trial resolution moved inside the protected body. Previously a
-		-- missing trial called abort() and returned before cleanup existed,
-		-- stranding the room in Aborting with nothing to drive it out.
-		trial = trialById(room.trialId)
-		if not (trial and trial.ready) then
-			local pool = enabledTrials()
-			trial = pool[1]
-		end
-		if not trial then
+		-- The server mints the seed. It is never taken from a client.
+		local seed = math.random(1, 2147483647)
+		local order = playableOrder(seed)
+		if #order == 0 then
 			warn("[MachineFlow] no ready trial at match start")
 			outcome = "no-trial"
 			return
 		end
 
-		ctx = buildContext(room, trial)
+		ctx = buildContext(room)
 		sessionsByRoomId[room.id] = ctx
 		for _, uid in ctx.participantUserIds do
 			activeByUser[uid] = ctx
 		end
+		session = Contexts.newSession(room.id, ctx.participantUserIds, seed)
+
+		local playerCount = #ctx.participantUserIds
+		print(("[MachineFlow] session %s seed=%d trials=%d players=%d")
+			:format(tostring(ctx.sessionId), seed, #order, playerCount))
 
 		-- C6: KenopsiaSessionScore/Wins are MATCH-scoped, not server-scoped.
-		-- Zero them once here, for this match's participant snapshot. Without
-		-- this they accumulate for the lifetime of the server and the lobby
-		-- roster reads as a career total instead of this match's result.
-		-- REVISIT WITH THE THREE-TRIAL PLAYLIST (REQ-REG-01): once a session
-		-- runs three shuffled trials these counters must carry ACROSS the
-		-- trials of one session, so the reset has to stay HERE, before the
-		-- first trial, and must never move into a per-trial loop.
+		-- Zero them once here, for this match's participant snapshot.
+		--
+		-- THIS MUST STAY HERE, BEFORE THE TRIAL LOOP. The counters have to carry
+		-- ACROSS the trials of one session -- that is what makes it a session
+		-- score at all -- so moving this inside the loop would wipe trial 1's
+		-- result the moment trial 2 begins. The Phase 1 comment flagged this as
+		-- the thing to get right when the playlist arrived. This is that moment.
 		for _, uid in ctx.participantUserIds do
 			local plr = Players:GetPlayerByUserId(uid)
 			if plr then
@@ -303,113 +343,178 @@ local function runMatch(room)
 			end
 		end
 
-		-- BRIEFING
-		RoomServiceRef.setStage(ctx.sessionId, "Briefing")
-		tell(ctx, { kind = "status", lines = {
-			"All subjects successfully briefed.",
-			"Likelyhood of subjects understanding briefing: 90%",
-			"Likelyhood of subject survival: 20%",
-			"Favorable gene mutation percentage: 0.5%",
-			" ",
-			"Bootstrapping next simulation ...",
-			"Geometry cache 32/100",
-		} })
-		if not hold(ctx, 6.5) then return end
+		local sessionTotals = {}
+		for _, uid in ctx.participantUserIds do
+			sessionTotals[uid] = 0
+		end
 
-		-- TRIAL
-		RoomServiceRef.setStage(ctx.sessionId, "Trial")
-		local totals = {}
-		local rounds = trial.roundsForPlayerCount(#ctx.participantUserIds)
-		for roundIndex = 1, rounds do
+		for trialIndex, trial in ipairs(order) do
 			if ctx.cancelled() then return end
-			tell(ctx, { kind = "round", n = roundIndex, total = rounds, verbs = trial.tagline })
-			if not hold(ctx, 3) then return end
-			tell(ctx, { kind = "hide" })
-			setActiveTrial(ctx, trial.id)
 
-			local scores
-			if trial.id == "birdhunt" and #room.members >= 2 then
-				-- Preserved verbatim from Phase 0: every participant is Hunter
-				-- once per numbered round; the starting seat rotates.
-				scores = {}
-				local order = table.clone(room.members)
-				local offset = (roundIndex - 1) % #order
-				for leg = 1, #order do
-					if ctx.cancelled() then break end
-					local member = order[(offset + leg - 1) % #order + 1]
-					local legOk, legScores = pcall(
-						trial.module.runRound, room, roundIndex, member.userId, leg, #order)
-					if legOk and type(legScores) == "table" then
-						for uid, value in legScores do
-							scores[uid] = (scores[uid] or 0) + value
-						end
-					elseif not legOk then
-						error(legScores, 0)
-					end
-				end
-			else
-				local rOk, rScores = pcall(trial.module.runRound, room, roundIndex)
-				if not rOk then error(rScores, 0) end
-				scores = type(rScores) == "table" and rScores or {}
-			end
+			local trialCtx = session:newTrial(trial.id, trialIndex, #order)
+			activeTrial = trial
+			ctx.effectScope = ("%s:%s"):format(ctx.sessionId, trial.id)
 
-			setActiveTrial(ctx, "")
-			for uid, s in scores do
-				totals[uid] = (totals[uid] or 0) + s
-			end
-			if not hold(ctx, 1.5) then return end
-
-			if trial.showInterRoundScore and roundIndex < rounds then
-				local standings = {}
-				for _, m in room.members do
-					table.insert(standings, {
-						userId = m.userId,
-						displayName = m.displayName,
-						score = totals[m.userId] or 0,
-					})
-				end
-				table.sort(standings, function(a, b) return a.score > b.score end)
-				RoomServiceRef.setStage(ctx.sessionId, "Score")
-				tell(ctx, { kind = "score", board = standings })
-				if not hold(ctx, 5.5) then return end
-				tell(ctx, { kind = "hide" })
-				RoomServiceRef.setStage(ctx.sessionId, "Trial")
-			end
-		end
-
-		if not hold(ctx, 3) then return end
-
-		-- FINAL SCORE: the ranked cumulative board is the result. No separate
-		-- winner banner.
-		RoomServiceRef.setStage(ctx.sessionId, "FinalScore")
-		local board = {}
-		for _, m in room.members do
-			table.insert(board, {
-				userId = m.userId,
-				displayName = m.displayName,
-				score = totals[m.userId] or 0,
+			-- SELECTING. Reveals which game is next. There is NO return to the
+			-- lobby between trials: the room stays in Playing and only the stage
+			-- moves, which is what makes the games read as one session.
+			RoomServiceRef.setStage(ctx.sessionId, "Selecting")
+			RoomServiceRef.setProgress(ctx.sessionId, {
+				activeTrialId = trial.id,
+				trialIndex = trialIndex,
+				trialCount = #order,
+				-- Cleared explicitly. A leg counter left over from Bird Hunting
+				-- would otherwise be drawn over the next trial's HUD.
+				roundIndex = RoomServiceRef.CLEAR,
+				legIndex = RoomServiceRef.CLEAR,
+				legCount = RoomServiceRef.CLEAR,
 			})
-			local plr = Players:GetPlayerByUserId(m.userId)
-			if plr then
-				plr:SetAttribute("KenopsiaSessionScore",
-					(plr:GetAttribute("KenopsiaSessionScore") or 0) + (totals[m.userId] or 0))
+			tell(ctx, { kind = "select", trialId = trial.id,
+				displayName = trial.displayName, subtitle = trial.subtitle,
+				index = trialIndex, total = #order })
+			if not hold(ctx, Pacing.Timing.Title) then return end
+
+			-- BRIEFING
+			RoomServiceRef.setStage(ctx.sessionId, "Briefing")
+			tell(ctx, { kind = "status", lines = {
+				trial.displayName,
+				trial.tagline,
+				" ",
+				("Trial %d of %d."):format(trialIndex, #order),
+				"Bootstrapping simulation ...",
+			} })
+			if not hold(ctx, Pacing.Timing.ControlCard) then return end
+
+			-- TRIAL
+			RoomServiceRef.setStage(ctx.sessionId, "Trial")
+			local isBird = trial.id == "birdhunt"
+			-- Pacing owns this now. The registry used to hardcode 10 rounds for
+			-- Dead Zone and 5 for Bird; both are named in the plan as errors not
+			-- to repeat, and for Bird the number is LEGS, not rounds.
+			local rounds = Pacing.roundsFor(trial.id, playerCount) or 1
+			local trialTotals = {}
+
+			for roundIndex = 1, rounds do
+				if ctx.cancelled() then return end
+
+				local roundCtx = trialCtx:newRound(roundIndex, rounds)
+				RoomServiceRef.setProgress(ctx.sessionId, {
+					roundIndex = roundIndex,
+					roundCount = rounds,
+				})
+
+				tell(ctx, { kind = "round", n = roundIndex, total = rounds,
+					verbs = trial.tagline })
+				if not hold(ctx, Pacing.Timing.Title) then return end
+				tell(ctx, { kind = "hide" })
+				setActiveTrial(ctx, trial.id)
+
+				local scores
+				if isBird and #room.members >= 2 then
+					-- One LEG per iteration: each iteration is a full
+					-- hunter-versus-runners exchange and the hunter seat
+					-- advances. Pacing already sized `rounds` as the leg count
+					-- (2p 4 / 3p 3 / 4p 4), so this is no longer 5 x playerCount.
+					roundCtx:newLeg(roundIndex)
+					RoomServiceRef.setProgress(ctx.sessionId, {
+						legIndex = roundIndex, legCount = rounds,
+					})
+					local hunter = room.members[(roundIndex - 1) % #room.members + 1]
+					local legOk, legScores = pcall(trial.module.runRound,
+						room, roundIndex, hunter.userId, roundIndex, rounds)
+					if not legOk then error(legScores, 0) end
+					scores = type(legScores) == "table" and legScores or {}
+				else
+					local rOk, rScores = pcall(trial.module.runRound, room, roundIndex)
+					if not rOk then error(rScores, 0) end
+					scores = type(rScores) == "table" and rScores or {}
+				end
+
+				setActiveTrial(ctx, "")
+				roundCtx.cleanup:run()
+				for uid, value in scores do
+					trialTotals[uid] = (trialTotals[uid] or 0) + value
+				end
+				if not hold(ctx, Pacing.Timing.InterimScore) then return end
 			end
-		end
-		table.sort(board, function(a, b) return a.score > b.score end)
-		if #board >= 2 and board[1].score > 0 and board[1].score > board[2].score then
-			local winner = Players:GetPlayerByUserId(board[1].userId)
-			if winner then
-				winner:SetAttribute("KenopsiaSessionWins",
-					(winner:GetAttribute("KenopsiaSessionWins") or 0) + 1)
+
+			-- SCORE. A COMPLETED trial distributes exactly 1700, whatever the raw
+			-- in-trial numbers happened to be. That is what makes the games
+			-- comparable: a trial that awards large raw scores cannot outweigh
+			-- the other two just by using bigger numbers.
+			local entries = {}
+			for _, uid in ctx.participantUserIds do
+				table.insert(entries, { userId = uid, raw = trialTotals[uid] or 0 })
 			end
+			local ranking = Scoring.rankRound(entries, function(a, b)
+				return a.raw > b.raw
+			end)
+			Scoring.distribute(ranking)
+
+			local board = {}
+			for _, r in ipairs(ranking) do
+				local uid = r.entry.userId
+				sessionTotals[uid] = (sessionTotals[uid] or 0) + r.points
+				local plr = Players:GetPlayerByUserId(uid)
+				if plr then
+					plr:SetAttribute("KenopsiaSessionScore", sessionTotals[uid])
+				end
+				table.insert(board, {
+					userId = uid,
+					displayName = plr and plr.DisplayName or tostring(uid),
+					place = r.place,
+					points = r.points,
+					score = sessionTotals[uid],
+				})
+			end
+
+			RoomServiceRef.setStage(ctx.sessionId, "Score")
+			tell(ctx, { kind = "score", board = board, trialId = trial.id,
+				index = trialIndex, total = #order, final = false })
+			if not hold(ctx, Pacing.Timing.InterimScore) then return end
+			tell(ctx, { kind = "hide" })
+
+			-- Between trials, not only after the last one: whatever this trial
+			-- parked in the world has to go before the next one builds in the
+			-- same space.
+			if trial.module.cleanup then pcall(trial.module.cleanup, ctx) end
+			trialCtx:cancel()
+			activeTrial = nil
 		end
-		tell(ctx, { kind = "score", board = board })
-		-- Scores are written and the board is out. The match is finished; the
-		-- hold below is presentation only, so nothing after this point may
-		-- downgrade the result.
+
+		-- FINAL SCORE. Highest cumulative total is VIABLE, everyone else
+		-- REJECTED. Ties at the top are ALL viable: Scoring already shares tied
+		-- places, and inventing a single winner here would contradict the board
+		-- the players just watched.
+		RoomServiceRef.setStage(ctx.sessionId, "FinalScore")
+		local final = {}
+		local best = -1
+		for _, uid in ctx.participantUserIds do
+			local total = sessionTotals[uid] or 0
+			if total > best then best = total end
+		end
+		for _, uid in ctx.participantUserIds do
+			local plr = Players:GetPlayerByUserId(uid)
+			local total = sessionTotals[uid] or 0
+			local viable = total == best
+			if viable and plr then
+				plr:SetAttribute("KenopsiaSessionWins",
+					(plr:GetAttribute("KenopsiaSessionWins") or 0) + 1)
+			end
+			table.insert(final, {
+				userId = uid,
+				displayName = plr and plr.DisplayName or tostring(uid),
+				score = total,
+				verdict = viable and "VIABLE" or "REJECTED",
+			})
+		end
+		table.sort(final, function(a, b) return a.score > b.score end)
+		tell(ctx, { kind = "score", board = final, final = true })
+
+		-- The board is out and the attributes are written. Nothing after this
+		-- point may downgrade the result: the hold below is presentation only.
 		scoresCommitted = true
-		if trial.module.park then pcall(trial.module.park) end
-		hold(ctx, Config.Match.FinalBoardHold)
+		hold(ctx, Pacing.Timing.FinalScore)
 	end, debug.traceback)
 
 	-- FINALIZER. Exactly one route out, for every outcome.
@@ -417,12 +522,11 @@ local function runMatch(room)
 	if not ok then
 		outcome = "error"
 	elseif outcome == "completed" and not scoresCommitted and ctx and ctx.cancelled() then
-		-- hold() returns false on cancellation and the body returns cleanly,
-		-- so `ok` is true for an aborted session. Detect it explicitly rather
-		-- than mislabelling it "match complete".
-		-- Gated on scoresCommitted: once the final board is out the match is
-		-- finished, and someone quitting during the 12s presentation hold must
-		-- not turn a played-out match into "cancelled".
+		-- hold() returns false on cancellation and the body returns cleanly, so
+		-- `ok` is true for an aborted session. Detect it explicitly rather than
+		-- mislabelling it "match complete". Gated on scoresCommitted so that
+		-- someone quitting during the final presentation hold cannot turn a
+		-- played-out session into "cancelled".
 		outcome = "cancelled"
 	end
 

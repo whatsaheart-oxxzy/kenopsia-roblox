@@ -412,7 +412,15 @@ end
 -- a setter the guard and the write happen in the same resumption with no yield
 -- between them, so a stale caller is REJECTED rather than delayed - there is no
 -- window in which its write lands after its guard passed.
-local IN_MATCH_STAGES = { Briefing = true, Trial = true, Score = true, FinalScore = true }
+-- "Selecting" appears in BOTH tables from Gate 1 on, and the two setters still
+-- cannot both accept a write: setStage demands Playing, setWaitingStage demands
+-- Waiting, and the room has exactly one phase.
+--
+-- It is an in-match stage now because the session reveals each of its trials in
+-- turn WITHOUT returning to the lobby. The lobby's own pre-flow roulette also
+-- calls it "Selecting", which is correct -- it is the same thing shown at a
+-- different moment, and the phase is what tells them apart.
+local IN_MATCH_STAGES = { Selecting = true, Briefing = true, Trial = true, Score = true, FinalScore = true }
 
 -- Playing-phase stages. The sessionId IS the token: this is the same test
 -- cancelled() applies, so a thread left over from a dead session cannot write.
