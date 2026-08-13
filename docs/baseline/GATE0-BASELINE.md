@@ -38,62 +38,62 @@ this gate was pinned to it and verified against `routing.actualPlaceId`.
 
 ---
 
-## 2. Target place — `Kenopsia_DEV` required (corrected)
+## 2. Target place — MainGame, single-place working (RESOLVED)
 
-Plan §5 rules 7–8 require gate work in a `Kenopsia_DEV` place limited to the same
+Plan §5 rules 7-8 require gate work in a `Kenopsia_DEV` place limited to the same
 universe, with the verified commit promoted to `KenopsiaMainGame` only after all
-gates pass.
+gates pass. That is **not** what this project does. The history matters, so all
+three steps stay on the record:
 
-### Correction of record
+1. An early revision of this document recorded working directly in MainGame as
+   *"Authorised by the reviewer."* That was an **inference from a planning
+   answer, not a grant** — it put a permission into the audit trail that had
+   never been given.
+2. Commit `133e27f` withdrew it, on the reviewer's explicit statement:
 
-An earlier revision of this document stated that working directly in
-KenopsiaMainGame was *"Authorised by the reviewer."* **That claim was wrong and
-is withdrawn.** No such authorisation was given. It was inferred from a planning
-answer and should never have been written as an authorisation — an inference is
-not a grant, and recording it as one put a false permission into the project's
-own audit trail. The reviewer has since stated the requirement explicitly:
+   > Die angebliche Freigabe, direkt in KenopsiaMainGame zu arbeiten, wurde von
+   > mir nicht erteilt. Unser Plan verlangt Kenopsia_DEV.
 
-> Die angebliche Freigabe, direkt in KenopsiaMainGame zu arbeiten, wurde von mir
-> nicht erteilt. Unser Plan verlangt Kenopsia_DEV.
+   **That withdrawal was correct at the time and is not retracted.**
+3. The authorisation has **since been given explicitly**, when the contradiction
+   between this document and the execution plan's "Decisions taken §1" was put to
+   the reviewer directly and answered *"MainGame gilt."*
 
-### Standing rule
+Steps 1 and 3 are different events and the record must not read as though the
+fabricated permission was retroactively vindicated. It was not. A real one was
+granted afterwards.
 
-**All gate work from Gate 1 onward happens in `Kenopsia_DEV`.**
-`KenopsiaMainGame` (`110672791536316`) stays untouched until release. It is not
-written to, and it is not published, until the verified commit is promoted at
-Gate 7.
+### Standing rule (current)
 
-Gate 0 itself was executed against `110672791536316`. That is acceptable *only*
-because Gate 0 was **strictly read-only** — the parity check, property reads and
-manifest queries created, modified and destroyed nothing. No mutation of
-MainGame has occurred at any point under the new plan.
+**Gate work happens in `KenopsiaMainGame` (`110672791536316`).** The
+`Kenopsia_DEV` split of plan §5 rules 7-8 is an **accepted deviation**.
 
-### Blocking precondition for Gate 1
+**Compensating control: the place is not published until Gate 7 passes.** That is
+the entire protection, which is exactly why it is not a formality — publishing
+before Gate 7 removes the only thing standing between an unfinished gate and live
+players.
 
-Gate 1 cannot start until all four are true:
+### Carried forward — the two places hold disjoint content
 
-1. The `Kenopsia_DEV` placeId is known and confirmed.
-2. It is open in Studio in Edit mode and visible as a plugin client.
-3. Its permission is **"Limited to same Universe."**
-4. Its content is verified against the MainGame manifest — the trial arenas
-   (`Dead Zone` 150 children, `Bird Hunting` 234, `CanteenProtocol` 78), the
-   `KenopsiaMachine` ScreenGui, `SoundService.KenopsiaAudio` (39 Sounds), the
-   XBot rig and `ReplicatedStorage.KenopsiaAssets`. A DEV place missing the
-   arenas cannot host a meaningful Gate 1, and `Minefield.refs()` /
-   `BirdHunting.refs()` would return `nil` and skip every round.
+| | `Kenopsia_DEV` `129909297895850` | `KenopsiaMainGame` `110672791536316` |
+|---|---|---|
+| Menu | `MenuStage`, `MainMenuWAll`, landing, session wall | absent |
+| Trial arenas | absent | `Dead Zone`, `Bird Hunting`, `CanteenProtocol` |
 
-If DEV content is stale or absent, a content migration is its own step and is
-sequenced **before** Gate 1, not inside it.
+All Gate M1 menu work lives in DEV and is byte-mirrored in `dev-src`. None of it
+reaches players from MainGame today.
+
+**Promoting the menu into MainGame is a required pre-release step and is covered
+by no current gate.** Recorded here so it is not discovered at Gate 7. The two
+trees must not be allowed to drift further apart than they already have.
 
 ### Consequence for test scaffolding — unchanged
 
 No test-only trial, stub minigame or dev-harness script is created or committed.
-The reviewer's earlier instruction was scoped to MainGame, and a DEV place would
-in principle permit a stub — but the Gate 1 design does not need one. The
-MachineFlow loop iterates `#order` trials rather than a hardcoded three, so it
-runs two ready trials now and three at Gate 4 with no code change, and the
-orchestration proof runs offline against the pure rules modules. The no-stub
-design therefore stands on its own merits, not on the withdrawn deviation.
+The Gate 1 design does not need one: the MachineFlow loop iterates `#order`
+trials rather than a hardcoded three, so it runs two ready trials now and three
+at Gate 4 with no code change, and the orchestration proof runs offline against
+the pure rules modules.
 
 ---
 
@@ -321,6 +321,53 @@ The register in `PHASE0-BASELINE.md` was written against the previous plan.
 
 ---
 
+## 8. Re-verification before Gate 1
+
+Gate 0 was re-run from scratch against the live place rather than trusting the
+record above, because the parity in §3 was taken at `65b8bc2` and Gate 1 is about
+to write to this place for the first time.
+
+| Check | Result |
+|---|---|
+| Preflight — place, universe, Edit mode, single writer, clean tree | **PASS** at `31ad79a` |
+| SHA-256 parity `studio-src` → place | **19/19 MATCH**, hashes unchanged from §3 |
+| Registration, **both directions** | **19/19** — 0 scripts in the place that are not in `studio-src`, 0 in `studio-src` missing from the place |
+| `TableManners.ready` | **`false`** |
+| `GameConfig.Playlist.TrialIds` | **`{ "birdhunt", "minefield" }`** — canteen absent |
+
+### The reverse check is new, and it was missing
+
+§3's parity is **one-directional**: it proves every file in `studio-src` matches
+its counterpart in the place. It says nothing about scripts that exist in the
+place and in no source file — which is precisely how a hand-edit in Studio, or a
+leftover test script, survives a green parity run.
+
+The place was therefore swept for every `Script`, `LocalScript` and
+`ModuleScript` across Workspace, ReplicatedFirst, ReplicatedStorage,
+ServerScriptService, ServerStorage, StarterGui, StarterPack, StarterPlayer,
+Lighting, SoundService, Teams and Chat. **Exactly 19 were found, and the set is
+identical to the map.** No unmirrored script exists.
+
+The DEV gates ran this check as "registration, both directions" from §1 onward;
+MainGame never had it. It should be part of every future parity run here too.
+
+### `docs/baseline/maingame-script-map.json` — new
+
+`studio-src` had no path map, only the DEV tree did, so each parity run
+re-derived 19 paths by hand — a transcription risk the map removes. Derived from
+`default.project.json`, which is the authoritative mapping, and confirmed by the
+19/19 run above.
+
+### Two trial ids do not match the plan's naming
+
+Not a Gate 0 defect; recorded so Gate 4 does not trip over it. The registry entry
+is **`tablemanners`**, and the plan's assumption records the third trial's
+internal id as **`canteen`**. `MachineFlow`'s registry, `GameConfig.Playlist`,
+`SoundService.KenopsiaAudio.Music.Trials.*` and every `payload.trialId` check
+must agree on one spelling before Gate 4 flips `ready`.
+
+---
+
 ## Gate 0 verdict
 
 | Criterion | Result |
@@ -328,10 +375,12 @@ The register in `PHASE0-BASELINE.md` was written against the previous plan.
 | Clean working tree | PASS |
 | Correct place, Edit mode, pinned on every call | PASS |
 | No competing writer | PASS (1 plugin client, 1 MCP instance) |
-| 19/19 SHA-256 parity | PASS |
+| 19/19 SHA-256 parity | PASS — re-run at `31ad79a`, hashes unchanged |
+| 19/19 registration, **both directions** | PASS — no unmirrored script in the place (§8) |
 | Asset ledger exists | PASS (`docs/assets/ASSET-LEDGER.md`) |
-| Deviation recorded with compensating control | PASS |
+| Deviation recorded with compensating control | PASS — §2, MainGame single-place, no publish before Gate 7 |
 | `TableManners` still `ready = false` | PASS |
+| `TrialIds` excludes the canteen (`REQ-REG-02`) | PASS |
 
 **Reviewer verdict: Gate 0 — PASS WITH CONDITIONS.**
 
@@ -340,14 +389,14 @@ Conditions raised, and their state after this revision:
 | # | Condition | State |
 |---|---|---|
 | 1 | Gate 1 precheck must baseline on `65b8bc2`, not `9637fcc` | **CLOSED** — §1 records both, names `65b8bc2` as the Gate 1 baseline, and notes `studio-src` is unchanged between them so §3 parity still holds |
-| 2 | The MainGame authorisation was never granted; `Kenopsia_DEV` is required | **CLOSED in documentation** — §2 withdraws the false claim and makes DEV the standing rule. **Still open in execution:** the DEV place is not yet identified or verified |
+| 2 | The MainGame authorisation was never granted; `Kenopsia_DEV` is required | **CLOSED** — the withdrawal stands as correct for its time, and the authorisation has since been granted explicitly. MainGame is the working place; see §2 |
 | 3 | Ledger says "three packs"; it is four, via `PSX Textures II v1.6.zip` | **CLOSED** — §4 and the ledger both corrected; archive presence verified on disk |
 | 4 | CC0 wording must be precise about `LowPolyAssetPack_Free.zip` | **CLOSED** — §4 now states the notice is absent *and* that it only ever covered the free sample pack, never the arena packs |
 | 5 | Sniper volumes: keep live values, music ducking unchanged | **CLOSED** — §5 records 1.45 / 1.70 / 1.10 as authoritative and binds Gate 3 |
 
-**Gate 1 remains on HOLD** pending condition 2's execution half: identify
-`Kenopsia_DEV`, confirm it is Edit-mode and "Limited to same Universe", and
-verify its content against the MainGame manifest.
+**Gate 1 is released from HOLD.** Condition 2 is closed by decision rather than
+by migration: MainGame is the working place, so no DEV content verification is
+required and no arena migration is sequenced before Gate 1.
 
 Unchanged carry-forward: licence coverage for the ~29 packs with no archived
 terms (§4) is a Gate 7 release blocker, not a Gate 1 blocker.
