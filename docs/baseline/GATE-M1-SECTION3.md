@@ -349,36 +349,132 @@ unilaterally.
 
 ---
 
-## §3D — cursor (next)
+## §3D — cursor (COMPLETE, transferred)
 
-The shake question, answered from the code: **it does not survive.** `self.shake`
-is applied in exactly one place — `MenuController.luau:935-937`, inside
-`startAmbient`'s permanent `RenderStepped` loop, which §4 deletes. Every consumer
-is itself on the §4 removal list: `RedWash` (:995), the RGB title ghosts (:1014),
-the tape dropouts (:1032). It has no independent existence.
+### The regression this closes
 
-The one call worth rescuing is `kick(1)` at `:707` inside `reject()` — that is
-**error feedback**, not horror dressing. `SessionWallController:setNote(…, isError)`
-plus `SoundBank.denied()` and `MenuOverlayController:setNotice(…, isError)`
-already replace it, so nothing is silently lost. The other two calls
-(`playPowerOn`, `playBoot`) are the horror boot itself.
+§3C deleted `startAmbient`'s permanent `RenderStepped` loop. That was right — it
+was the horror layer. But two lines inside it were **not** horror:
 
-§3C also removes the duplicate `RoomState` / `LobbyError` listeners: both
-`MenuController` and `SessionWallController` currently subscribe, which is
-harmless while the old CRT screens still exist but must not survive the split.
+```lua
+if self.cursor and self.cursor.Visible then
+    local m = UserInputService:GetMouseLocation()
+    self.cursor.Position = UDim2.fromOffset(m.X, m.Y)
+end
+```
 
-`TerminalScreen` becomes its own `SurfaceGui` under `PlayerGui` with
-`Adornee = MenuStage.SessionDisplay`, `AlwaysOnTop = false`, `Active = true`,
-~72 `PixelsPerStud`. Baseline state to fix: it currently sits in `StarterGui`
-with an **empty `Adornee`** and `PixelsPerStud 256`, so it renders nowhere.
+Nothing replaced them, so what shipped after §3C was:
 
-Before `START` the whole session layer is `Enabled`/`Visible` false, `Active`
-false, `Selectable` false, `Interactable` false. Only after the camera move do
-`HOST SESSION`, `JOIN SESSION`, `PUBLIC SESSION` appear.
+| | State before this gate |
+|---|---|
+| `applyCursor()` | set `MouseIconEnabled = false` — **system pointer off** |
+| `KenopsiaCursor.Cursor` | parked at `(-100, -100)`, never moved again |
+| `KenopsiaCursor` (ScreenGui) | **`Enabled = false`** — so even the parked label never drew |
 
-Room remotes are unchanged. `PUBLIC SESSION` is same-server quick join for this
-gate, with the helper line `OPEN ROOMS IN THIS SERVER` and the neutral empty
-state `NO OPEN ROOM IN THIS SERVER`. `LEAVE` returns to session select, not to
-landing; a separate `BACK` returns the camera to landing and hides the wall.
+**The menu had no visible pointer at all.** Clicks still landed, which is exactly
+why the agent-driven 3B/3C live test passed it: a missing cursor is close to
+invisible in a screenshot, and every interaction still *works*, just blind.
 
-Only after the wall exists may the six placeholder Parts be removed.
+Two further defects in the same instance: `ImageColor3` was `#E03429` — **red**,
+which the §3 palette forbids outright — and the live image id
+(`123552452649630`) never matched `Theme.Asset.Cursor` (`135426270156789`).
+
+### What replaces it
+
+`UI/Cursor.luau`, a new module. Spec conformance, point by point:
+
+| Spec requirement | Implementation |
+|---|---|
+| 24×24 px | 12-unit grid × `PX = 2` |
+| built **from Frames** | 24 `Frame`s, one run per arrow row |
+| off-white fill, graphite contour | `Street.OffWhite` over `Street.Ink`, contour = each run grown 1 unit and drawn beneath |
+| **no image asset** | none — `Theme.Asset.Cursor` is no longer read |
+| **no glow** | the `Glow` child is gone with the old instance |
+| **no red** | palette tokens only |
+| only under mouse control | hidden on `Touch` and `Gamepad*` |
+| updated via **`MouseMovement`**, not `RenderStepped` | `InputChanged` filtered to `MouseMovement` |
+| cursor restored on menu exit (§2) | `Cursor:destroy()` re-enables `MouseIconEnabled`; called from `MenuController:destroy()` |
+
+Three decisions worth recording:
+
+1. **Keyboard does not hide the cursor.** Only `Touch` and `Gamepad*` do. Typing
+   a room code is still mouse-and-keyboard mode, and blinking the pointer out
+   mid-entry would be a defect.
+2. **`gameProcessedEvent` is ignored** in the move handler. The pointer has to
+   keep tracking while it is over a button — which is precisely when the event
+   arrives already processed.
+3. **`MouseIconEnabled` is written from one place only** (`_refresh`), as the
+   inverse of our own visibility. That is what makes "exactly one pointer, never
+   two and never none" structural instead of a thing to remember.
+
+The contour is built from grown sibling runs rather than a `UIStroke`, because a
+stroke follows each frame's own rectangle, not the silhouette of the group.
+
+Construction is wrapped in `pcall`. On failure `MouseIconEnabled` is never
+touched, so the player keeps the **system** pointer — the exact inverse of the
+failure being fixed.
+
+`GetMouseLocation()` is measured below the top bar while the ScreenGui sets
+`IgnoreGuiInset = true`, so `GuiService:GetGuiInset()` is added back, read live
+rather than cached. Note the old code did **not** do this — it would have drawn
+the arrow a top-bar's height above the real pointer had it ever run.
+
+### Instances removed
+
+- `StarterGui.KenopsiaCursor` — the replaced ImageLabel cursor. `StarterGui`
+  2 → 1 children, verified by re-query.
+- Dead screens: `MainMenu` (with its `TitleGhostR`/`TitleGhostB`), `Settings`,
+  `Credits`, `Create`, `Join`, `Room`. `Screens` 11 → 5; place descendants
+  **6565 → 6150**.
+
+Before deleting, every `MenuController:show()` and `TrialController:showBoard()`
+call site was enumerated: the complete set of names ever shown is `Trial`,
+`Countdown`, `TrialIntro`, `TrialResult`, `FinalResult`. All five confirmed
+present after deletion.
+
+> **Scope note.** These six Frames are **not** on the spec's §4 removal list, and
+> §3C deliberately left them for the reviewer. They were removed here on explicit
+> user authorisation, recorded as a deliberate addition to §4 rather than as part
+> of it.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Source parity | **2/2 MATCH** — `len`/`h1`/`h2` identical both sides, `cr=0` |
+| Luau analyze (`luau-lsp` 1.69.0) | **0 diagnostics**, exit 0, both files |
+| Selene | 0 errors, **45 warnings** — baseline, all in stock `Animate` |
+| Selene in Kenopsia-authored files | **zero** |
+| Trial screens after deletion | **5/5 present** |
+| `StarterGui` children | 2 → 1 (`KenopsiaGui`) |
+
+### Two process defects found, not worked around
+
+1. **The WEPPY preflight could not run.** `Test-KenopsiaPreflight` fails with
+   *"WEPPY server not reachable on any candidate port."* The documented gate was
+   replaced with an equivalent manual check — `PlaceId 129909297895850`,
+   `GameId 10640788131`, Edit mode, exactly one Studio client, clean tree — and
+   SHA-256 was replaced with a dual rolling digest plus byte length and a CR
+   count, computed on both sides. **The `tools/weppy.ps1` path is stale and
+   should either be revived or dropped from the standing rules.**
+2. **StyLua has never passed on this repo.** `StyLua --check` reports diffs in
+   *every* client file, including ones untouched since earlier gates, and no
+   single config key (`collapse_simple_statement`) accounts for it — the codebase
+   is written in a compact one-liner style the pinned config does not produce.
+   Reformatting would be a large diff unrelated to this gate, so it was not done.
+   **The standing rule "selene and StyLua check — clean" is currently false for
+   StyLua and should be corrected or enforced deliberately.**
+
+### Still open
+
+- `KenopsiaGui.TerminalScreen` — still in `StarterGui`, still an empty `Adornee`
+  at `PixelsPerStud 256`, so it renders nowhere. `SessionWallController` built
+  its own `SurfaceGui` under `PlayerGui` in §3B, which makes this instance dead
+  rather than pending. **0 code references.** Deletion candidate.
+- `ScreenArea.PowerOn`, `Content.Banner`, `Backdrop`, and the six `Templates`
+  (`MenuButton`, `Card`, `ToggleRow`, `SliderRow`, `PlayerRow`, `PlayerSlot`)
+  plus `Components.SelectionHighlight`: **0 code references** each. Not deleted —
+  outside what was authorised.
+- §5 acceptance (12 playtests) has not been run. The cursor needs a live check in
+  particular: no automated signal distinguishes a correct pointer from a missing
+  one, which is the whole reason this regression survived a gate.

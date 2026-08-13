@@ -28,7 +28,6 @@
 -- The monitor is DISABLED until a trial screen asks for it, so the landing view
 -- is the 3D street and nothing else. That is what removes the CRT frame from
 -- the menu without deleting the surface the trials still need.
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
@@ -36,8 +35,7 @@ local GuiService = game:GetService("GuiService")
 local UI = script.Parent.Parent.UI
 local Motion = require(UI.Motion)
 local SoundBank = require(UI.SoundBank)
-
-local player = Players.LocalPlayer
+local CursorUI = require(UI.Cursor)
 
 local MenuController = {}
 MenuController.__index = MenuController
@@ -78,6 +76,17 @@ function MenuController.new(gui)
 	SoundBank.init()
 	SoundBank.setSfxEnabled(self.settings.UiSound)
 	SoundBank.setMusicEnabled(self.settings.Music)
+
+	-- Deliberately non-fatal. If the cursor cannot be built, MouseIconEnabled is
+	-- never touched, so the player keeps the system pointer and the menu stays
+	-- fully usable -- the opposite of the failure this replaces, where the
+	-- system pointer was switched off and nothing took its place.
+	local cursorOk, cursorUi = pcall(CursorUI.new)
+	if cursorOk then
+		self.cursorUi = cursorUi
+	else
+		warn("[Kenopsia] custom cursor disabled: " .. tostring(cursorUi))
+	end
 
 	self:applyTextScale(self.settings.TextScale)
 	self:applyIntensity(self.settings.RetroFilter)
@@ -256,13 +265,15 @@ function MenuController:applyTextScale(scale)
 	if s and s:IsA("UIScale") then s.Scale = scale end
 end
 
+-- The cursor itself lives in UI/Cursor, which owns both its own visibility and
+-- MouseIconEnabled. This used to reach into a StarterGui ImageLabel and toggle
+-- MouseIconEnabled beside it, which is how the two ended up disagreeing: the
+-- system pointer was switched off while the custom one was never positioned,
+-- never enabled, and therefore never drawn.
 function MenuController:applyCursor()
-	local pg = player:FindFirstChildOfClass("PlayerGui")
-	local cg = pg and pg:FindFirstChild("KenopsiaCursor")
-	self.cursor = cg and cg:FindFirstChild("Cursor")
-	local on = self.settings.CustomCursor
-	pcall(function() UserInputService.MouseIconEnabled = not on end)
-	if self.cursor then self.cursor.Visible = on end
+	if self.cursorUi then
+		self.cursorUi:setEnabled(self.settings.CustomCursor)
+	end
 end
 
 function MenuController:destroy()
@@ -270,6 +281,12 @@ function MenuController:destroy()
 		if conn.Connected then conn:Disconnect() end
 	end
 	table.clear(self.conns)
+	-- Hands the system pointer back. The menu must not leave the cursor in its
+	-- own state once it releases control (§2).
+	if self.cursorUi then
+		self.cursorUi:destroy()
+		self.cursorUi = nil
+	end
 end
 
 return MenuController
