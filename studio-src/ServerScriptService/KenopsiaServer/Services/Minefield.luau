@@ -10,12 +10,28 @@ local ServerStorage = game:GetService("ServerStorage")
 local SoundService = game:GetService("SoundService")
 
 local BloodFX = require(script.Parent.BloodFX)
+local Pacing = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Rules"):WaitForChild("Pacing"))
 
 local Minefield = {}
 
-local FAILSAFE_TIME = 150
-local SHRED_SPEED = 4.5     -- langsamer als Gehen (7), schneller als Crawl (4.2):
-                            -- wer laeuft, bleibt vorn; wer kriecht/troedelt, verliert
+-- THE COMPACTOR IS THE ROUND TIMER, so its speed is DERIVED from the distance
+-- it has to cover and the round length Pacing asks for -- never fixed. A fixed
+-- speed silently changes the round length every time the arena or the
+-- ShredderSpawnpoint marker moves, and that is exactly what had happened.
+--
+-- Measured in the live arena before this change: the marker sits 122 studs
+-- BEHIND the minefield, so at the old fixed 4.5 studs/s the machine spent its
+-- first 22 seconds merely reaching the players' starting line and needed 88 s
+-- to finish -- against a planned round of 55. Worse, a CRAWLING player needs
+-- 67 s to cross and escaped with 20 s to spare, which left being maimed with
+-- no consequence at all. The machine threatened nobody.
+--
+-- The clamps below ARE the design, not safety rails:
+--   under the runner's walk speed (7)  -> escaping on foot stays possible
+--   over the crawl speed (4.2)         -> being maimed still costs the round
+local MAX_SHRED_SPEED = 6.5   -- runner walks at 7
+local MIN_SHRED_SPEED = 4.6   -- runner crawls at 4.2
 local SHRED_GRACE = 1.5
 -- MOTION VALIDATION -- PARKED UNTIL GATE 6, NOT DEAD CODE.
 --
@@ -620,6 +636,24 @@ local function runRoundInner(room, roundIndex, guard)
 		if (markerZ - shredZ) * g.dir < 0 then shredZ = markerZ end
 	end
 	local shredEndZ = g.z0 + g.dir * (g.rows * CELL + 12)
+	
+	-- Solve for the speed that finishes this run in the planned round length,
+	-- then clamp. When the clamp binds, the round is longer than planned and
+	-- the print below says so rather than leaving it to be discovered in play.
+	local shredDistance = math.abs(shredEndZ - shredZ)
+	local targetRound = Pacing.RoundSeconds.minefield or 55
+	local shredSpeed = math.clamp(
+		shredDistance / math.max(1, targetRound - SHRED_GRACE),
+		MIN_SHRED_SPEED, MAX_SHRED_SPEED)
+	local shredTraversal = shredDistance / shredSpeed + SHRED_GRACE
+	-- A real failsafe now, not a second timer: it only ever fires if the
+	-- machine somehow fails to reach the end it is driven towards.
+	local failsafeTime = shredTraversal + 20
+	print(("[DZ] compactor %.0f studs at %.2f/s -> %.1f s round (target %.0f)%s")
+		:format(shredDistance, shredSpeed, shredTraversal, targetRound,
+			(shredTraversal > targetRound + 1)
+				and "  [SPEED CLAMPED - move ShredderSpawnpoint closer to hit target]"
+				or ""))
 	placeShred(shredZ, 0)
 	shred.Parent = runtime
 
@@ -627,7 +661,7 @@ local function runRoundInner(room, roundIndex, guard)
 	local t0 = os.clock()
 	local lastTick = os.clock()
 	local spin = 0
-	while os.clock() - t0 < FAILSAFE_TIME do
+	while os.clock() - t0 < failsafeTime do
 		task.wait(0.05)
 		-- C1.c: break out the moment the match aborts. Previously this loop
 		-- only ended on all-done / crusher-past-exit / zero-members, so an
@@ -638,7 +672,7 @@ local function runRoundInner(room, roundIndex, guard)
 		lastTick = now
 		-- Compactor bewegen (nach Schonfrist), Walzen drehen
 		if now - t0 > SHRED_GRACE and (shredZ - shredEndZ) * g.dir < 0 then
-			shredZ += g.dir * SHRED_SPEED * dt
+			shredZ += g.dir * shredSpeed * dt
 		end
 		spin += dt * 6
 		placeShred(shredZ, spin)
