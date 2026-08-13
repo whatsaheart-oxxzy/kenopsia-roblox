@@ -504,6 +504,85 @@ A rule that is documented but never enforced is worse than no rule: it makes
 every gate report claiming "selene and StyLua clean" untrue. The rule now matches
 what is actually checked.
 
+### §3D corrections after the live test
+
+Three items from the first live run of the new cursor and menu.
+
+#### 1. Cursor sat one top-bar height too low
+
+`GetMouseLocation()` already returns **absolute** screen coordinates — it does not
+account for the GUI inset, so its origin is the true top-left of the screen,
+which is exactly the space a `ScreenGui` with `IgnoreGuiInset = true` draws in.
+The first transfer added `GetGuiInset()` on top of that and double-counted the
+bar.
+
+The familiar `+ 36` correction belongs to `PlayerMouse.X/Y`, which *is*
+inset-relative. Conflating the two spaces is easy to repeat, so the reason is now
+a comment above `_move` rather than a silent constant. `GuiService` is no longer
+required by the module.
+
+#### 2. Grey wash behind Settings and Credits removed
+
+`MenuOverlayController:buildCard` gave its outer container `Street.Ink` at
+`BackgroundTransparency = 0.15` — an **85 %-opaque full-screen scrim** that greyed
+out the 3D street behind the card. It applied to both Settings and Credits.
+
+The card itself is fully opaque (`flatPanel` leaves `BackgroundTransparency` at
+0) and the landing panel is hidden while a card is up, so the scrim bought no
+readability and no click protection — it only replaced the menu's own backdrop
+with a flat grey rectangle. The container is now transparent and purely
+positional.
+
+#### 3. READY gated at the room minimum
+
+Before: the button was always live. Pressing it below the minimum set the flag
+server-side, `maybeAutoStart` declined because the room was too small, and **the
+player was told nothing at all**. `startRun` had always answered this case
+correctly (`NOT ENOUGH PLAYERS`); `setReady` simply never did.
+
+Fixed on both sides, and the threshold is sent rather than duplicated:
+
+| Change | File |
+|---|---|
+| `publicState` now carries `minPlayers` | `RoomService.luau` |
+| `setReady` rejects readying below the minimum **and answers** `MINIMUM n PLAYERS`; standing down is always allowed | `RoomService.luau` |
+| `renderRoster` disables the button below the minimum and labels it `MINIMUM n PLAYERS` | `SessionWallController.luau` |
+
+The client never hardcodes the number — it reads `payload.minPlayers`, with a
+constant used only for the window before the first `RoomState` arrives. The
+button and the rule it represents therefore cannot drift apart.
+
+**The Studio solo path was removed.** `minPlayers()` used to return
+`Players.StudioTestMinimum` (1) inside Studio, so the one environment where the
+READY rule gets tested was the one environment where it did not apply.
+`Room.MinPlayers` is now the single source in Studio and production alike, and
+`StudioTestMinimum` is deleted from `GameConfig` — it had no other reader.
+Consequence, accepted on instruction: the room flow can no longer be exercised
+with a single player; it needs Start Server + 2 clients.
+
+#### Two latent defects caught while gating the button
+
+Both would have silently undone the fix:
+
+1. **`setLayerInteractive` sweeps every button** on the layer and sets
+   `Interactable = on`. It runs from `go()`, so the very next page change would
+   have re-enabled a rule-disabled READY. Disabled state is therefore an
+   **attribute**, which the sweep now honours.
+2. **`Interactable = false` suppresses `Activated` but not `MouseEnter`.** A
+   disabled button would still light amber and play its hover sound as if live.
+   The hover handlers now check the same attribute.
+
+The same mechanism replaced `btnStart`'s ad-hoc host gating, which had the
+identical sweep bug — a non-host regained `Interactable` on every page change.
+
+#### Verification
+
+| Check | Result |
+|---|---|
+| Selene | 0 errors, **45 warnings** — baseline, all in stock `Animate` |
+| Selene in Kenopsia-authored files | **zero** |
+| luau-lsp, 4 changed files | **24 → 22** diagnostics: two removed, **none added** |
+
 ### Still open
 
 - `KenopsiaGui.TerminalScreen` — still in `StarterGui`, still an empty `Adornee`

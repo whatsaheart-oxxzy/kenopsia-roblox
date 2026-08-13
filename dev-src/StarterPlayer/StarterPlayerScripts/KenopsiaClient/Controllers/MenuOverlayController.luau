@@ -263,10 +263,16 @@ end
 
 -- A titled overlay card shared by Settings and Credits.
 function MenuOverlayController:buildCard(name, heading)
+	-- No scrim. This frame is a positioning container only.
+	--
+	-- It used to carry Ink at 0.15 transparency -- an 85%-opaque full-screen
+	-- wash that greyed the 3D street out behind the card. The card itself is
+	-- fully opaque (flatPanel leaves BackgroundTransparency at 0), so the wash
+	-- bought no readability; it only replaced the menu's own backdrop with a
+	-- flat grey rectangle.
 	local panel = Instance.new("Frame")
 	panel.Name = name
-	panel.BackgroundColor3 = Theme.Street.Ink
-	panel.BackgroundTransparency = 0.15
+	panel.BackgroundTransparency = 1
 	panel.BorderSizePixel = 0
 	panel.Size = UDim2.fromScale(1, 1)
 	panel.Visible = false

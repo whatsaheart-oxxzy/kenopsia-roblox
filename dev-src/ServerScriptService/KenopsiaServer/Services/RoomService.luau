@@ -34,10 +34,11 @@ local function fail(player, message)
 	Remotes.LobbyError:FireClient(player, message)
 end
 
+-- One rule everywhere. This used to return Players.StudioTestMinimum (1) inside
+-- Studio so the room flow could be exercised solo, which meant Studio and
+-- production disagreed about when READY is legal -- and Studio is precisely
+-- where that rule gets tested, so the divergence hid rather than surfaced.
 local function minPlayers()
-	if RunService:IsStudio() then
-		return Config.Players.StudioTestMinimum
-	end
 	return Config.Room.MinPlayers
 end
 
@@ -67,6 +68,9 @@ local function publicState(room)
 		phase = room.phase,
 		countdown = room.countdown,
 		maxPlayers = Config.Room.MaxPlayers,
+		-- Sent rather than hardcoded client-side, so the button and the rule it
+		-- represents cannot drift apart.
+		minPlayers = minPlayers(),
 		members = members,
 	}
 end
@@ -251,6 +255,17 @@ end
 local function setReady(player, ready)
 	local room = byPlayer[player.UserId]
 	if not room then return end
+
+	-- Readying up below the minimum used to be accepted in silence: the flag was
+	-- set, maybeAutoStart declined because the room was too small, and the player
+	-- was told nothing at all. The client now disables the button, but the remote
+	-- is still reachable, so the rule is enforced here as well -- and unlike
+	-- before, it answers. Standing down is always allowed.
+	if ready == true and #room.members < minPlayers() then
+		fail(player, string.format("MINIMUM %d PLAYERS", minPlayers()))
+		return
+	end
+
 	for _, m in room.members do
 		if m.userId == player.UserId then
 			m.ready = ready == true

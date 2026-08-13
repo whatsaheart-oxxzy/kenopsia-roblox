@@ -3,10 +3,13 @@ return {
 	ProjectName = "Kenopsia",
 	Version = "0.1.0",
 
+	-- StudioTestMinimum was removed. It let Studio start a room with one player
+	-- while production required two, so the environment used for testing was the
+	-- one environment where the READY rule did not apply. Room.MinPlayers below
+	-- is now the single source of truth, in Studio and in production alike.
 	Players = {
 		MinimumForMatch = 2,
 		MaximumPerServer = 8,
-		StudioTestMinimum = 1,
 	},
 
 	LaunchTrialCount = 3,

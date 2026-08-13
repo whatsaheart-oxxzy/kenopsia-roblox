@@ -32,6 +32,10 @@ local PIXELS_PER_STUD = 72
 local CODE_LENGTH = 6
 local REVEAL_STAGGER = 0.08
 
+-- Fallback only, for the window before the first RoomState arrives. The real
+-- value is Room.MinPlayers and it is sent with every state broadcast.
+local DEFAULT_MIN_PLAYERS = 2
+
 -- The helper line states the scope honestly for this gate: quick join searches
 -- the CURRENT SERVER only. Cross-server matchmaking is its own gate.
 local PUBLIC_HELP = "OPEN ROOMS IN THIS SERVER"
@@ -106,15 +110,49 @@ local function wallButton(parent, name, text, yScale, hScale)
 	s.Parent = b
 
 	local function setActive(on)
+		-- Interactable = false suppresses Activated but NOT MouseEnter, so a
+		-- disabled button would still light up and play its hover sound as if it
+		-- were live. The state is checked here rather than trusted.
+		if b:GetAttribute("Disabled") then return end
 		Motion.hover(s, { Color = on and Theme.Street.Amber or Theme.Street.Sage,
 			Transparency = on and 0 or 0.45 })
 		b.TextColor3 = on and Theme.Street.Amber or Theme.Street.OffWhite
 	end
-	b.MouseEnter:Connect(function() setActive(true) SoundBank.hover() end)
+	local function enter()
+		if b:GetAttribute("Disabled") then return end
+		setActive(true)
+		SoundBank.hover()
+	end
+	b.MouseEnter:Connect(enter)
 	b.MouseLeave:Connect(function() setActive(false) end)
-	b.SelectionGained:Connect(function() setActive(true) SoundBank.hover() end)
+	b.SelectionGained:Connect(enter)
 	b.SelectionLost:Connect(function() setActive(false) end)
 	return b
+end
+
+-- Disabled state is an ATTRIBUTE, not a local flag, because two other places
+-- have to honour it: the hover handlers above, and setLayerInteractive, which
+-- sweeps every button on the layer and would otherwise hand a rule-disabled
+-- button straight back on the next page change.
+local function setButtonDisabled(b, disabled)
+	if not b then return end
+	b:SetAttribute("Disabled", disabled)
+	b.Interactable = not disabled
+	b.Selectable = not disabled
+	local s = b:FindFirstChildOfClass("UIStroke")
+	if disabled then
+		b.TextColor3 = Theme.Street.Denim
+		if s then
+			s.Color = Theme.Street.Denim
+			s.Transparency = 0.6
+		end
+	else
+		b.TextColor3 = Theme.Street.OffWhite
+		if s then
+			s.Color = Theme.Street.Sage
+			s.Transparency = 0.45
+		end
+	end
 end
 
 -- CONSTRUCTION ---------------------------------------------------------------
@@ -187,9 +225,13 @@ function SessionWallController:setLayerInteractive(on)
 	self.gui.Active = on
 	for _, d in self.gui:GetDescendants() do
 		if d:IsA("GuiButton") or d:IsA("TextBox") then
-			d.Selectable = on
+			-- A button disabled by a RULE -- too few players, not the host --
+			-- stays disabled across page changes. Without this check the sweep
+			-- re-enables it on the very next go(), silently undoing the rule.
+			local blocked = d:GetAttribute("Disabled") == true
+			d.Selectable = on and not blocked
 			d.Active = on
-			d.Interactable = on
+			d.Interactable = on and not blocked
 		end
 	end
 end
@@ -413,6 +455,7 @@ function SessionWallController:bindServer()
 			self.room = {
 				hostUserId = payload.hostUserId or 0,
 				isPublic = payload.isPublic == true,
+				minPlayers = payload.minPlayers or DEFAULT_MIN_PLAYERS,
 				members = payload.members or {},
 			}
 			if self.roomCode then
@@ -463,13 +506,28 @@ function SessionWallController:renderRoster()
 	end
 	local me = self:me()
 	if self.btnReady then
-		self.btnReady.Text = (me and me.ready) and "NOT READY" or "READY"
+		-- The room cannot start below the minimum, so READY is not offered below
+		-- it. The button states the reason instead of sitting enabled and doing
+		-- nothing -- which is exactly what it did before: the server recorded the
+		-- flag, declined to start, and sent no answer at all.
+		--
+		-- The threshold comes from the server payload, never from a local
+		-- constant, so the button and the rule cannot drift apart.
+		local need = self.room.minPlayers or DEFAULT_MIN_PLAYERS
+		if #self.room.members >= need then
+			setButtonDisabled(self.btnReady, false)
+			self.btnReady.Text = (me and me.ready) and "NOT READY" or "READY"
+		else
+			setButtonDisabled(self.btnReady, true)
+			self.btnReady.Text = string.format("MINIMUM %d PLAYERS", need)
+		end
 	end
 	if self.btnStart then
 		local isHost = self.room.hostUserId == player.UserId
 		self.btnStart.Visible = isHost
-		self.btnStart.Interactable = isHost
-		self.btnStart.Selectable = isHost
+		-- Same mechanism as READY, so the setLayerInteractive sweep cannot hand a
+		-- non-host the start button back on the next page change.
+		setButtonDisabled(self.btnStart, not isHost)
 	end
 end
 
