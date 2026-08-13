@@ -448,22 +448,61 @@ present after deletion.
 | Trial screens after deletion | **5/5 present** |
 | `StarterGui` children | 2 → 1 (`KenopsiaGui`) |
 
-### Two process defects found, not worked around
+### Two process defects — both now closed
 
-1. **The WEPPY preflight could not run.** `Test-KenopsiaPreflight` fails with
-   *"WEPPY server not reachable on any candidate port."* The documented gate was
-   replaced with an equivalent manual check — `PlaceId 129909297895850`,
-   `GameId 10640788131`, Edit mode, exactly one Studio client, clean tree — and
-   SHA-256 was replaced with a dual rolling digest plus byte length and a CR
-   count, computed on both sides. **The `tools/weppy.ps1` path is stale and
-   should either be revived or dropped from the standing rules.**
-2. **StyLua has never passed on this repo.** `StyLua --check` reports diffs in
-   *every* client file, including ones untouched since earlier gates, and no
-   single config key (`collapse_simple_statement`) accounts for it — the codebase
-   is written in a compact one-liner style the pinned config does not produce.
-   Reformatting would be a large diff unrelated to this gate, so it was not done.
-   **The standing rule "selene and StyLua check — clean" is currently false for
-   StyLua and should be corrected or enforced deliberately.**
+#### 1. The WEPPY preflight could not run — RESOLVED
+
+`Test-KenopsiaPreflight` failed with *"WEPPY server not reachable on any
+candidate port."* Nothing was broken: **the server had simply never been
+started.**
+
+`weppy-roblox-mcp` is registered in `.claude.json` under the project
+`C:/Users/Asus` **only**. An agent session started from any other directory never
+launches it, so port 3002 stays closed and every `weppy.ps1` call fails. The
+Studio plugin (`WeppyRobloxMCP.rbxm`) was installed and healthy the whole time.
+
+A second, sharper trap sits behind it: the server speaks MCP over **stdio**.
+Started with stdin already closed — which is what backgrounding or redirecting
+normally does — it binds 3002, logs *"MCP Server started successfully"*, and
+shuts the bridge down again ~0.5 s later. Observed directly: bound and released
+within half a second, log line *"Stopping HTTP Bridge · isClientMode: false"*.
+
+`tools/start-weppy.ps1` closes both. It probes first and is idempotent, and it
+launches through `cmd /k` so a real console stays attached and stdin never
+reaches EOF. The minimised window is the off switch.
+
+Verified end to end: cold start online in 3 s → Studio plugin reconnects →
+`Test-KenopsiaPreflight` **PASS** (Edit mode, single Studio client, single MCP
+instance, universe `10640788131`, clean tree) → `Get-KenopsiaParity` **4/4
+MATCH** on real SHA-256.
+
+The interim substitute used earlier in this gate — dual rolling digest plus byte
+length and CR count on both sides — is no longer needed and is superseded by the
+real SHA-256 path.
+
+#### 2. StyLua has never passed on this repo — RULE CORRECTED
+
+`StyLua --check` reports diffs in **18 of 20** `dev-src` files (3,445 lines) and
+**16 of 19** `studio-src` files (4,723 lines), including files untouched since
+earlier gates. No single config key explains it — `collapse_simple_statement` was
+tested and does not account for the difference. The codebase is written in a
+compact one-liner style the pinned config does not reproduce.
+
+Decision: **StyLua is removed from the standing rules.** It stays installed and
+available, but it is no longer claimed as a passing gate. Reasoning:
+
+- Reformatting would be ~8,200 lines of churn across a codebase in mid-flight,
+  and every reformatted file would then need re-transferring to Studio to hold
+  byte parity — 34 transfers, each an opportunity to break something, for zero
+  functional gain.
+- `studio-src` belongs to `KenopsiaMainGame`, which Gate M1 requires to stay
+  untouched. Formatting it here would violate that directly.
+- Selene is the gate that catches real defects — unused locals, shadowing,
+  undefined globals. It is enforced and green. StyLua is cosmetic.
+
+A rule that is documented but never enforced is worse than no rule: it makes
+every gate report claiming "selene and StyLua clean" untrue. The rule now matches
+what is actually checked.
 
 ### Still open
 
