@@ -182,6 +182,29 @@ require — pure artifact. **Future gates should pass `--sourcemap`.**
 
 ---
 
+## Verified in the live Luau runtime
+
+The offline proof runs under **Lua 5.1**. The whole portability rule rests on an
+argument -- that the same source behaves identically under Luau -- and an argument
+is not a measurement. It has now been measured, in a running server:
+
+| Check | Result |
+|---|---|
+| `Playlist.order` for the six proof seeds | **6/6 identical** to the Lua 5.1 output |
+| `Scoring.distribute`, 12 shapes across 2-4 players | **12/12 summed to exactly 1700** |
+| `Pacing.roundsFor` | minefield 2p=4, birdhunt 2p=4, canteen 3p=2 |
+
+Had the generators disagreed, the entire Playlist proof would have been void --
+reproducible offline, reproducible in game, and different from each other. They
+do not disagree.
+
+**Boot is clean after the XBot removal.** `[RoomService] online`,
+`[MachineFlow] online - 2/3 trials ready (birdhunt, minefield)`,
+`[Kenopsia] server ready`, `[Kenopsia] client online`, and no error or warning.
+`[XBotCharacters]` and `[XBotAnimSync]` are correctly absent. The new requires
+(Pacing / Playlist / Scoring / Contexts) all resolve, and the client's new
+LobbyError block does not throw.
+
 ## Not done, and deliberately so
 
 - **§5 runtime acceptance has not been run.** The session flow needs two clients;
