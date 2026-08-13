@@ -1298,9 +1298,9 @@ end
 
 info.Btn_READY.Activated:Connect(function()
 	-- C3: guard BEFORE sfx, so a benched player gets no confirmation sound for
-	-- a press that does nothing. The server already rejects it via LobbyError,
-	-- but this client never connects to LobbyError, so that rejection is
-	-- invisible today.
+	-- a press that does nothing. The server's own rejection arrives on
+	-- LobbyError, which IS connected now -- see the notice line at the end of
+	-- this file.
 	if amSpectator then return end
 	sfx("Submit")
 	ReadyReq:FireServer(not myReady)
@@ -2031,6 +2031,71 @@ do
 		end
 		machine:GetAttributeChangedSignal("TrialId"):Connect(renderPage)
 		renderPage()
+	end
+end
+
+-- LOBBY ERRORS ---------------------------------------------------------------
+-- Every server-side rejection -- not host, too few players, ready refused, run
+-- aborted -- is sent on LobbyError. Until now nothing on this client listened,
+-- so all of it landed in silence: the player pressed a button, the server said
+-- no, and the screen did not change. That is indistinguishable from a bug, and
+-- it is why people press the same button again.
+--
+-- Deliberately its OWN ScreenGui rather than a frame inside the machine layout.
+-- The notice has to be visible during a minigame as well as in the lobby, and
+-- every show* on the machine begins with hideAll(); a notice living in there
+-- would be wiped by the next screen change it was trying to explain.
+do
+	local lobbyError = remotes:FindFirstChild("LobbyError")
+	if lobbyError then
+		local gui = Instance.new("ScreenGui")
+		gui.Name = "KenopsiaNotice"
+		gui.ResetOnSpawn = false
+		gui.IgnoreGuiInset = true
+		gui.DisplayOrder = 900
+		gui.Enabled = false
+		gui.Parent = playerGui
+
+		local line = Instance.new("TextLabel")
+		line.Name = "Line"
+		line.AnchorPoint = Vector2.new(0.5, 1)
+		line.Position = UDim2.fromScale(0.5, 0.94)
+		line.Size = UDim2.new(0.9, 0, 0, 30)
+		line.BackgroundTransparency = 1
+		line.Font = Enum.Font.Code
+		line.TextSize = 20
+		line.TextColor3 = AMBER
+		line.TextStrokeTransparency = 0.4
+		line.Text = ""
+		line.Parent = gui
+
+		local noticeSeq = 0
+		-- Connected without storing the handle: this LocalScript has no teardown
+		-- path and lives for the whole session. A first draft pushed it into a
+		-- `conns` table that does not exist in this file, which would have thrown
+		-- on the first rejection -- the exact case the notice exists to report.
+		lobbyError.OnClientEvent:Connect(function(message)
+			if type(message) ~= "string" or message == "" then return end
+			noticeSeq += 1
+			local mine = noticeSeq
+			line.Text = string.upper(message)
+			line.TextTransparency = 0
+			gui.Enabled = true
+			sfx("Reject")
+			-- Held on a sequence number, not a debounce: a second rejection
+			-- while the first is still showing must replace it and restart the
+			-- clock, never be dropped and never let the older timer hide the
+			-- newer message.
+			task.delay(3.5, function()
+				if noticeSeq ~= mine then return end
+				TweenService:Create(line, TweenInfo.new(0.4), { TextTransparency = 1 }):Play()
+				task.delay(0.45, function()
+					if noticeSeq == mine then gui.Enabled = false end
+				end)
+			end)
+		end)
+	else
+		warn("[Kenopsia] LobbyError remote missing - server rejections will be silent")
 	end
 end
 
