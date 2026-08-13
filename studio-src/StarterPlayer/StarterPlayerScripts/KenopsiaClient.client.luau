@@ -900,26 +900,57 @@ end
 
 -- aufgedeckte Minen: rote Bodenmarken mit kurzer Lebensdauer
 local revealMarks = {}
+-- POOLED. Every sonar pulse used to Instance.new a Part per revealed mine and
+-- Destroy it a moment later; a held scan over a dense field churns dozens of
+-- instances a second for marks that all look identical. They are recycled
+-- instead, so a round allocates roughly as many parts as the widest single
+-- reveal and none after that.
+local markPool = {}
+-- Plan: markers clear within a second. Was 1.6, which left the field readable
+-- long after the pulse that lit it and made a single scan worth more than the
+-- risk of standing still to cast it.
+local MARK_LIFETIME = 1.0
+-- Bounded so a pathological round cannot turn the pool into a leak. Past this
+-- the surplus is destroyed rather than kept.
+local MARK_POOL_MAX = 64
+
+local function acquireMark()
+	local mark = table.remove(markPool)
+	if mark then return mark end
+	mark = Instance.new("Part")
+	mark.Shape = Enum.PartType.Cylinder
+	mark.Size = Vector3.new(0.12, 1.6, 1.6)
+	mark.Material = Enum.Material.Neon
+	mark.Color = Color3.fromRGB(255, 60, 50)
+	mark.Anchored = true
+	mark.CanCollide = false
+	mark.CanQuery = false
+	mark.CanTouch = false
+	return mark
+end
+
+local function releaseMark(mark)
+	mark.Parent = nil
+	if #markPool < MARK_POOL_MAX then
+		table.insert(markPool, mark)
+	else
+		mark:Destroy()
+	end
+end
 local function showMines(list)
 	for _, e in list do
 		local key = math.floor(e[1]) .. ":" .. math.floor(e[3])
 		local mark = revealMarks[key]
 		if not mark then
-			mark = Instance.new("Part")
-			mark.Shape = Enum.PartType.Cylinder
-			mark.Size = Vector3.new(0.12, 1.6, 1.6)
+			mark = acquireMark()
+			-- Set on every acquire, not only on creation: a recycled part
+			-- arrives wherever it was last used.
 			mark.CFrame = CFrame.new(e[1], e[2] + 0.12, e[3]) * CFrame.Angles(0, 0, math.rad(90))
-			mark.Material = Enum.Material.Neon
-			mark.Color = Color3.fromRGB(255, 60, 50)
-			mark.Anchored = true
-			mark.CanCollide = false
-			mark.CanQuery = false
-			mark.CanTouch = false
 			mark.Parent = workspace
 			revealMarks[key] = mark
 		end
 		mark.Transparency = e[4] and 0.1 or 0.55
-		mark:SetAttribute("DieAt", os.clock() + 1.6)
+		mark:SetAttribute("DieAt", os.clock() + MARK_LIFETIME)
 	end
 end
 task.spawn(function()
@@ -927,8 +958,8 @@ task.spawn(function()
 		task.wait(0.4)
 		for key, mark in pairs(revealMarks) do
 			if (mark:GetAttribute("DieAt") or 0) < os.clock() then
-				mark:Destroy()
 				revealMarks[key] = nil
+				releaseMark(mark)
 			end
 		end
 	end
