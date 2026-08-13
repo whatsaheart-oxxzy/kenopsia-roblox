@@ -201,6 +201,23 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			end
 		end
 		if not sniperUserId then
+			if forcedHunterUserId then
+				-- SKIPPED, NEVER SUBSTITUTED.
+				--
+				-- The session scheduled this leg for a specific player and that
+				-- player is no longer in the room. Handing the tower to whoever
+				-- happens to sit at the rotation index gives one player two
+				-- hunting legs and another none -- and the schedule is the whole
+				-- basis on which duel points are comparable.
+				--
+				-- scores is already zeroed for every participant precisely so a
+				-- bail can return it, so a skipped leg costs nobody anything.
+				print(("[BH] leg %s skipped: scheduled hunter %d has left")
+					:format(tostring(legIndex or roundIndex), forcedHunterUserId))
+				return scores
+			end
+			-- No hunter was supplied at all, which only happens on a direct or
+			-- solo test call. The rotation keeps those working.
 			local idx = ((roundIndex or 1) - 1) % #room.members + 1
 			sniperUserId = room.members[idx].userId
 		end
@@ -481,7 +498,7 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 		local s = subjects[plr.UserId]
 		if not (st and not st.done and s and s.hum.Health > 0) then return end
 		local sst = state[sniperUserId]
-		-- BOOM HEADSHOT: head (or anything riding on it) is an instant kill
+		-- REQ-IP-01: head (or anything riding on it) is an instant kill
 		local head = char:FindFirstChild("Head")
 		local isHead = hit.Instance.Name == "Head"
 			or (head and (hit.Position - head.Position).Magnitude < 1.4)

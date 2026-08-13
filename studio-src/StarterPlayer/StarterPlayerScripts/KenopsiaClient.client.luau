@@ -1924,7 +1924,17 @@ MachineState.OnClientEvent:Connect(function(p)
 	if p.kind == "hitmark" then
 		local hm = machine:FindFirstChild("HitMark")
 		if hm then
-			hm.Text = p.head and "BOOM HEADSHOT!" or "HIT"
+			-- REQ-IP-01. The previous headshot string was a borrowed catchphrase
+			-- and sat oddly against the clinical register the rest of the game
+			-- speaks in -- ACCESS DENIED, STAND CLEAR, VIABLE, REJECTED. It is
+			-- deliberately not quoted here: removing a phrase from the UI and
+			-- then writing it into a comment leaves it in the shipped source.
+			--
+			-- NOTE: nothing sends kind = "hitmark" today, so this handler never
+			-- runs. Wiring the sniper's hit feedback is its own Gate 3 step; the
+			-- string is corrected here so the phrase is not sitting in shipped
+			-- source while that waits.
+			hm.Text = p.head and "TERMINATED" or "IMPACT"
 			hm.TextColor3 = p.head and Color3.fromRGB(255, 48, 32) or PHOSPHOR
 			hm.TextSize = p.head and 46 or 30
 			hm.TextTransparency = 0
