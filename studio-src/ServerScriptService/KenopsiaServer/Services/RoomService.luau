@@ -46,6 +46,24 @@ local room = {
 	participants = nil,  -- snapshot: { [userId] = true } taken at match start
 	requiredMinimum = nil,
 	aborting = false,
+
+	-- Gate 1: observable session progress. All nil while idle, all written ONLY
+	-- through setProgress, and all cleared by toWaiting -- otherwise the lobby
+	-- would keep rendering the progress of a match that has already ended.
+	--
+	-- legIndex/legCount stay nil for trials that have no legs. Bird Hunting is
+	-- the only one that does, and a stale leg number left over from it is exactly
+	-- the kind of residue that makes the next trial's HUD lie.
+	activeTrialId = nil,
+	trialIndex = nil,
+	trialCount = nil,
+	roundIndex = nil,
+	roundCount = nil,
+	legIndex = nil,
+	legCount = nil,
+	-- Server clock instant at which the current stage ends, so a client can draw
+	-- its own countdown without the server ticking one down over the wire.
+	stageEndsAt = nil,
 }
 
 local Remotes
@@ -100,6 +118,17 @@ local function publicState()
 		maxPlayers = Config.Room.MaxPlayers,
 		members = members,
 		spectators = spectators,
+
+		-- Gate 1 session progress. Sent on every broadcast so a late joiner and a
+		-- reconnecting client both land on the correct screen without asking.
+		activeTrialId = room.activeTrialId,
+		trialIndex = room.trialIndex,
+		trialCount = room.trialCount,
+		roundIndex = room.roundIndex,
+		roundCount = room.roundCount,
+		legIndex = room.legIndex,
+		legCount = room.legCount,
+		stageEndsAt = room.stageEndsAt,
 	}
 end
 
@@ -177,6 +206,17 @@ local function toWaiting()
 	room.participants = nil
 	room.requiredMinimum = nil
 	room.aborting = false
+	-- Progress belongs to the match that just ended. Leaving any of it set makes
+	-- the lobby show a trial index or a round counter for a session that no
+	-- longer exists.
+	room.activeTrialId = nil
+	room.trialIndex = nil
+	room.trialCount = nil
+	room.roundIndex = nil
+	room.roundCount = nil
+	room.legIndex = nil
+	room.legCount = nil
+	room.stageEndsAt = nil
 	room.token += 1
 	promoteSpectators()
 	clearReady()
@@ -399,6 +439,66 @@ function RoomService.setWaitingStage(token, stage)
 	if room.stage == stage then return true end
 	room.stage = stage
 	broadcast()
+	return true
+end
+
+-- Gate 1: session progress writes ---------------------------------------------
+-- Same discipline as setStage above: the guard and the write happen in one
+-- resumption with no yield between them, so a thread left over from a dead
+-- session is REJECTED rather than delayed. The sessionId is the token.
+--
+-- Patch semantics, because no caller ever knows all eight fields at once -- the
+-- trial index is set when a trial starts, the round index once per round, the
+-- leg only inside Bird Hunting. A field the patch omits keeps its value.
+--
+-- Clearing therefore needs to be explicit, which is what CLEAR is for. Without
+-- it, `legIndex = nil` in a patch is indistinguishable from "not mentioned", and
+-- Bird Hunting's leg counter would survive into the next trial's HUD.
+RoomService.CLEAR = newproxy(false)
+
+local PROGRESS_FIELDS = {
+	activeTrialId = "string",
+	trialIndex = "number",
+	trialCount = "number",
+	roundIndex = "number",
+	roundCount = "number",
+	legIndex = "number",
+	legCount = "number",
+	stageEndsAt = "number",
+}
+
+function RoomService.setProgress(sessionId, patch)
+	if type(patch) ~= "table" then return false end
+	if room.phase ~= "Playing" then return false end
+	if room.sessionId ~= sessionId then return false end
+
+	-- Validate the WHOLE patch before writing any of it. A patch that is half
+	-- applied and then rejected would leave the room describing a state that
+	-- never existed, which is worse than rejecting it outright.
+	for key, value in pairs(patch) do
+		local expected = PROGRESS_FIELDS[key]
+		if not expected then return false end
+		if value ~= RoomService.CLEAR and type(value) ~= expected then return false end
+	end
+
+	local changed = false
+	for key, value in pairs(patch) do
+		-- NOT `(value == CLEAR) and nil or value`. That is the classic and/or
+		-- trap: `and nil` is falsy, so the expression always falls through to
+		-- `or value` and CLEAR would be WRITTEN INTO the field and broadcast to
+		-- every client instead of clearing it. Caught by luau-lsp, not by a test.
+		local newValue
+		if value ~= RoomService.CLEAR then newValue = value end
+		if room[key] ~= newValue then
+			room[key] = newValue
+			changed = true
+		end
+	end
+
+	-- No broadcast when nothing moved: setProgress is called on every round of
+	-- every trial, and re-sending an identical state to every player each time
+	-- is pure wire traffic.
+	if changed then broadcast() end
 	return true
 end
 
