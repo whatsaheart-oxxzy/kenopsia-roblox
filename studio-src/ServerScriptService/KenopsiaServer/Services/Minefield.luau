@@ -554,63 +554,109 @@ local function runRoundInner(room, roundIndex, guard)
 	-- "castrator" -- borrowed framing, and a direct conflict with the Mild
 	-- maturity rating this project targets. "Compactor" describes what the
 	-- machine does, in the same clinical register as the rest of the game.
+	--
+	-- SWAPPABLE VISUAL. Drop an authored model into
+	-- ServerStorage.KenopsiaAssets.Props.Minefield as MF_Compactor and it is
+	-- used instead of the procedural build below -- no code change.
+	--
+	-- This works because the machine is not a physics object. It kills by a
+	-- SERVER-SIDE Z COMPARISON against its leading edge, never by Touched, so
+	-- the parts are purely something to look at. A custom model brings its own
+	-- animation; the server only decides WHERE the thing is.
 	local shredWidth = g.cols * CELL + 8
-	local shred = Instance.new("Model")
-	shred.Name = "Compactor"
-	local housing = Instance.new("Part")
-	housing.Name = "Housing"
-	housing.Anchored = true
-	housing.CanCollide = false
-	housing.CanQuery = false
-	housing.CanTouch = false
-	housing.Material = Enum.Material.DiamondPlate
-	housing.Color = Color3.fromRGB(58, 56, 52)
-	housing.Size = Vector3.new(shredWidth, 7, 3)
-	housing.Parent = shred
-	local warnStrip = Instance.new("Part")
-	warnStrip.Name = "WarnStrip"
-	warnStrip.Anchored = true
-	warnStrip.CanCollide = false
-	warnStrip.CanQuery = false
-	warnStrip.CanTouch = false
-	warnStrip.Material = Enum.Material.Neon
-	warnStrip.Color = Color3.fromRGB(140, 16, 12)
-	warnStrip.Size = Vector3.new(shredWidth, 0.5, 0.2)
-	warnStrip.Parent = shred
-	local wl = Instance.new("PointLight")
-	wl.Color = Color3.fromRGB(255, 40, 30)
-	wl.Range = 18
-	wl.Brightness = 2
-	wl.Parent = warnStrip
+	local customTpl = ServerStorage.KenopsiaAssets.Props.Minefield
+		:FindFirstChild("MF_Compactor")
+	local shred, custom
+	if customTpl then
+		shred = customTpl:Clone()
+		shred.Name = "Compactor"
+		custom = true
+		-- An imported model arrives with collidable, queryable parts by
+		-- default. Left alone it would physically shove runners around and
+		-- block raycasts, replacing a clean distance rule with a bulldozer.
+		for _, d in shred:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanCollide = false
+				d.CanQuery = false
+				d.CanTouch = false
+			end
+		end
+	else
+		shred = Instance.new("Model")
+		shred.Name = "Compactor"
+	end
+	-- Procedural fallback, used only when no MF_Compactor model is supplied.
+	-- housing / warnStrip / rollers stay declared in both paths because
+	-- placeShred reads them; with a custom model they simply stay nil and
+	-- placeShred takes its own branch.
+	local housing, warnStrip
 	local rollers = {}
-	for r = 1, 2 do
-		local roller = Instance.new("Part")
-		roller.Name = "Roller" .. r
-		roller.Shape = Enum.PartType.Cylinder
-		roller.Anchored = true
-		roller.CanCollide = false
-		roller.CanQuery = false
-		roller.CanTouch = false
-		roller.Material = Enum.Material.Metal
-		roller.Color = Color3.fromRGB(72, 66, 60)
-		roller.Size = Vector3.new(shredWidth - 2, 2.2, 2.2)
-		roller.Parent = shred
-		table.insert(rollers, roller)
-		for tooth = 1, 6 do
-			local tp = Instance.new("Part")
-			tp.Name = "Tooth"
-			tp.Anchored = true
-			tp.CanCollide = false
-			tp.CanQuery = false
-			tp.CanTouch = false
-			tp.Material = Enum.Material.Metal
-			tp.Color = Color3.fromRGB(46, 42, 40)
-			tp.Size = Vector3.new(shredWidth - 2.4, 0.5, 0.9)
-			tp.Parent = roller
+	if not custom then
+		housing = Instance.new("Part")
+		housing.Name = "Housing"
+		housing.Anchored = true
+		housing.CanCollide = false
+		housing.CanQuery = false
+		housing.CanTouch = false
+		housing.Material = Enum.Material.DiamondPlate
+		housing.Color = Color3.fromRGB(58, 56, 52)
+		housing.Size = Vector3.new(shredWidth, 7, 3)
+		housing.Parent = shred
+		warnStrip = Instance.new("Part")
+		warnStrip.Name = "WarnStrip"
+		warnStrip.Anchored = true
+		warnStrip.CanCollide = false
+		warnStrip.CanQuery = false
+		warnStrip.CanTouch = false
+		warnStrip.Material = Enum.Material.Neon
+		warnStrip.Color = Color3.fromRGB(140, 16, 12)
+		warnStrip.Size = Vector3.new(shredWidth, 0.5, 0.2)
+		warnStrip.Parent = shred
+		local wl = Instance.new("PointLight")
+		wl.Color = Color3.fromRGB(255, 40, 30)
+		wl.Range = 18
+		wl.Brightness = 2
+		wl.Parent = warnStrip
+		-- rollers declared above
+		for r = 1, 2 do
+			local roller = Instance.new("Part")
+			roller.Name = "Roller" .. r
+			roller.Shape = Enum.PartType.Cylinder
+			roller.Anchored = true
+			roller.CanCollide = false
+			roller.CanQuery = false
+			roller.CanTouch = false
+			roller.Material = Enum.Material.Metal
+			roller.Color = Color3.fromRGB(72, 66, 60)
+			roller.Size = Vector3.new(shredWidth - 2, 2.2, 2.2)
+			roller.Parent = shred
+			table.insert(rollers, roller)
+			for tooth = 1, 6 do
+				local tp = Instance.new("Part")
+				tp.Name = "Tooth"
+				tp.Anchored = true
+				tp.CanCollide = false
+				tp.CanQuery = false
+				tp.CanTouch = false
+				tp.Material = Enum.Material.Metal
+				tp.Color = Color3.fromRGB(46, 42, 40)
+				tp.Size = Vector3.new(shredWidth - 2.4, 0.5, 0.9)
+				tp.Parent = roller
+			end
 		end
 	end
+
 	local function placeShred(zPos, spin)
 		local baseCF = CFrame.new(g.x0 + g.cols * CELL / 2, g.gTop + 3.2, zPos)
+		if custom then
+			-- One PivotTo moves whatever the model contains, so an authored
+			-- machine needs no knowledge here. Yawed to face down the corridor:
+			-- the model is authored facing -Z, and g.dir tells us which way this
+			-- arena actually runs.
+			shred:PivotTo(baseCF * CFrame.Angles(0, g.dir > 0 and math.pi or 0, 0))
+			return
+		end
 		housing.CFrame = baseCF * CFrame.new(0, 0.6, -g.dir * 1.2)
 		warnStrip.CFrame = baseCF * CFrame.new(0, 3.6, g.dir * 0.4)
 		for r, roller in rollers do
