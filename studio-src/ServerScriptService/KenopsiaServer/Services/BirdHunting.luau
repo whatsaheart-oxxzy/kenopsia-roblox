@@ -190,6 +190,80 @@ local function buildTurret(parent)
 	return model
 end
 
+-- FX POOLS. Both effects allocated an instance per shot and destroyed it a
+-- moment later; the plan sizes them at 16 tracers and 24 impacts.
+--
+-- Module level, not per round, so a leg starts with whatever the previous one
+-- left warm. Parts are reparented on acquire because the arena folder is a
+-- per-round reference.
+--
+-- A DESTROYED part must never re-enter a pool: pooling it would hand out an
+-- instance whose every property write throws. Release therefore refuses
+-- anything already unparented, which covers both destruction and a double
+-- release.
+local TRACER_POOL_MAX = 16
+local SPARK_POOL_MAX = 24
+local tracerPool, sparkPool = {}, {}
+
+local function acquireTracer()
+	local part = table.remove(tracerPool)
+	if part then return part end
+	part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	part.Material = Enum.Material.Neon
+	part.Color = Color3.fromRGB(224, 52, 42)
+	return part
+end
+
+local function releaseTracer(part)
+	if not part.Parent then return end
+	part.Parent = nil
+	if #tracerPool < TRACER_POOL_MAX then
+		table.insert(tracerPool, part)
+	else
+		part:Destroy()
+	end
+end
+
+local function acquireSpark()
+	local holder = table.remove(sparkPool)
+	if holder then return holder end
+	holder = Instance.new("Part")
+	holder.Anchored = true
+	holder.CanCollide = false
+	holder.CanQuery = false
+	holder.CanTouch = false
+	holder.CastShadow = false
+	holder.Transparency = 1
+	holder.Size = Vector3.new(0.1, 0.1, 0.1)
+	local sparks = Instance.new("ParticleEmitter")
+	sparks.Name = "Sparks"
+	sparks.Color = ColorSequence.new(Color3.fromRGB(255, 196, 72), Color3.fromRGB(255, 76, 28))
+	sparks.LightEmission = 1
+	sparks.Size = NumberSequence.new(0.11)
+	sparks.Lifetime = NumberRange.new(0.12, 0.28)
+	sparks.Speed = NumberRange.new(5, 12)
+	sparks.SpreadAngle = Vector2.new(40, 40)
+	sparks.Acceleration = Vector3.new(0, -30, 0)
+	sparks.Rate = 0
+	sparks.Parent = holder
+	return holder
+end
+
+local function releaseSpark(holder)
+	if not holder.Parent then return end
+	holder.Parent = nil
+	if #sparkPool < SPARK_POOL_MAX then
+		table.insert(sparkPool, holder)
+	else
+		holder:Destroy()
+	end
+end
+
 -- Barrel offset from the mount, applied after the aim rotation so the gun sits
 -- forward of its pivot instead of through it.
 local TURRET_BARREL_OFFSET = CFrame.new(0, 0, -2.6)
@@ -443,43 +517,22 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 	-- tracer visual
 	local function tracer(fromPos, toPos)
 		local dist = (toPos - fromPos).Magnitude
-		local part = Instance.new("Part")
-		part.Anchored = true
-		part.CanCollide = false
-		part.CanQuery = false
-		part.CanTouch = false
-		part.CastShadow = false
-		part.Material = Enum.Material.Neon
-		part.Color = Color3.fromRGB(224, 52, 42)
+		local part = acquireTracer()
+		-- Size and CFrame on every acquire: a recycled tracer carries the
+		-- length and angle of the shot before it.
 		part.Size = Vector3.new(0.3, 0.3, dist)
 		part.CFrame = CFrame.lookAt(fromPos, toPos) * CFrame.new(0, 0, -dist / 2)
 		part.Parent = R.folder
-		task.delay(0.14, function() part:Destroy() end)
+		task.delay(0.14, function() releaseTracer(part) end)
 	end
 
 	local function coverSpark(pos, normal)
-		local holder = Instance.new("Part")
-		holder.Anchored = true
-		holder.CanCollide = false
-		holder.CanQuery = false
-		holder.CanTouch = false
-		holder.CastShadow = false
-		holder.Transparency = 1
-		holder.Size = Vector3.new(0.1, 0.1, 0.1)
+		local holder = acquireSpark()
 		holder.CFrame = CFrame.lookAt(pos, pos + normal)
-		local sparks = Instance.new("ParticleEmitter")
-		sparks.Color = ColorSequence.new(Color3.fromRGB(255, 196, 72), Color3.fromRGB(255, 76, 28))
-		sparks.LightEmission = 1
-		sparks.Size = NumberSequence.new(0.11)
-		sparks.Lifetime = NumberRange.new(0.12, 0.28)
-		sparks.Speed = NumberRange.new(5, 12)
-		sparks.SpreadAngle = Vector2.new(40, 40)
-		sparks.Acceleration = Vector3.new(0, -30, 0)
-		sparks.Rate = 0
-		sparks.Parent = holder
 		holder.Parent = R.folder
-		sparks:Emit(9)
-		task.delay(0.4, function() holder:Destroy() end)
+		local sparks = holder:FindFirstChild("Sparks")
+		if sparks then sparks:Emit(9) end
+		task.delay(0.4, function() releaseSpark(holder) end)
 	end
 
 	local roundStart
