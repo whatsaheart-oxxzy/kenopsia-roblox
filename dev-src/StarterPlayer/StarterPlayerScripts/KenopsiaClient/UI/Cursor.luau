@@ -35,7 +35,6 @@
 -- or ours is -- never both, and never neither, which was the shipped bug.
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local GuiService = game:GetService("GuiService")
 
 local Theme = require(script.Parent.Theme)
 
@@ -141,14 +140,21 @@ function Cursor.new()
 	return self
 end
 
+-- COORDINATE SPACE -- read this before "correcting" it again.
+--
+-- GetMouseLocation() already returns absolute screen coordinates: it does NOT
+-- account for the GUI inset, so its origin is the true top-left of the screen.
+-- That is exactly the space a ScreenGui with IgnoreGuiInset = true draws in, so
+-- the value is used raw and NOTHING is added.
+--
+-- The trap: PlayerMouse.X/Y are a different space -- those ARE inset-relative,
+-- and that is where the familiar "+ 36" correction belongs. Applying it to
+-- GetMouseLocation() double-counts the top bar and drops the arrow one bar
+-- height BELOW the real pointer, which is precisely the bug this line had on
+-- first transfer.
 function Cursor:_move()
 	local m = UserInputService:GetMouseLocation()
-	-- GetMouseLocation is measured below the top bar; the ScreenGui ignores the
-	-- inset, so the inset has to be added back or the arrow floats above the
-	-- real pointer by the height of the bar. Read live rather than cached --
-	-- the inset changes when CoreGui elements come and go.
-	local inset = GuiService:GetGuiInset()
-	self.root.Position = UDim2.fromOffset(m.X + inset.X, m.Y + inset.Y)
+	self.root.Position = UDim2.fromOffset(m.X, m.Y)
 end
 
 function Cursor:_bind()
