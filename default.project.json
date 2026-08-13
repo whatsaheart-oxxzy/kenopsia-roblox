@@ -25,6 +25,10 @@
             "Pacing":   { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Pacing.luau" },
             "Playlist": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Playlist.luau" },
             "Scoring":  { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Scoring.luau" }
+          },
+          "Net": {
+            "$className": "Folder",
+            "Envelope": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Net/Envelope.luau" }
           }
         }
       },
