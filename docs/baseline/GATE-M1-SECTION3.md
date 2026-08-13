@@ -658,7 +658,7 @@ Original `Enabled` state is saved per effect. `DepthOfField` ships **disabled**
 in this place, so a blanket `not reduce` would have switched an effect **on** the
 moment the player turned the setting off.
 
-### 3. The character watches the camera
+### 3. The character watches the cursor
 
 Head only, through the R6 `Neck` `Motor6D`. Head rather than body because
 `MenuPresenceService` anchors the character at `CharacterAnchor` and freezes its
@@ -682,11 +682,46 @@ the camera, which reads as broken rather than as a stare. At the wall the
 character is not the subject anyway, so the head returns to rest as soon as the
 camera leaves the landing pose.
 
-**No permanent `RenderStepped`**, per the §4 rule. The camera is still except
-during a move, so the head is driven per frame only for the length of a move and
-recomputed on arrival. Three bounded re-reads (0.1 / 0.35 / 0.8 s) cover the gap
-where the server anchors the character just after it spawns — without them a
-stale first read would stay on screen with nothing to correct it.
+#### Where it looks: the cursor
+
+The head follows the **mouse**. The gaze target is expressed as *the camera, slid
+sideways by the cursor's offset from the centre of the screen* — which is what
+makes a centred cursor, one resting on the character, come out as looking
+straight down the lens.
+
+Spread is 6 studs at the screen edge. Measured at that value:
+
+| Cursor | Yaw | Pitch |
+|---|---|---|
+| centre | **−23.8°** | **10.2°** — identical to aiming at the camera |
+| left ↔ right edge | −43.4° … +1.7° | — |
+| bottom ↔ top edge | — | −12.2° … +33.6° (top reaches the clamp) |
+
+Two alternatives were measured against the real markers and **rejected before
+being written**:
+
+- **A far point along the cursor ray** lands *behind* the character — the camera
+  is looking toward it — so the required yaw comes out at about **178°** and the
+  head clamps everywhere on screen.
+- **A plane at half the head depth** behaves, but puts the centred gaze at
+  **−39°**: looking past the viewer rather than at them.
+
+`GetMouseLocation()` shares its origin with `ViewportSize`, so **no inset
+correction is applied** — the same coordinate-space question the retro cursor got
+wrong in §3D. Touch and gamepad have no pointer and fall back to the lens.
+
+**No permanent `RenderStepped`**, per the §4 rule. There are exactly three things
+that can move the target, and each drives the head directly:
+
+| Trigger | Mechanism |
+|---|---|
+| the cursor moves | `InputChanged`, `MouseMovement` only |
+| the camera moves | per frame, but only for the length of that move |
+| the character loads | `settleLook`'s three bounded re-reads (0.1 / 0.35 / 0.8 s) |
+
+A still mouse in front of a still camera costs nothing. The character-load
+re-reads exist because the server anchors the character just after it spawns —
+without them a stale first read would stay on screen with nothing to correct it.
 
 The authored `C0` is captured once and restored in `release()`, and cleared on
 `CharacterAdded` so the next capture comes from the new rig rather than writing a
