@@ -51,8 +51,10 @@ local CHAIN_RADIUS = 6
 local KILL_RADIUS = 4
 local KNOCK_RADIUS = 8
 local SCAN_RADIUS = 8      -- Scanner-Puls zeigt Minen innerhalb 8 Studs
-local ESCAPE_POINTS = 100
-local CLEANRUN_BONUS = 20
+-- Replaced by the banded ordering key at the end of the round. Kept out of
+-- the scoring entirely: CLEANRUN_BONUS as POINTS was what let a later
+-- escapee outrank an earlier one, which the plan lists as an error not to
+-- repeat. It survives as a +1 tiebreaker only.
 
 local activeByUser = {}
 local arenaBusy = false
@@ -95,6 +97,17 @@ end
 
 local function roomActive(room)
 	return #room.members > 0 and (room.phase == nil or room.phase == "Playing")
+end
+
+-- Who a finished player can watch: everyone still running. Sent WITH the
+-- spectate role, because the client cannot tell a living runner from someone
+-- standing at spawn -- only the server knows who is still in play.
+local function stillRunning(state, exceptUserId)
+	local out = {}
+	for uid, ps in state do
+		if uid ~= exceptUserId and not ps.done then table.insert(out, uid) end
+	end
+	return out
 end
 
 local function audienceOf(room)
@@ -451,6 +464,7 @@ local function runRoundInner(room, roundIndex, guard)
 								-- the arena after the round was torn down.
 								if not active() then return end
 								tellOne(uid, { kind = "role", role = "spectate",
+									watch = stillRunning(state, uid),
 									pos = { R.cam.Position.X, R.cam.Position.Y, R.cam.Position.Z },
 									look = { R.exit.Position.X, g.gTop, R.exit.Position.Z } })
 							end)
@@ -505,6 +519,15 @@ local function runRoundInner(room, roundIndex, guard)
 			ps.cardAt = os.clock()
 			local s = livingOf(room)[plr.UserId]
 			if s then s.hum.WalkSpeed = 0 end
+			-- Securing the exit hands you the same view a death does. Finishing
+			-- first otherwise meant standing still watching nothing for the rest
+			-- of the round, which punishes the player who did best.
+			if R.cam then
+				tellOne(plr.UserId, { kind = "role", role = "spectate",
+					watch = stillRunning(state, plr.UserId),
+					pos = { R.cam.Position.X, R.cam.Position.Y, R.cam.Position.Z },
+					look = { R.exit.Position.X, g.gTop, R.exit.Position.Z } })
+			end
 		end
 	end)
 
@@ -654,6 +677,7 @@ local function runRoundInner(room, roundIndex, guard)
 								-- the arena after the round was torn down.
 								if not active() then return end
 								tellOne(uid, { kind = "role", role = "spectate",
+									watch = stillRunning(state, uid),
 									pos = { R.cam.Position.X, R.cam.Position.Y, R.cam.Position.Z },
 									look = { R.exit.Position.X, g.gTop, R.exit.Position.Z } })
 							end)
@@ -685,16 +709,38 @@ local function runRoundInner(room, roundIndex, guard)
 
 	task.wait(2.4)
 
-	-- Wertung: Ziel > Fluchtreihenfolge > Distanz; CleanRun-Bonus ohne Scanner
+	-- WERTUNG. This is an ORDERING KEY, not a point total.
+	--
+	-- MachineFlow ranks players by this number and Scoring.distribute turns
+	-- the ranking into the actual award, which is exactly 1700 across the
+	-- minigame. So only the ORDER matters here, never the magnitude.
+	--
+	-- Banded, because the old formula could invert the order it was meant to
+	-- express. A fourth escapee scored ESCAPE_POINTS + 0 while someone who
+	-- died near the exit scored up to 40, and CLEANRUN_BONUS was worth 20 --
+	-- enough to lift a later escapee above an earlier one. Reaching the exit
+	-- first is the whole point of the minigame; it must not be losable to a
+	-- bonus.
+	--
+	--   escaped       2000 + 1000 down to 2000, earlier is STRICTLY higher
+	--   eliminated       0 ..  1000, by legitimate forward progress
+	--   clean run       +1, a tiebreaker ONLY -- it can never cross a band
+	local ESCAPE_BAND = 2000
+	local ORDER_STEP = 100
 	local fieldLen = g.rows * CELL
 	for uid, ps in state do
-		local sc = 0
+		local sc
 		if ps.escaped then
-			sc = ESCAPE_POINTS + math.max(0, 30 - 10 * ((ps.escapeOrder or 1) - 1))
-			if not ps.usedScanner then sc += CLEANRUN_BONUS end
+			-- Whoever reaches the exit sooner ranks above whoever reaches it
+			-- later, with no way for the gap to close.
+			sc = ESCAPE_BAND
+				+ math.max(0, 1000 - ORDER_STEP * ((ps.escapeOrder or 1) - 1))
 		else
-			sc = math.floor(40 * math.clamp((ps.progress or 0) / fieldLen, 0, 1))
+			sc = math.floor(1000 * math.clamp((ps.progress or 0) / fieldLen, 0, 1))
 		end
+		-- Never a bonus, only a tiebreaker: it separates two players who are
+		-- otherwise exactly level and cannot move anyone past a band.
+		if not ps.usedScanner then sc += 1 end
 		scores[uid] = sc
 	end
 

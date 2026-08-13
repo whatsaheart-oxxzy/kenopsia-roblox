@@ -427,6 +427,31 @@ local runnerCamDir = 1 -- +1: Bahn laeuft Richtung +Z (Bird Hunting), -1: Richtu
 local runnerCamStyle = "chase" -- "top" = fast 2D-Draufsicht (Dead Zone)
 local smoothCamPos = nil
 local spectateCF = nil
+-- Who a finished player is watching. The SERVER decides who is watchable and
+-- sends the list; the client only picks one from it, because from here a
+-- living runner and someone standing at spawn look identical.
+local spectateWatch = nil   -- array of userIds, or nil for the fixed camera
+local spectateIndex = 1
+local spectateEye = nil
+
+-- Returns the root of the currently watched player, skipping anyone who has
+-- left or has not respawned yet. The list is never mutated -- it belongs to
+-- the server, and a player who is briefly characterless must not be dropped
+-- from it permanently.
+local function spectateRoot()
+	if not spectateWatch or #spectateWatch == 0 then return nil end
+	for offset = 0, #spectateWatch - 1 do
+		local idx = ((spectateIndex - 1 + offset) % #spectateWatch) + 1
+		local target = Players:GetPlayerByUserId(spectateWatch[idx])
+		local char = target and target.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if root then
+			spectateIndex = idx
+			return root
+		end
+	end
+	return nil
+end
 
 local function restoreCamera()
 	camera.CameraType = Enum.CameraType.Custom
@@ -438,7 +463,17 @@ end
 RunService.RenderStepped:Connect(function(dt)
 	if spectateCF then
 		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = spectateCF
+		-- Follow whoever is still running. spectateCF is the fallback for the
+		-- moment nobody is watchable -- last runner down, or everyone mid
+		-- respawn -- so the camera never freezes on a dead body.
+		local root = spectateRoot()
+		if root then
+			local eye = root.Position + Vector3.new(0, 16, -16)
+			spectateEye = spectateEye and spectateEye:Lerp(eye, math.min(dt * 4, 1)) or eye
+			camera.CFrame = CFrame.lookAt(spectateEye, root.Position)
+		else
+			camera.CFrame = spectateCF
+		end
 	elseif runnerCam then
 		local char = player.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -1686,10 +1721,15 @@ MachineState.OnClientEvent:Connect(function(p)
 			local pos = Vector3.new(p.pos[1], p.pos[2], p.pos[3])
 			local look = Vector3.new(p.look[1], p.look[2], p.look[3])
 			spectateCF = CFrame.lookAt(pos, look)
+			spectateWatch = p.watch
+			spectateIndex = 1
+			spectateEye = nil
 			runnerCam = false
 			return
 		end
 		spectateCF = nil
+		spectateWatch = nil
+		spectateEye = nil
 		-- C1.a: adopt this round's token, or drop it when the round ends.
 		trialRoundToken = p.roundToken
 		if p.role == "none" then
