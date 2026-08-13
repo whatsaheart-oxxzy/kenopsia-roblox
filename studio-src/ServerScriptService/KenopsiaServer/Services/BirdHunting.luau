@@ -28,6 +28,11 @@ local BODY_DAMAGE = 55      -- two body shots drop a runner
 local HIT_POINTS = 15       -- winging a runner
 local KILL_POINTS = 60      -- body-shot finish
 local HEADSHOT_POINTS = 100 -- one clean headshot: instant
+-- How long a downed runner stays where they fell before the HUD resets and
+-- they are moved out. Previously this was zero: the shot landed and the
+-- teleport ran in the SAME frame, so a player never saw their own death --
+-- one blood puff and they were already somewhere else.
+local KILL_VIEW_TIME = 3.5
 
 -- Remote state is keyed by the active hunter. The arena itself is serialized
 -- below because every room currently shares the same physical map.
@@ -479,8 +484,26 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			BloodFX.sound(hit.Position, "ImpactBody", audience)
 			local corpse = BloodFX.corpse(char, dir * 18 + Vector3.new(0, 10, 0))
 			if corpse then table.insert(corpses, corpse) end
-			clearParticipant(plr.UserId, s)
-			s.root.CFrame = CFrame.new(spawnPos + Vector3.new(math.random(-6, 6), 4, math.random(-6, 6)))
+
+			-- Freeze NOW -- they are dead and must not keep running -- but hold
+			-- the HUD reset and the move out for KILL_VIEW_TIME so the kill is
+			-- actually seen. st.done is already true, so nothing downstream is
+			-- waiting on this.
+			local downedHum = char and char:FindFirstChildOfClass("Humanoid")
+			if downedHum then
+				downedHum.WalkSpeed = 0
+				downedHum.Jump = false
+			end
+			local exitCFrame = CFrame.new(spawnPos
+				+ Vector3.new(math.random(-6, 6), 4, math.random(-6, 6)))
+			task.delay(KILL_VIEW_TIME, function()
+				-- Guarded on the round still running. A leg that ends during the
+				-- hold is already torn down by stopRound, and re-freezing someone
+				-- who is back in the lobby would strand them at WalkSpeed 0.
+				if not roundState.active then return end
+				clearParticipant(plr.UserId, s)
+				if s.root and s.root.Parent then s.root.CFrame = exitCFrame end
+			end)
 		end
 
 		if isHead then
