@@ -486,6 +486,11 @@ function MenuOverlayController:buildSettings()
 		-- Keep the legacy key in step so anything still reading ReduceFlicker
 		-- sees the same answer until the removal pass retires it.
 		self.settings.ReduceFlicker = v
+		-- This toggle previously had NO applier: its only observable effect was
+		-- that MenuSceneController counted it as "reduced motion", so turning it
+		-- on stopped the camera move and changed no effect at all. It now drives
+		-- the post-processing, and motion belongs solely to ANIMATIONS below.
+		if A.effects then A.effects(v) end
 	end)
 	toggleRow(5, "ANIMATIONS", "Animations", function(v) Motion.setEnabled(v) end)
 	toggleRow(6, "RETRO CURSOR", "CustomCursor", function(v)

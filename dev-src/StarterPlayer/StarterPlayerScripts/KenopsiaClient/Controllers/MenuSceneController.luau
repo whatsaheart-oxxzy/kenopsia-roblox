@@ -15,6 +15,7 @@
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
@@ -47,6 +48,12 @@ local state = {
 	conns = {},
 	charConns = {},
 	warned = {},
+	-- Original Enabled state per PostEffect, so "stop reducing" restores what was
+	-- authored instead of switching everything on.
+	effectsSaved = {},
+	-- Authored Neck.C0, captured once so the head can always be put back.
+	neckBase = nil,
+	lookConn = nil,
 }
 
 local function warnOnce(key, message)
@@ -68,18 +75,58 @@ local function marker(name)
 	return m
 end
 
--- Animations off OR Reduce Effects on both mean "do not animate". The settings
--- table is read live rather than cached, so toggling mid-session takes effect
--- immediately. Both the current key (`ReduceFlicker`) and the name the UI pass
--- renames it to (`ReduceEffects`) are accepted, so this keeps working across
--- that rename instead of silently reverting to animated.
+-- MOTION is ANIMATIONS, and nothing else.
+--
+-- This used to return true for ReduceEffects and ReduceFlicker as well, which
+-- made REDUCE EFFECTS a second, mislabelled animation switch: turning it on
+-- stopped the camera move and changed no effect whatsoever, because the toggle
+-- had no applier at all. Effects are now their own concern -- see applyEffects
+-- below -- and this reads exactly the one setting whose name it carries.
+--
+-- The settings table is read live rather than cached, so a mid-session toggle
+-- takes effect immediately.
 local function reducedMotion()
 	local s = state.settings
 	if not s then return false end
-	if s.Animations == false then return true end
-	if s.ReduceEffects == true then return true end
-	if s.ReduceFlicker == true then return true end
-	return false
+	return s.Animations == false
+end
+
+-- EFFECTS ---------------------------------------------------------------------
+-- What REDUCE EFFECTS actually turns off: the post-processing in Lighting.
+--
+-- Selected by CLASS, not by a name list, so an effect added later is covered
+-- without editing this file. The menu's own colour grade is deliberately
+-- excluded: it is the art direction rather than an effect the player is asking
+-- to be spared, and it costs practically nothing.
+
+local function postEffects()
+	local out = {}
+	for _, c in Lighting:GetChildren() do
+		if c:IsA("PostEffect") and c.Name ~= GRADE_NAME then
+			table.insert(out, c)
+		end
+	end
+	return out
+end
+
+local function applyEffects()
+	local reduce = state.settings and state.settings.ReduceEffects == true
+	for _, e in postEffects() do
+		if state.effectsSaved[e] == nil then
+			state.effectsSaved[e] = e.Enabled
+		end
+		-- Never switch ON something that was authored OFF. DepthOfField ships
+		-- disabled in this place, so a blanket `not reduce` would introduce an
+		-- effect the moment the player turned the setting off.
+		e.Enabled = (not reduce) and state.effectsSaved[e]
+	end
+end
+
+local function restoreEffects()
+	for e, original in state.effectsSaved do
+		if e.Parent then e.Enabled = original end
+	end
+	table.clear(state.effectsSaved)
 end
 
 -- FADE ----------------------------------------------------------------------
@@ -131,6 +178,126 @@ local function hardCut(apply)
 		cover.Visible = false
 	end)
 end
+
+-- CHARACTER LOOK -------------------------------------------------------------
+-- The menu character watches the camera.
+--
+-- HEAD ONLY, through the R6 Neck Motor6D. MenuPresenceService anchors the
+-- character at CharacterAnchor and freezes its rotation, so turning the body
+-- would be the client fighting the server for a part the server owns. The neck
+-- is not read by anything else and is restored on release.
+--
+-- NOT a permanent RenderStepped. The camera is static except while a move tween
+-- is running, so the look is recomputed on arrival and driven per frame ONLY for
+-- the duration of a move.
+--
+-- LANDING ONLY. Measured against the real markers, tracking SessionCamera needs
+-- about 98 degrees of yaw -- the clamp holds at 55 and the head then points 43
+-- degrees away from the camera, which reads as broken rather than as a stare.
+-- At the wall the character is not the subject anyway, so the head returns to
+-- rest as soon as the camera leaves the landing pose.
+--
+-- Defined ABOVE the camera section because goTo drives it; a Lua local must
+-- exist before the code that references it.
+
+local NECK_MAX_YAW = math.rad(55)
+local NECK_MAX_PITCH = math.rad(28)
+-- R6 head centre relative to torso centre.
+local HEAD_OFFSET = CFrame.new(0, 1.5, 0)
+
+local function neckJoint()
+	local character = player.Character
+	local torso = character and character:FindFirstChild("Torso")
+	local neck = torso and torso:FindFirstChild("Neck")
+	if neck and neck:IsA("Motor6D") then return neck, torso end
+	return nil, nil
+end
+
+local function updateLook(alpha)
+	local neck, torso = neckJoint()
+	if not neck then return end
+	if state.neckBase == nil then state.neckBase = neck.C0 end
+
+	local target = state.neckBase
+	local camera = state.camera or workspace.CurrentCamera
+
+	if state.active and state.pose == "Landing" and camera then
+		local rest = torso.CFrame * HEAD_OFFSET
+		local toCamera = camera.CFrame.Position - rest.Position
+		if toCamera.Magnitude > 0.05 then
+			-- Clamped in TORSO space, so the limits are anatomical rather than
+			-- world-aligned and stay correct however the character is turned.
+			local d = torso.CFrame:VectorToObjectSpace(toCamera.Unit)
+			local yaw = math.clamp(math.atan2(-d.X, -d.Z), -NECK_MAX_YAW, NECK_MAX_YAW)
+			local pitch = math.clamp(math.asin(math.clamp(d.Y, -1, 1)), -NECK_MAX_PITCH, NECK_MAX_PITCH)
+			local look = torso.CFrame:VectorToWorldSpace(
+				(CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0)).LookVector)
+			local desired = CFrame.lookAt(rest.Position, rest.Position + look)
+
+			-- Head = Torso * C0 * C1^-1, so C0 = Torso^-1 * Head * C1. Solving it
+			-- this way avoids hand-deriving Euler axes against the R6 neck basis,
+			-- which is where this kind of code usually goes wrong. Verified
+			-- numerically: at rest it reproduces the authored C0 to 0.000000, and
+			-- against LandingCamera the resulting head LookVector hits the camera
+			-- to 0.00 degrees.
+			local solved = torso.CFrame:Inverse() * desired * neck.C1
+			-- Position pinned to the authored pivot: C1 carries a translation, so
+			-- a rotated solve would otherwise slide the head off the neck.
+			target = CFrame.new(state.neckBase.Position) * (solved - solved.Position)
+		end
+	end
+
+	if alpha then
+		neck.C0 = neck.C0:Lerp(target, alpha)
+	else
+		neck.C0 = target
+	end
+end
+
+local function stopLookDriver()
+	if state.lookConn then
+		if state.lookConn.Connected then state.lookConn:Disconnect() end
+		state.lookConn = nil
+	end
+end
+
+-- Runs for the length of one camera move and no longer. While the camera is
+-- still the head has nothing to follow, so there is nothing to spend a frame on.
+local function driveLookDuring(tween)
+	stopLookDriver()
+	if not tween then
+		updateLook()
+		return
+	end
+	state.lookConn = RunService.RenderStepped:Connect(function(dt)
+		updateLook(math.min(1, dt * 8))
+	end)
+	tween.Completed:Once(function()
+		stopLookDriver()
+		updateLook()
+	end)
+end
+
+-- MenuPresenceService anchors the character at CharacterAnchor a short moment
+-- AFTER it spawns, so a torso read taken the instant CharacterAdded fires can
+-- still be at the spawn location. Since nothing drives the head while the camera
+-- is still, that first bad read would simply stay on screen. Three bounded
+-- re-reads settle it without leaving a permanent loop behind.
+local function settleLook()
+	for _, delay in { 0.1, 0.35, 0.8 } do
+		task.delay(delay, function()
+			if state.active then updateLook() end
+		end)
+	end
+end
+
+local function restoreLook()
+	stopLookDriver()
+	local neck = neckJoint()
+	if neck and state.neckBase then neck.C0 = state.neckBase end
+	state.neckBase = nil
+end
+
 
 -- CAMERA ---------------------------------------------------------------------
 
@@ -207,6 +374,7 @@ local function goTo(pose, opts)
 
 	if opts.instant then
 		applyPose(markerName, fov, false)
+		updateLook()
 		fire()
 	elseif reducedMotion() then
 		-- Reduced motion: fade to black over CUT_FADE, move the camera while
@@ -217,11 +385,15 @@ local function goTo(pose, opts)
 		-- arrival latency here is ~CUT_FADE, not 2 x CUT_FADE.
 		task.spawn(function()
 			hardCut(function() applyPose(markerName, fov, false) end)
+			updateLook()
 			fire()
 		end)
 	else
 		applyPose(markerName, fov, true)
 		local tween = state.tween
+		-- The head follows the camera for the length of the move and is then let
+		-- go; a still camera gives it nothing to follow.
+		driveLookDuring(tween)
 		if tween then
 			tween.Completed:Once(function(playbackState)
 				-- A cancelled tween means another move superseded this one, so
@@ -334,19 +506,26 @@ local function engage()
 	state.active = true
 	takeCamera()
 	addGrade()
+	applyEffects()
 	hideOthers()
 	goTo("Landing", { instant = true })
+	settleLook()
 end
 
 local function release()
 	if not state.active then
 		removeGrade()
+		restoreEffects()
 		return
 	end
 	state.active = false
 	cancelTween()
+	-- The head goes back to the authored pose before anything else: a player
+	-- teleporting into a trial must not carry a scripted neck with them.
+	restoreLook()
 	showOthers()
 	removeGrade()
+	restoreEffects()
 
 	for _, conn in state.conns do
 		if conn.Connected then conn:Disconnect() end
@@ -384,6 +563,14 @@ function MenuSceneController.bindSettings(settings)
 	state.settings = settings
 end
 
+-- The REDUCE EFFECTS applier. The settings table is shared, so the toggle has
+-- already written the value by the time this runs; re-applying is all that is
+-- needed and calling it twice is harmless.
+function MenuSceneController.setEffectsReduced(reduce)
+	if state.settings then state.settings.ReduceEffects = reduce == true end
+	applyEffects()
+end
+
 function MenuSceneController.start(settings)
 	if settings then state.settings = settings end
 
@@ -402,8 +589,14 @@ function MenuSceneController.start(settings)
 		if not state.active then return end
 		state.camera = nil
 		state.saved = nil
+		-- The old joint died with the old character, so the captured base pose
+		-- belongs to nothing. Clearing it makes the next updateLook re-capture
+		-- from the new rig instead of writing a stale CFrame onto it.
+		stopLookDriver()
+		state.neckBase = nil
 		takeCamera()
 		goTo(state.pose, { instant = true })
+		settleLook()
 	end)
 	sync()
 

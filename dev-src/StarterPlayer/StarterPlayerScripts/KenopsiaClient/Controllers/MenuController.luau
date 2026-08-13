@@ -129,6 +129,14 @@ function MenuController:hideMonitor()
 	local monitor = self.gui:FindFirstChild("Monitor")
 	if monitor then monitor.Visible = false end
 	self.gui.Enabled = false
+	-- Menu music, not trial music. The monitor being down IS the menu, so this
+	-- boundary needs no state of its own -- and it covers construction too,
+	-- since new() drops the monitor before anything else runs.
+	--
+	-- Nothing called startMusic() before this. §3C removed startAmbient, which
+	-- was its only caller, so musicWanted stayed false forever and the Loop
+	-- never played at all.
+	SoundBank.startMusic()
 end
 
 -- show() is the contract TrialController depends on. Its signature is
@@ -141,6 +149,9 @@ function MenuController:show(name, instant, dir)
 	-- Container first, then the frame inside it. Raising Monitor.Visible while
 	-- KenopsiaGui is still disabled renders nothing -- see hideMonitor.
 	self.gui.Enabled = true
+	-- The monitor is the trial, and the menu track does not follow the player
+	-- into it. Trial audio is its own gate's problem.
+	SoundBank.stopMusic()
 	local monitor = self.gui:FindFirstChild("Monitor")
 	if monitor then monitor.Visible = true end
 

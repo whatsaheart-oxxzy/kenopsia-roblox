@@ -54,6 +54,10 @@ local overlayOk, overlay = xpcall(function()
 			textScale = function(v) menu:applyTextScale(v) end,
 			retroFilter = function(v) menu:applyIntensity(v) end,
 			cursor = function() menu:applyCursor() end,
+			-- REDUCE EFFECTS owns the Lighting post-processing. It is
+			-- deliberately NOT wired to anything that moves: ANIMATIONS is the
+			-- only motion switch, which is what it says on the row.
+			effects = function(v) MenuSceneController.setEffectsReduced(v) end,
 		},
 	})
 end, function(err)
