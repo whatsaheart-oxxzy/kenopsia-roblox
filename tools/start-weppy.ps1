@@ -42,6 +42,21 @@ function Get-WeppyStatus {
     }
 }
 
+# The port answering does NOT mean the bridge is usable: the Studio plugin
+# registers a few seconds later, and a call made in that window fails with
+# "Target place not found", which reads like the wrong place rather than a race.
+# Waiting here means callers cannot hit it.
+function Wait-WeppyPlugin {
+    param([int] $P, [int] $Seconds = 45)
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $deadline) {
+        $s = Get-WeppyStatus -P $P
+        if ($null -ne $s -and @($s.pluginClients).Count -gt 0) { return $s }
+        Start-Sleep -Seconds 2
+    }
+    return (Get-WeppyStatus -P $P)
+}
+
 function Write-WeppySummary {
     param($Status)
     Write-Host "  version   $($Status.version)   pid $($Status.pid)" -ForegroundColor Gray
@@ -64,7 +79,7 @@ function Write-WeppySummary {
 $existing = Get-WeppyStatus -P $Port
 if ($null -ne $existing) {
     Write-Host "WEPPY already running on port $Port." -ForegroundColor Green
-    Write-WeppySummary -Status $existing
+    Write-WeppySummary -Status (Wait-WeppyPlugin -P $Port)
     exit 0
 }
 
@@ -80,7 +95,7 @@ while ((Get-Date) -lt $deadline) {
     $status = Get-WeppyStatus -P $Port
     if ($null -ne $status) {
         Write-Host "WEPPY online after $([int]((Get-Date) - $deadline.AddSeconds(-$TimeoutSec)).TotalSeconds)s." -ForegroundColor Green
-        Write-WeppySummary -Status $status
+        Write-WeppySummary -Status (Wait-WeppyPlugin -P $Port)
         Write-Host ""
         Write-Host "Stop it by closing the minimised 'npx' console window." -ForegroundColor Gray
         exit 0

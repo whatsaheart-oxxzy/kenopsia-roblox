@@ -59,6 +59,7 @@
         "XBotCharacters": { "$path": "studio-src/ServerScriptService/KenopsiaServer/XBotCharacters.server.luau" },
         "Services": {
           "$className": "Folder",
+          "Contexts":      { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Contexts.luau" },
           "RoomService":   { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/RoomService.luau" },
           "MachineFlow":   { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/MachineFlow.luau" },
           "BirdHunting":   { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/BirdHunting.luau" },
