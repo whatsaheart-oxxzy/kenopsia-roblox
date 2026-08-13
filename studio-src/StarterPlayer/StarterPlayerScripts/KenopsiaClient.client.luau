@@ -445,6 +445,14 @@ local function spectateRoot()
 		local target = Players:GetPlayerByUserId(spectateWatch[idx])
 		local char = target and target.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart")
+		-- Ignore anyone who has left the arena. spectateCF is the arena's own
+		-- vantage point, so a target hundreds of studs from it is not in the
+		-- round any more -- typically already teleported out during teardown.
+		-- Following them there is how the baseplate ends up on screen.
+		if root and spectateCF
+			and (root.Position - spectateCF.Position).Magnitude > 600 then
+			root = nil
+		end
 		if root then
 			spectateIndex = idx
 			return root
@@ -1997,23 +2005,33 @@ local warningFrame = machine:WaitForChild("Warning", 10)
 local settingsPanel = machine:WaitForChild("SettingsPanel", 10)
 
 if warningFrame then
+	local dismissed = false
+	local function dismiss()
+		if dismissed then return end
+		dismissed = true
+		warningFrame.Visible = false
+	end
+
+	-- CONNECTED FIRST, before anything that yields.
+	--
+	-- This whole block used to sit inside a task.spawn that began with
+	-- task.wait(0.4). The wait was there for the sound, but it also delayed
+	-- the button being wired -- so for the first 0.4 s the warning was on
+	-- screen with a CONTINUE that did nothing. Clicks in that window landed
+	-- on a handler that did not exist yet, which reads as a frozen button.
+	local btn = warningFrame:FindFirstChild("Btn_CONTINUE")
+	if btn then
+		btn.Activated:Connect(function()
+			sfx("Click")
+			dismiss()
+		end)
+	end
+	task.delay(6.5, dismiss)
+
+	-- The sound keeps its short lead-in; only the wiring moved ahead of it.
 	task.spawn(function()
 		task.wait(0.4)
-		sfx("Warning")
-		local dismissed = false
-		local function dismiss()
-			if dismissed then return end
-			dismissed = true
-			warningFrame.Visible = false
-		end
-		local btn = warningFrame:FindFirstChild("Btn_CONTINUE")
-		if btn then
-			btn.Activated:Connect(function()
-				sfx("Click")
-				dismiss()
-			end)
-		end
-		task.delay(6.5, dismiss)
+		if not dismissed then sfx("Warning") end
 	end)
 end
 

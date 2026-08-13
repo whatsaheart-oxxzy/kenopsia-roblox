@@ -877,6 +877,20 @@ local function runRoundInner(room, roundIndex, guard)
 	-- minigame structure now -- RoomService carries roundIndex/roundCount and
 	-- MachineFlow draws the Score stage after every minigame -- so a card
 	-- announcing the same thing per round only delayed the next one.
+	
+	-- BLACK OUT BEFORE THE TELEPORT. cleanup() moves every player to the
+	-- global SpawnLocation, which sits on the Baseplate far from the arena,
+	-- and the next round teleports them back. Uncovered, that round trip is
+	-- visible: escaped players are watching the others at that moment and see
+	-- them pop onto the Baseplate.
+	--
+	-- An empty announce is opaque black on the client -- the same cover the
+	-- death card already uses so "spawn is never seen". Dead Zone's round
+	-- boundary never had one. The next round card replaces it, so nothing
+	-- needs to clear it explicitly.
+	announce(room, { kind = "announce", text = "" })
+	task.wait(0.6)
+	
 	return scores
 end
 
