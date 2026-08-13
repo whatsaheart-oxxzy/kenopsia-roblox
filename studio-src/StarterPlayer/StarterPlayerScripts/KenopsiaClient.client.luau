@@ -402,7 +402,7 @@ local function applyMovement()
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
 	if moveState == "runner" then
-		-- Dead Zone (Move-Set "scan"): NUR Gehen - der Kastrierer ist knapp langsamer.
+		-- Dead Zone (Move-Set "scan"): NUR Gehen - der Compactor ist knapp langsamer.
 		-- Ueberall sonst wird sofort gerannt (kein Anlauf mehr).
 		local moves = char:GetAttribute("XBotMoves") or ""
 		hum.WalkSpeed = string.find(moves, "scan") and 7 or 14
@@ -424,7 +424,7 @@ task.defer(applyMovement)
 local camera = workspace.CurrentCamera
 local runnerCam = false
 local runnerCamDir = 1 -- +1: Bahn laeuft Richtung +Z (Bird Hunting), -1: Richtung -Z (Dead Zone)
-local runnerCamStyle = "chase" -- "top" = fast 2D-Draufsicht (Dead Zone, Machine-Party-Look)
+local runnerCamStyle = "chase" -- "top" = fast 2D-Draufsicht (Dead Zone)
 local smoothCamPos = nil
 local spectateCF = nil
 

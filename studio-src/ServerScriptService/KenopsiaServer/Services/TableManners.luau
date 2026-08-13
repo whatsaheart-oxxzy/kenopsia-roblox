@@ -1,5 +1,5 @@
 --!nonstrict
--- CANTEEN PROTOCOL: Rhythmus-Essen, Machine-Party-Remake.
+-- CANTEEN PROTOCOL: Rhythmus-Essen.
 -- Der Server wuerfelt pro Runde EINEN Beatplan (16 Bissen, 4 Abschnitte) und
 -- verteilt ihn an alle; gegessen wird auf den Beat (E / A-Taste / EAT-Button).
 -- Perfect +-70ms, Good +-150ms, daneben = Miss. Drei schnelle Fehler fuellen

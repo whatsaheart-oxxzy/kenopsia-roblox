@@ -1,5 +1,5 @@
 --!nonstrict
--- DEAD ZONE: gemeinsames Minenfeld, Machine-Party-Remake.
+-- DEAD ZONE: gemeinsames Minenfeld.
 -- Minen sind unsichtbare Zellen unter dem Boden; ein Scanner-Puls (Taste F/Y)
 -- pulst eine Welle und deckt Minen im Nahbereich persoenlich auf. Explosionen
 -- toeten im Kernradius, werfen Ueberlebende in den Zombie-Crawl und lassen
@@ -305,17 +305,20 @@ local function runRoundInner(room, roundIndex, guard)
 		for col = 1, g.cols do
 			if not safe[row .. ":" .. col] and math.random() < MINE_DENSITY then
 				local c = cellCenter(g, col, row)
-				local p = Instance.new("Part")
-				p.Name = "Mine"
-				p.Size = Vector3.new(1, 1, 1)
-				p.CFrame = CFrame.new(c.X, g.gTop - 0.7, c.Z)
-				p.Transparency = 1
-				p.Anchored = true
-				p.CanCollide = false
-				p.CanQuery = false
-				p.CanTouch = false
-				p.Parent = runtime
-				mines[row .. ":" .. col] = { part = p, pos = Vector3.new(c.X, g.gTop, c.Z), live = true }
+				-- REQ-DZ-02: a mine is a SERVER RECORD, not an instance.
+				--
+				-- Every mine used to be an invisible Part parented into the
+				-- runtime folder in Workspace, so an exploit client could
+				-- enumerate that folder and read the ENTIRE minefield -- the
+				-- one thing this minigame is built on not knowing.
+				--
+				-- The Part was never read: explode() works from pos and live,
+				-- and the sonar answers out of this table. It was pure
+				-- exposure for no behaviour at all.
+				mines[row .. ":" .. col] = {
+					pos = Vector3.new(c.X, g.gTop, c.Z),
+					live = true,
+				}
 			end
 		end
 	end
@@ -471,11 +474,16 @@ local function runRoundInner(room, roundIndex, guard)
 		end
 	end)
 
-	-- DER KASTRIERER: eine Shredderwand, die von hinten durchs Feld marschiert.
+	-- DER COMPACTOR: eine Shredderwand, die von hinten durchs Feld marschiert.
 	-- Er ersetzt den Rundentimer - wer troedelt, wird eingeholt und zerlegt.
+	--
+	-- REQ-IP-01: renamed from "Kastrierer". That word is German for
+	-- "castrator" -- borrowed framing, and a direct conflict with the Mild
+	-- maturity rating this project targets. "Compactor" describes what the
+	-- machine does, in the same clinical register as the rest of the game.
 	local shredWidth = g.cols * CELL + 8
 	local shred = Instance.new("Model")
-	shred.Name = "Kastrierer"
+	shred.Name = "Compactor"
 	local housing = Instance.new("Part")
 	housing.Name = "Housing"
 	housing.Anchored = true
@@ -558,7 +566,7 @@ local function runRoundInner(room, roundIndex, guard)
 	placeShred(shredZ, 0)
 	shred.Parent = runtime
 
-	-- Hauptschleife: Zellenerkennung, Fortschritt und der marschierende Kastrierer
+	-- Hauptschleife: Zellenerkennung, Fortschritt und der marschierende Compactor
 	local t0 = os.clock()
 	local lastTick = os.clock()
 	local spin = 0
@@ -571,7 +579,7 @@ local function runRoundInner(room, roundIndex, guard)
 		local now = os.clock()
 		local dt = now - lastTick
 		lastTick = now
-		-- Kastrierer bewegen (nach Schonfrist), Walzen drehen
+		-- Compactor bewegen (nach Schonfrist), Walzen drehen
 		if now - t0 > SHRED_GRACE and (shredZ - shredEndZ) * g.dir < 0 then
 			shredZ += g.dir * SHRED_SPEED * dt
 		end
@@ -598,7 +606,7 @@ local function runRoundInner(room, roundIndex, guard)
 					-- Fortschritt in Studs Richtung Exit
 					local prog = (pos.Z - g.z0) * g.dir
 					if prog > ps.progress then ps.progress = prog end
-					-- vom Kastrierer eingeholt? Sofort zerlegt. (Nie in der Schonfrist)
+					-- vom Compactor eingeholt? Sofort zerlegt. (Nie in der Schonfrist)
 					if now - t0 > SHRED_GRACE and (pos.Z - shredFront) * g.dir < 0 then
 						ps.done = true
 						ps.cardAt = os.clock()
