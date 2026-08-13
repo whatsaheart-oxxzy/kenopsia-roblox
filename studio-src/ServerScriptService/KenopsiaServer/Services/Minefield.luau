@@ -32,6 +32,11 @@ local Minefield = {}
 --   over the crawl speed (4.2)         -> being maimed still costs the round
 local MAX_SHRED_SPEED = 6.5   -- runner walks at 7
 local MIN_SHRED_SPEED = 4.6   -- runner crawls at 4.2
+-- Seconds allowed for the APPROACH -- the stretch from the marker to the
+-- players' line, where the machine is behind everyone and threatens nobody.
+-- Spending gameplay seconds there is what made the round 88 s. Lower this to
+-- give the sweep more time (easier), raise it to give the sweep less (harder).
+local APPROACH_SECONDS = 8
 local SHRED_GRACE = 1.5
 -- MOTION VALIDATION -- PARKED UNTIL GATE 6, NOT DEAD CODE.
 --
@@ -683,23 +688,60 @@ local function runRoundInner(room, roundIndex, guard)
 	end
 	local shredEndZ = g.z0 + g.dir * (g.rows * CELL + 12)
 	
-	-- Solve for the speed that finishes this run in the planned round length,
-	-- then clamp. When the clamp binds, the round is longer than planned and
-	-- the print below says so rather than leaving it to be discovered in play.
-	local shredDistance = math.abs(shredEndZ - shredZ)
+	-- TWO PHASES, and only the second one is gameplay.
+	--
+	-- APPROACH: marker -> the players' line. The machine is behind everyone
+	-- here and can only catch someone who walks backwards into it, so its
+	-- speed has no effect on fairness. It gets a fixed short budget.
+	--
+	-- SWEEP: the players' line -> past the exit. This is the part that decides
+	-- the round, so it keeps the cap that makes escaping on foot possible and
+	-- crawling fatal.
+	--
+	-- Splitting them is what lets the round hit its planned length WITHOUT
+	-- moving ShredderSpawnpoint: the 98 dead studs behind the field no longer
+	-- cost gameplay seconds. One speed for the whole run could not do both.
+	local sweepStartZ = behindSpawn
+	local approachDistance = math.abs(sweepStartZ - shredZ)
+	local sweepDistance = math.abs(shredEndZ - sweepStartZ)
 	local targetRound = Pacing.RoundSeconds.minefield or 55
-	local shredSpeed = math.clamp(
-		shredDistance / math.max(1, targetRound - SHRED_GRACE),
+	local sweepBudget = math.max(5, targetRound - SHRED_GRACE - APPROACH_SECONDS)
+	local sweepSpeed = math.clamp(sweepDistance / sweepBudget,
 		MIN_SHRED_SPEED, MAX_SHRED_SPEED)
-	local shredTraversal = shredDistance / shredSpeed + SHRED_GRACE
+	-- Never slower than the sweep. APPROACH_SECONDS is a BUDGET, not a
+	-- duration: with the marker close to the field the budget would work out
+	-- below the sweep speed and the machine would dawdle in, then accelerate
+	-- once it mattered -- backwards, and it only appears if the marker moves.
+	local approachSpeed = sweepSpeed
+	if approachDistance > 0.5 then
+		approachSpeed = math.max(sweepSpeed, approachDistance / APPROACH_SECONDS)
+	end
+	local shredTraversal = approachDistance / approachSpeed
+		+ sweepDistance / sweepSpeed + SHRED_GRACE
+	-- The runner's margin is the real difficulty dial, so it is measured and
+	-- printed rather than felt out one playtest at a time.
+	--
+	-- Both sides are measured to the SAME event -- the exit -- and from the
+	-- same instant, the start of the round. A first version compared the sweep
+	-- DURATION against the runner's, which silently dropped the approach: the
+	-- machine does not begin sweeping until it has arrived, so the runner has
+	-- that time too. It under-reported the slack by the whole approach, and a
+	-- difficulty dial that reads low makes you tune the game harder than you
+	-- meant to.
+	--
+	-- Measured to the exit, not to shredEndZ: the machine passes the exit
+	-- before it stops, and reaching the exit is what ends a runner's round.
+	local approachTime = approachDistance / approachSpeed
+	local sweepToExit = math.abs(R.exit.Position.Z - sweepStartZ) / sweepSpeed
+	local machineReachesExit = SHRED_GRACE + approachTime + sweepToExit
+	local runnerSeconds = math.abs(R.exit.Position.Z - R.spawn.Position.Z) / 7
+	local runnerMargin = machineReachesExit - runnerSeconds
 	-- A real failsafe now, not a second timer: it only ever fires if the
 	-- machine somehow fails to reach the end it is driven towards.
 	local failsafeTime = shredTraversal + 20
-	print(("[DZ] compactor %.0f studs at %.2f/s -> %.1f s round (target %.0f)%s")
-		:format(shredDistance, shredSpeed, shredTraversal, targetRound,
-			(shredTraversal > targetRound + 1)
-				and "  [SPEED CLAMPED - move ShredderSpawnpoint closer to hit target]"
-				or ""))
+	print(("[DZ] compactor approach %.0f studs @ %.1f/s, sweep %.0f @ %.2f/s -> %.1f s round (target %.0f); runner margin %+.1f s")
+		:format(approachDistance, approachSpeed, sweepDistance, sweepSpeed,
+			shredTraversal, targetRound, runnerMargin))
 	placeShred(shredZ, 0)
 	shred.Parent = runtime
 
@@ -718,7 +760,11 @@ local function runRoundInner(room, roundIndex, guard)
 		lastTick = now
 		-- Compactor bewegen (nach Schonfrist), Walzen drehen
 		if now - t0 > SHRED_GRACE and (shredZ - shredEndZ) * g.dir < 0 then
-			shredZ += g.dir * shredSpeed * dt
+			-- Approach speed until the machine reaches the players' line, sweep
+			-- speed from there on.
+			local speedNow = ((shredZ - sweepStartZ) * g.dir < 0)
+				and approachSpeed or sweepSpeed
+			shredZ += g.dir * speedNow * dt
 		end
 		spin += dt * 6
 		placeShred(shredZ, spin)
