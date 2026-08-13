@@ -19,6 +19,12 @@
           "Config": {
             "$className": "Folder",
             "GameConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau" }
+          },
+          "Rules": {
+            "$className": "Folder",
+            "Pacing":   { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Pacing.luau" },
+            "Playlist": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Playlist.luau" },
+            "Scoring":  { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Scoring.luau" }
           }
         }
       },
