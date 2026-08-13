@@ -17,6 +17,26 @@ local FAILSAFE_TIME = 150
 local SHRED_SPEED = 4.5     -- langsamer als Gehen (7), schneller als Crawl (4.2):
                             -- wer laeuft, bleibt vorn; wer kriecht/troedelt, verliert
 local SHRED_GRACE = 1.5
+-- MOTION VALIDATION -- PARKED UNTIL GATE 6, NOT DEAD CODE.
+--
+-- selene reports all five as unused, and they are: they were copied across
+-- from BirdHunting and never wired to anything. Dead Zone therefore performs
+-- NO exit validation today -- reaching the exit counts however it happened.
+--
+-- That is a known, accepted gap. Anti-cheat is deliberately sequenced last,
+-- which is also where the plan puts it: Gate 6, 'Security, performance,
+-- adversarial review'. The shared validator (Services/MotionCheck, lifted
+-- from BirdHunting's runnerPositionValid / runnerGrounded /
+-- rememberRunnerPosition / rollbackRunner) belongs to that gate.
+--
+-- They are kept HERE rather than deleted so the tuning is not lost and so
+-- the gap stays visible in the file it applies to. Do not delete them as
+-- dead code.
+--
+-- The selene unused_variable warnings on all five are deliberately NOT
+-- suppressed. They are true, and leaving them visible keeps the missing
+-- validation on the radar; an allow() would hide exactly the signal this
+-- comment exists to preserve.
 local MAX_RUNNER_SPEED = 7
 local POSITION_SPEED_FACTOR = 2
 local POSITION_TOLERANCE = 5
@@ -479,8 +499,10 @@ local function runRoundInner(room, roundIndex, guard)
 			ps.escaped = true
 			roundState.escapeCount = (roundState.escapeCount or 0) + 1
 			ps.escapeOrder = roundState.escapeCount
+			-- No "FIELD CLEARED." card: escaping is already legible from the
+			-- exit itself, and the Score stage reports the outcome shortly after.
+			-- cardAt is still stamped -- the death card below reads it.
 			ps.cardAt = os.clock()
-			tellOne(plr.UserId, { kind = "announce", text = "FIELD CLEARED." })
 			local s = livingOf(room)[plr.UserId]
 			if s then s.hum.WalkSpeed = 0 end
 		end
@@ -679,18 +701,10 @@ local function runRoundInner(room, roundIndex, guard)
 	-- Round-complete card only. Player restore, runtime teardown, exit
 	-- disconnect and the role reset all belong to cleanup(), which the
 	-- wrapper below always runs exactly once.
-	if MachineState then
-		local now = os.clock()
-		for _, mm in room.members do
-			local plr = Players:GetPlayerByUserId(mm.userId)
-			if plr then
-				local st = state[mm.userId]
-				if not (st and st.cardAt and now - st.cardAt < 6) then
-					MachineState:FireClient(plr, { kind = "announce", text = "ROUND " .. tostring(roundIndex or 1) .. " COMPLETE." })
-				end
-			end
-		end
-	end
+	-- The "ROUND n COMPLETE." card is gone. The session owns round and
+	-- minigame structure now -- RoomService carries roundIndex/roundCount and
+	-- MachineFlow draws the Score stage after every minigame -- so a card
+	-- announcing the same thing per round only delayed the next one.
 	return scores
 end
 
