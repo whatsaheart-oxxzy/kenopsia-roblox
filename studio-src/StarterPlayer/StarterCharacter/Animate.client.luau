@@ -1,1 +1,0 @@
--- intentionally empty: XBotAnimSync drives all animation

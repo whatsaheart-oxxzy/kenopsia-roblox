@@ -3,14 +3,17 @@
   "_placeId": 110672791536316,
   "_sourceRoot": "studio-src",
   "_count": 19,
+  "_history": "Gate 1 added the four pure modules (Rules/*, Net/Envelope) and Services/Contexts, and removed the five XBot animation scripts (XBotAnimations/PublishedIds, XBotAnimations/SequencePlayer, XBotCharacters, XBotAnimSync, StarterCharacter/Animate) together with the rig itself. Count is unchanged at 19 by coincidence, not by design.",
   "map": {
     "ReplicatedFirst/KenopsiaLoading.client.luau": "game.ReplicatedFirst.KenopsiaLoading",
     "ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau": "game.ReplicatedStorage.Kenopsia.Shared.Config.GameConfig",
+    "ReplicatedStorage/Kenopsia/Shared/Rules/Pacing.luau": "game.ReplicatedStorage.Kenopsia.Shared.Rules.Pacing",
+    "ReplicatedStorage/Kenopsia/Shared/Rules/Playlist.luau": "game.ReplicatedStorage.Kenopsia.Shared.Rules.Playlist",
+    "ReplicatedStorage/Kenopsia/Shared/Rules/Scoring.luau": "game.ReplicatedStorage.Kenopsia.Shared.Rules.Scoring",
+    "ReplicatedStorage/Kenopsia/Shared/Net/Envelope.luau": "game.ReplicatedStorage.Kenopsia.Shared.Net.Envelope",
     "ReplicatedStorage/KenopsiaAssets/Effects/Blood/BloodEffect.luau": "game.ReplicatedStorage.KenopsiaAssets.Effects.Blood.BloodEffect",
-    "ReplicatedStorage/XBotAnimations/PublishedIds.luau": "game.ReplicatedStorage.XBotAnimations.PublishedIds",
-    "ReplicatedStorage/XBotAnimations/SequencePlayer.luau": "game.ReplicatedStorage.XBotAnimations.SequencePlayer",
     "ServerScriptService/KenopsiaServer/Main.server.luau": "game.ServerScriptService.KenopsiaServer.Main",
-    "ServerScriptService/KenopsiaServer/XBotCharacters.server.luau": "game.ServerScriptService.KenopsiaServer.XBotCharacters",
+    "ServerScriptService/KenopsiaServer/Services/Contexts.luau": "game.ServerScriptService.KenopsiaServer.Services.Contexts",
     "ServerScriptService/KenopsiaServer/Services/RoomService.luau": "game.ServerScriptService.KenopsiaServer.Services.RoomService",
     "ServerScriptService/KenopsiaServer/Services/MachineFlow.luau": "game.ServerScriptService.KenopsiaServer.Services.MachineFlow",
     "ServerScriptService/KenopsiaServer/Services/BirdHunting.luau": "game.ServerScriptService.KenopsiaServer.Services.BirdHunting",
@@ -18,10 +21,8 @@
     "ServerScriptService/KenopsiaServer/Services/TableManners.luau": "game.ServerScriptService.KenopsiaServer.Services.TableManners",
     "ServerScriptService/KenopsiaServer/Services/BloodFX.luau": "game.ServerScriptService.KenopsiaServer.Services.BloodFX",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau": "game.StarterPlayer.StarterPlayerScripts.KenopsiaClient",
-    "StarterPlayer/StarterPlayerScripts/XBotAnimSync.client.luau": "game.StarterPlayer.StarterPlayerScripts.XBotAnimSync",
     "StarterPlayer/StarterPlayerScripts/MachineLayout.client.luau": "game.StarterPlayer.StarterPlayerScripts.MachineLayout",
     "StarterPlayer/StarterPlayerScripts/GoreClient.client.luau": "game.StarterPlayer.StarterPlayerScripts.GoreClient",
-    "StarterPlayer/StarterCharacterScripts/Health.server.luau": "game.StarterPlayer.StarterCharacterScripts.Health",
-    "StarterPlayer/StarterCharacter/Animate.client.luau": "game.StarterPlayer.StarterCharacter.Animate"
+    "StarterPlayer/StarterCharacterScripts/Health.server.luau": "game.StarterPlayer.StarterCharacterScripts.Health"
   }
 }

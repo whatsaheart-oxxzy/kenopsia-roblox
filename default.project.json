@@ -42,13 +42,8 @@
             "BloodEffect": { "$path": "studio-src/ReplicatedStorage/KenopsiaAssets/Effects/Blood/BloodEffect.luau" }
           }
         }
-      },
-
-      "XBotAnimations": {
-        "$className": "Folder",
-        "PublishedIds": { "$path": "studio-src/ReplicatedStorage/XBotAnimations/PublishedIds.luau" },
-        "SequencePlayer": { "$path": "studio-src/ReplicatedStorage/XBotAnimations/SequencePlayer.luau" }
       }
+
     },
 
     "ServerScriptService": {
@@ -56,7 +51,6 @@
       "KenopsiaServer": {
         "$className": "Folder",
         "Main": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Main.server.luau" },
-        "XBotCharacters": { "$path": "studio-src/ServerScriptService/KenopsiaServer/XBotCharacters.server.luau" },
         "Services": {
           "$className": "Folder",
           "Contexts":      { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Contexts.luau" },
@@ -76,7 +70,6 @@
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "KenopsiaClient": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau" },
-        "XBotAnimSync":   { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/XBotAnimSync.client.luau" },
         "MachineLayout":  { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/MachineLayout.client.luau" },
         "GoreClient":     { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/GoreClient.client.luau" }
       },
@@ -84,12 +77,8 @@
       "StarterCharacterScripts": {
         "$className": "StarterCharacterScripts",
         "Health": { "$path": "studio-src/StarterPlayer/StarterCharacterScripts/Health.server.luau" }
-      },
-
-      "StarterCharacter": {
-        "$className": "Model",
-        "Animate": { "$path": "studio-src/StarterPlayer/StarterCharacter/Animate.client.luau" }
       }
+
     }
   }
 }
