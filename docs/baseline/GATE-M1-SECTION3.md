@@ -618,6 +618,103 @@ identical sweep bug — a non-host regained `Interactable` on every page change.
 | Selene in Kenopsia-authored files | **zero** |
 | luau-lsp, 4 changed files | **24 → 22** diagnostics: two removed, **none added** |
 
+## §3E — menu music, real effects, and the character look
+
+### 1. The menu had no music
+
+`SoundBank.startMusic()` was **never called by anything**. §3C removed
+`startAmbient`, its only caller, so `musicWanted` stayed `false` forever and
+`Music.Loop` never played — the `MUSIC` toggle in Settings was switching
+something that was already silent.
+
+Music is tied to the same boundary as the monitor: started in `hideMonitor()`,
+stopped in `show()`. The monitor being down **is** the menu, so this needs no
+state of its own, and it covers construction too since `new()` drops the monitor
+before anything else runs. Trial audio remains its own gate's problem.
+
+`SoundService.KenopsiaAudio.Music.Loop.SoundId` set to
+`rbxassetid://105671529088230` (was `136345765095808`), `Looped = true`,
+`TimePosition = 0`, volume unchanged at 0.35. **Instance change, not source** —
+it lives in the place, not in `dev-src`.
+
+### 2. REDUCE EFFECTS did nothing it claimed
+
+The toggle had **no applier at all**. Its only observable behaviour was that
+`reducedMotion()` counted it, so turning it on stopped the camera move and
+changed no effect whatsoever. Reported from the live test as *"turn Effects off
+and the animation goes away, not the effects."*
+
+| | Before | Now |
+|---|---|---|
+| `reducedMotion()` | `Animations == false` **or** `ReduceEffects` **or** `ReduceFlicker` | `Animations == false`, nothing else |
+| `REDUCE EFFECTS` | syncs a legacy key, no applier | drives the Lighting post-processing |
+
+Effects are selected **by class** (`IsA("PostEffect")`) rather than by a name
+list, so a later addition is covered without editing the file. The menu colour
+grade is excluded deliberately: it is art direction, not an effect the player is
+asking to be spared, and it is nearly free.
+
+Original `Enabled` state is saved per effect. `DepthOfField` ships **disabled**
+in this place, so a blanket `not reduce` would have switched an effect **on** the
+moment the player turned the setting off.
+
+### 3. The character watches the camera
+
+Head only, through the R6 `Neck` `Motor6D`. Head rather than body because
+`MenuPresenceService` anchors the character at `CharacterAnchor` and freezes its
+rotation — turning the body would be the client fighting the server for a part
+the server owns.
+
+`C0` is solved as **`Torso⁻¹ · Head · C1`** rather than by hand-deriving Euler
+axes against the R6 neck basis, which is where this kind of code usually goes
+wrong. Verified numerically against the live markers **before** transfer:
+
+| Check | Result |
+|---|---|
+| Rest pose reproduces the authored `C0` | **0.000000** deviation |
+| `LandingCamera` — resulting head `LookVector` vs camera | **0.00°** error, yaw −23.8°, pitch 10.2° |
+| Head drift off the neck pivot | 0.089 studs |
+| `SessionCamera` | yaw clamps at **55°**, leaving **43.4°** of error |
+
+That last row is why the look is **landing-only**. Tracking the session wall
+needs about 98° of yaw; the head would sit at the clamp pointing well away from
+the camera, which reads as broken rather than as a stare. At the wall the
+character is not the subject anyway, so the head returns to rest as soon as the
+camera leaves the landing pose.
+
+**No permanent `RenderStepped`**, per the §4 rule. The camera is still except
+during a move, so the head is driven per frame only for the length of a move and
+recomputed on arrival. Three bounded re-reads (0.1 / 0.35 / 0.8 s) cover the gap
+where the server anchors the character just after it spawns — without them a
+stale first read would stay on screen with nothing to correct it.
+
+The authored `C0` is captured once and restored in `release()`, and cleared on
+`CharacterAdded` so the next capture comes from the new rig rather than writing a
+dead joint's CFrame onto it.
+
+### One mistake worth recording
+
+The look block was first written **below** `goTo`, which calls it. Lua locals
+must exist before the code referencing them, so selene reported three
+`undefined_variable` errors — caught by the gate, before transfer. The block now
+sits above the camera section, which is also where it reads better.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Selene | 0 errors, **45 warnings** — baseline, all in stock `Animate` |
+| luau-lsp, 4 changed files | **6 diagnostics, identical to HEAD** — all pre-existing in `MenuOverlayController` |
+| Studio-side Luau validation | **8/8 `status=valid`**, 0 diagnostics, `versionVerified` |
+| Source parity | **8/8 MATCH** (SHA-256) |
+
+> **Tooling note.** `manage_scripts_validate` returns its result nested under
+> `data.validation`, not flat. A first pass read `data.valid` and
+> `data.diagnostics` — both nil — and printed "diagnostics=0" for every file,
+> which is indistinguishable from a pass. Any validation check must assert that
+> the `validation.status` field is actually present, or a missing block reads as
+> success.
+
 ### Still open
 
 - `KenopsiaGui.TerminalScreen` — still in `StarterGui`, still an empty `Adornee`
