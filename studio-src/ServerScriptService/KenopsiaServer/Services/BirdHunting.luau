@@ -2,6 +2,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 
 local BloodFX = require(script.Parent.BloodFX)
 local Pacing = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
@@ -132,6 +133,73 @@ local function refs()
 		exit = folder:FindFirstChild("Exit"),
 		post = folder:FindFirstChild("SniperPost"),
 	}
+end
+
+-- THE TOWER IS A MACHINE, NOT A POSED PLAYER.
+--
+-- The hunter used to be the player's own character, knelt at the parapet and
+-- driven by an aim animation. That tied the role to the rig: every pose needed
+-- authoring, and the character had to exist and look right before the minigame
+-- could. A mounted gun removes the dependency entirely -- the server already
+-- validates an aim direction, so the machine can simply point along it.
+--
+-- SWAPPABLE, like the Compactor. Drop a model into
+-- ServerStorage.KenopsiaAssets.Props.BirdHunting as BH_Turret and it replaces
+-- the procedural build with no code change. The pivot is what gets aimed, so an
+-- authored model wants its PrimaryPart at the mount with the barrel down -Z.
+local function buildTurret(parent)
+	local props = ServerStorage:FindFirstChild("KenopsiaAssets")
+	props = props and props:FindFirstChild("Props")
+	props = props and props:FindFirstChild("BirdHunting")
+	local tpl = props and props:FindFirstChild("BH_Turret")
+	local model
+	if tpl then
+		model = tpl:Clone()
+	else
+		model = Instance.new("Model")
+		local mount = Instance.new("Part")
+		mount.Name = "Mount"
+		mount.Size = Vector3.new(1.6, 1.6, 1.6)
+		mount.Material = Enum.Material.DiamondPlate
+		mount.Color = Color3.fromRGB(38, 36, 34)
+		mount.Parent = model
+		local barrel = Instance.new("Part")
+		barrel.Name = "Barrel"
+		barrel.Size = Vector3.new(0.35, 0.35, 5.2)
+		barrel.Material = Enum.Material.Metal
+		barrel.Color = Color3.fromRGB(24, 23, 22)
+		barrel.Parent = model
+		model.PrimaryPart = mount
+	end
+	model.Name = "SniperTurret"
+	-- Never a physics object: the shot is a server raycast, so a collidable or
+	-- queryable turret would only block that raycast and shove the hunter.
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CastShadow = false
+		end
+	end
+	if not model.PrimaryPart then
+		model.PrimaryPart = model:FindFirstChildWhichIsA("BasePart")
+	end
+	model.Parent = parent
+	return model
+end
+
+-- Barrel offset from the mount, applied after the aim rotation so the gun sits
+-- forward of its pivot instead of through it.
+local TURRET_BARREL_OFFSET = CFrame.new(0, 0, -2.6)
+
+local function aimTurret(model, eye, dir)
+	if not (model and model.Parent and model.PrimaryPart) then return end
+	local pivot = CFrame.lookAt(eye, eye + dir)
+	model:PivotTo(pivot)
+	local barrel = model:FindFirstChild("Barrel")
+	if barrel then barrel.CFrame = pivot * TURRET_BARREL_OFFSET end
 end
 
 local function livingOf(room)
@@ -277,6 +345,10 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 		if exitConn then exitConn:Disconnect() exitConn = nil end
 		if hbConn then hbConn:Disconnect() hbConn = nil end
 		if beam then beam:Destroy() beam = nil end
+		if roundState and roundState.turret then
+			roundState.turret:Destroy()
+			roundState.turret = nil
+		end
 		for _, corpse in ipairs(corpses) do
 			if corpse.Parent then corpse:Destroy() end
 		end
@@ -347,6 +419,15 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			-- new minigame, new moves: runners may sneak in this trial
 			s.char:SetAttribute("XBotMoves", isSniper and "" or "sneak")
 			if isSniper then
+				-- The hunter operates the turret and is not seen doing it. The
+				-- character still exists -- the scope camera and the shot filter
+				-- both hang off it -- but nobody, including the other players,
+				-- sees a body at the parapet. The machine is what stands there.
+				for _, d in s.char:GetDescendants() do
+					if d:IsA("BasePart") or d:IsA("Decal") then
+						d.Transparency = 1
+					end
+				end
 				-- kneeling at the parapet, facing down the lane
 				s.root.CFrame = CFrame.lookAt(eye + Vector3.new(0, -3.2, 0), Vector3.new(startPos.X, eye.Y - 3.2, startPos.Z))
 				s.char:SetAttribute("XBotAction", "SniperAim#" .. tostring(math.floor(os.clock() * 1000)))
@@ -476,6 +557,23 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 		acceptAim = true,
 		active = false,
 	}
+
+	-- The machine at the parapet, driven from the SAME validated aimDir the
+	-- shot raycast uses. One source for both is what stops the barrel the
+	-- runners see from disagreeing with the line the server fires along --
+	-- two would drift apart under packet loss and make hits look wrong.
+	local turret = buildTurret(R.folder)
+	roundState.turret = turret
+	aimTurret(turret, eye, baseAim)
+	-- Its own tick: the main loop runs at 0.2 s, and a gun that moves five
+	-- times a second reads as broken. Bounded by `stopped`, so it ends with
+	-- the leg instead of outliving it.
+	task.spawn(function()
+		while not stopped and turret.Parent do
+			aimTurret(turret, eye, roundState.aimDir or baseAim)
+			task.wait(0.06)
+		end
+	end)
 	roundState.shoot = function(dir)
 		if not roundState.active then return end
 		local origin = eye
