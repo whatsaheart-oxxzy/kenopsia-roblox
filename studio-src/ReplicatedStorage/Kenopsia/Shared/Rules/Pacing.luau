@@ -66,12 +66,27 @@ Pacing.RoundSeconds = {
 
 -- Session and presentation timing, seconds. Every delay in the session loop
 -- comes from here so that no controller invents its own.
+--
+-- THESE ARE TUNED TO THE CLIENT'S ANIMATIONS, not just to the plan's numbers.
+-- The screens type their text out (showInfo at ~26 chars/s, showStatus one line
+-- per 0.25 s), so a hold shorter than the typewriter makes the card vanish
+-- before it has finished writing itself. That is exactly what the first live run
+-- of the session loop showed.
+--
+-- Deviation recorded: the plan gives 3 s interim and 6 s final. Both are raised
+-- below. Those numbers were written against a design where the CRT counts down
+-- while totals climb; against the typewriter the reviewer observed them as too
+-- short to read. The plan's values are kept in this comment so the deviation is
+-- visible rather than lost.
 Pacing.Timing = {
-	Title        = 1.2,  -- trial title card
+	Reveal       = 3.5,  -- "NEXT SIMULATION: <name>", typed out
+	Title        = 1.2,  -- in-trial title card (plan value, no typewriter)
+	RoundCard    = 3.0,  -- "Round n/m" plus its verb line
+	RoundSettle  = 1.5,  -- beat after a round ends, before the next card
 	CountdownFrom = 3,   -- 3-2-1, one per second
 	FadeMax      = 0.6,  -- upper bound on any transition fade
-	InterimScore = 3.0,  -- score card after each completed trial
-	FinalScore   = 6.0,  -- final cumulative board
+	InterimScore = 4.5,  -- score card after each completed minigame (plan: 3.0)
+	FinalScore   = 8.0,  -- final cumulative board (plan: 6.0)
 	ControlCard  = 8.0,  -- briefing; early confirm is allowed
 }
 

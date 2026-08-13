@@ -369,10 +369,16 @@ local function runMatch(room)
 				legIndex = RoomServiceRef.CLEAR,
 				legCount = RoomServiceRef.CLEAR,
 			})
-			tell(ctx, { kind = "select", trialId = trial.id,
-				displayName = trial.displayName, subtitle = trial.subtitle,
-				index = trialIndex, total = #order })
-			if not hold(ctx, Pacing.Timing.Title) then return end
+			-- "info", NOT a new kind. The client dispatches on a fixed set --
+			-- selection / info / status / round / score / announce / hide -- and
+			-- an unknown kind renders NOTHING. The first cut of this loop sent
+			-- "select" and the reveal was simply blank.
+			--
+			-- showInfo types the name out at ~26 chars/s, so the hold has to
+			-- outlast the typewriter or the card disappears mid-word.
+			tell(ctx, { kind = "info", id = trial.id, name = trial.displayName,
+				icon = trial.icon, index = trialIndex, total = #order })
+			if not hold(ctx, Pacing.Timing.Reveal) then return end
 
 			-- BRIEFING
 			RoomServiceRef.setStage(ctx.sessionId, "Briefing")
@@ -380,7 +386,7 @@ local function runMatch(room)
 				trial.displayName,
 				trial.tagline,
 				" ",
-				("Trial %d of %d."):format(trialIndex, #order),
+				("Minigame %d of %d."):format(trialIndex, #order),
 				"Bootstrapping simulation ...",
 			} })
 			if not hold(ctx, Pacing.Timing.ControlCard) then return end
@@ -405,7 +411,7 @@ local function runMatch(room)
 
 				tell(ctx, { kind = "round", n = roundIndex, total = rounds,
 					verbs = trial.tagline })
-				if not hold(ctx, Pacing.Timing.Title) then return end
+				if not hold(ctx, Pacing.Timing.RoundCard) then return end
 				tell(ctx, { kind = "hide" })
 				setActiveTrial(ctx, trial.id)
 
@@ -435,7 +441,7 @@ local function runMatch(room)
 				for uid, value in scores do
 					trialTotals[uid] = (trialTotals[uid] or 0) + value
 				end
-				if not hold(ctx, Pacing.Timing.InterimScore) then return end
+				if not hold(ctx, Pacing.Timing.RoundSettle) then return end
 			end
 
 			-- SCORE. A COMPLETED trial distributes exactly 1700, whatever the raw
@@ -472,7 +478,11 @@ local function runMatch(room)
 			tell(ctx, { kind = "score", board = board, trialId = trial.id,
 				index = trialIndex, total = #order, final = false })
 			if not hold(ctx, Pacing.Timing.InterimScore) then return end
-			tell(ctx, { kind = "hide" })
+
+			-- NO hide() here. Every show* on the client begins with hideAll(),
+			-- so the next minigame's reveal replaces this board by itself. Hiding
+			-- first only opened a gap in which the player stood in the empty
+			-- world waiting -- which is precisely what the live run showed.
 
 			-- Between trials, not only after the last one: whatever this trial
 			-- parked in the world has to go before the next one builds in the
@@ -533,9 +543,9 @@ local function runMatch(room)
 	if outcome == "error" then
 		warn(("[MachineFlow] session %s failed: %s")
 			:format(ctx and tostring(ctx.sessionId) or "<no-session>", tostring(err)))
-		RoomServiceRef.abort(room, "TRIAL ERROR")
+		RoomServiceRef.abort(room, "MINIGAME ERROR")
 	elseif outcome == "no-trial" then
-		RoomServiceRef.abort(room, "NO READY TRIAL")
+		RoomServiceRef.abort(room, "NO READY MINIGAME")
 	end
 
 	-- Reached on every route, including no-trial and error, so the room can
