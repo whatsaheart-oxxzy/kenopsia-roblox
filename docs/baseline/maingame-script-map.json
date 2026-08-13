@@ -1,0 +1,27 @@
+{
+  "_comment": "studio-src -> KenopsiaMainGame (110672791536316). Derived from default.project.json, which is the authoritative mapping. Used by Get-KenopsiaParity. Kept as a file because Gate 0 has to be repeatable, and the DEV tree had a map while MainGame did not.",
+  "_placeId": 110672791536316,
+  "_sourceRoot": "studio-src",
+  "_count": 19,
+  "map": {
+    "ReplicatedFirst/KenopsiaLoading.client.luau": "game.ReplicatedFirst.KenopsiaLoading",
+    "ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau": "game.ReplicatedStorage.Kenopsia.Shared.Config.GameConfig",
+    "ReplicatedStorage/KenopsiaAssets/Effects/Blood/BloodEffect.luau": "game.ReplicatedStorage.KenopsiaAssets.Effects.Blood.BloodEffect",
+    "ReplicatedStorage/XBotAnimations/PublishedIds.luau": "game.ReplicatedStorage.XBotAnimations.PublishedIds",
+    "ReplicatedStorage/XBotAnimations/SequencePlayer.luau": "game.ReplicatedStorage.XBotAnimations.SequencePlayer",
+    "ServerScriptService/KenopsiaServer/Main.server.luau": "game.ServerScriptService.KenopsiaServer.Main",
+    "ServerScriptService/KenopsiaServer/XBotCharacters.server.luau": "game.ServerScriptService.KenopsiaServer.XBotCharacters",
+    "ServerScriptService/KenopsiaServer/Services/RoomService.luau": "game.ServerScriptService.KenopsiaServer.Services.RoomService",
+    "ServerScriptService/KenopsiaServer/Services/MachineFlow.luau": "game.ServerScriptService.KenopsiaServer.Services.MachineFlow",
+    "ServerScriptService/KenopsiaServer/Services/BirdHunting.luau": "game.ServerScriptService.KenopsiaServer.Services.BirdHunting",
+    "ServerScriptService/KenopsiaServer/Services/Minefield.luau": "game.ServerScriptService.KenopsiaServer.Services.Minefield",
+    "ServerScriptService/KenopsiaServer/Services/TableManners.luau": "game.ServerScriptService.KenopsiaServer.Services.TableManners",
+    "ServerScriptService/KenopsiaServer/Services/BloodFX.luau": "game.ServerScriptService.KenopsiaServer.Services.BloodFX",
+    "StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau": "game.StarterPlayer.StarterPlayerScripts.KenopsiaClient",
+    "StarterPlayer/StarterPlayerScripts/XBotAnimSync.client.luau": "game.StarterPlayer.StarterPlayerScripts.XBotAnimSync",
+    "StarterPlayer/StarterPlayerScripts/MachineLayout.client.luau": "game.StarterPlayer.StarterPlayerScripts.MachineLayout",
+    "StarterPlayer/StarterPlayerScripts/GoreClient.client.luau": "game.StarterPlayer.StarterPlayerScripts.GoreClient",
+    "StarterPlayer/StarterCharacterScripts/Health.server.luau": "game.StarterPlayer.StarterCharacterScripts.Health",
+    "StarterPlayer/StarterCharacter/Animate.client.luau": "game.StarterPlayer.StarterCharacter.Animate"
+  }
+}
