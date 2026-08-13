@@ -108,6 +108,19 @@ end
 
 -- MONITOR --------------------------------------------------------------------
 
+-- The ScreenGui itself is raised and dropped alongside the monitor, not just the
+-- Monitor frame inside it.
+--
+-- KenopsiaGui ships Enabled = false, and nothing ever set it true: show() raised
+-- Monitor.Visible while the container stayed disabled, so Countdown, Trial,
+-- TrialResult and FinalResult could not render at all. Toggling Visible inside a
+-- disabled ScreenGui is invisible work.
+--
+-- Dropping it again on the way out matters as much as raising it: KenopsiaGui
+-- contains Backdrop, a full-screen opaque black frame with no code owner. While
+-- the container is disabled that frame is inert; leaving the container enabled
+-- after a trial would black out the 3D street menu. Enabled therefore tracks the
+-- monitor exactly -- up for trial screens, down for everything else.
 function MenuController:hideMonitor()
 	self.current = nil
 	for _, s in self.screens:GetChildren() do
@@ -115,6 +128,7 @@ function MenuController:hideMonitor()
 	end
 	local monitor = self.gui:FindFirstChild("Monitor")
 	if monitor then monitor.Visible = false end
+	self.gui.Enabled = false
 end
 
 -- show() is the contract TrialController depends on. Its signature is
@@ -124,6 +138,9 @@ function MenuController:show(name, instant, dir)
 	local target = self.screens:FindFirstChild(name)
 	if not target then return end
 
+	-- Container first, then the frame inside it. Raising Monitor.Visible while
+	-- KenopsiaGui is still disabled renders nothing -- see hideMonitor.
+	self.gui.Enabled = true
 	local monitor = self.gui:FindFirstChild("Monitor")
 	if monitor then monitor.Visible = true end
 
