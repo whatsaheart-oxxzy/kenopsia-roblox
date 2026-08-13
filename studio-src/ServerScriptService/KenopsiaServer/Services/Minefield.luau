@@ -888,8 +888,15 @@ local function runRoundInner(room, roundIndex, guard)
 	-- death card already uses so "spawn is never seen". Dead Zone's round
 	-- boundary never had one. The next round card replaces it, so nothing
 	-- needs to clear it explicitly.
-	announce(room, { kind = "announce", text = "" })
-	task.wait(0.6)
+	--
+	-- Guarded on the round still being live. An aborted match tears down on
+	-- its own path and its players are already on their way back to the
+	-- lobby; dropping an opaque cover on them there would blacken a screen
+	-- nobody is going to clear, and the 0.6 s would be spent holding it.
+	if active() then
+		announce(room, { kind = "announce", text = "" })
+		task.wait(0.6)
+	end
 	
 	return scores
 end

@@ -4,11 +4,22 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BloodFX = require(script.Parent.BloodFX)
+local Pacing = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Rules"):WaitForChild("Pacing"))
 
 local BirdHunting = {}
 
 -- Upper bound only: a leg ends when every runner is out.
-local ROUND_TIME = 150
+-- REQ-BH-01: the leg cap comes from Pacing, which the plan sets at 90 s.
+--
+-- It was 150. Measured in a live solo session, four legs at that cap is ten
+-- minutes of a single minigame -- against a target of 10-15 minutes for the
+-- WHOLE three-minigame session. A leg that runs to the cap is one where the
+-- runners are hiding rather than running, and 90 s is already long for that.
+--
+-- Read from Pacing rather than copied, so the leg cap and the round counts
+-- that produce it cannot drift apart.
+local ROUND_TIME = Pacing.RoundSeconds.birdhunt or 90
 local FIRE_COOLDOWN = 2.2
 local AIM_INTERVAL = 1 / 25
 local MAX_AIM_YAW = 0.72
