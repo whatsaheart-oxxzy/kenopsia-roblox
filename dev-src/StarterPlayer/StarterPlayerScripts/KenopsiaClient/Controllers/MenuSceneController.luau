@@ -16,6 +16,7 @@ local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
@@ -180,16 +181,24 @@ local function hardCut(apply)
 end
 
 -- CHARACTER LOOK -------------------------------------------------------------
--- The menu character watches the camera.
+-- The menu character watches the CURSOR: wherever the mouse goes, the head
+-- turns to follow, and a cursor resting on the character means it is looking
+-- straight at the viewer.
 --
 -- HEAD ONLY, through the R6 Neck Motor6D. MenuPresenceService anchors the
 -- character at CharacterAnchor and freezes its rotation, so turning the body
 -- would be the client fighting the server for a part the server owns. The neck
 -- is not read by anything else and is restored on release.
 --
--- NOT a permanent RenderStepped. The camera is static except while a move tween
--- is running, so the look is recomputed on arrival and driven per frame ONLY for
--- the duration of a move.
+-- NOT a permanent RenderStepped. There are exactly three things that can change
+-- where the head should point, and each drives it directly:
+--
+--   * the cursor moves   -> UserInputService.InputChanged, MouseMovement only
+--   * the camera moves   -> per frame, but ONLY for the length of that move
+--   * the character loads-> settleLook's three bounded re-reads
+--
+-- A still mouse in front of a still camera therefore costs nothing at all, which
+-- is what the section 4 rule is actually asking for.
 --
 -- LANDING ONLY. Measured against the real markers, tracking SessionCamera needs
 -- about 98 degrees of yaw -- the clamp holds at 55 and the head then points 43
@@ -204,6 +213,41 @@ local NECK_MAX_YAW = math.rad(55)
 local NECK_MAX_PITCH = math.rad(28)
 -- R6 head centre relative to torso centre.
 local HEAD_OFFSET = CFrame.new(0, 1.5, 0)
+-- How far the gaze slides from the lens as the cursor travels to the edge of the
+-- screen, in studs. Measured at 6: the head then sweeps about -43 to +2 degrees
+-- of yaw, and only the very top of the screen reaches the pitch clamp. Larger
+-- values start clamping at the left and right edges too.
+local CURSOR_GAZE_SPREAD = 6
+
+-- Where the character is looking: the cursor.
+--
+-- Expressed as THE CAMERA, slid sideways by the cursor's offset from the centre
+-- of the screen. That formulation is what makes a centred cursor -- a cursor
+-- resting on the character -- come out as looking straight down the lens, which
+-- is the whole point of the effect. Verified: centred gives yaw -23.8 / pitch
+-- 10.2, the same angles that aim at the camera to 0.00 degrees.
+--
+-- Two alternatives were measured and rejected. A far point along the cursor ray
+-- lands BEHIND the character (the camera looks toward it), so the head span
+-- comes out at about 178 degrees and clamps everywhere. A plane at half the head
+-- depth behaves, but puts the centred gaze at -39 degrees -- looking past the
+-- viewer rather than at them.
+local function lookTarget(camera)
+	-- Touch and gamepad have no pointer; the head simply looks down the lens.
+	if not UserInputService.MouseEnabled then return camera.CFrame.Position end
+	local vp = camera.ViewportSize
+	if vp.X <= 0 or vp.Y <= 0 then return camera.CFrame.Position end
+	-- GetMouseLocation shares its origin with ViewportSize -- the true top-left,
+	-- inset not applied. This is the same space question the retro cursor got
+	-- wrong once; do not "correct" it with GetGuiInset.
+	local m = UserInputService:GetMouseLocation()
+	local ndcX = (m.X / vp.X) * 2 - 1
+	local ndcY = 1 - (m.Y / vp.Y) * 2
+	local cf = camera.CFrame
+	return cf.Position
+		+ cf.RightVector * (ndcX * CURSOR_GAZE_SPREAD)
+		+ cf.UpVector * (ndcY * CURSOR_GAZE_SPREAD)
+end
 
 local function neckJoint()
 	local character = player.Character
@@ -223,7 +267,7 @@ local function updateLook(alpha)
 
 	if state.active and state.pose == "Landing" and camera then
 		local rest = torso.CFrame * HEAD_OFFSET
-		local toCamera = camera.CFrame.Position - rest.Position
+		local toCamera = lookTarget(camera) - rest.Position
 		if toCamera.Magnitude > 0.05 then
 			-- Clamped in TORSO space, so the limits are anatomical rather than
 			-- world-aligned and stay correct however the character is turned.
@@ -508,6 +552,15 @@ local function engage()
 	addGrade()
 	applyEffects()
 	hideOthers()
+	-- The head follows the cursor, driven the same way the retro cursor is:
+	-- InputChanged fires only when the mouse actually moves, so a still mouse
+	-- costs nothing and the section 4 no-permanent-RenderStepped rule holds.
+	-- Registered in state.conns, so release() disconnects it.
+	table.insert(state.conns, UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+		if not state.active or state.pose ~= "Landing" then return end
+		updateLook()
+	end))
 	goTo("Landing", { instant = true })
 	settleLook()
 end
