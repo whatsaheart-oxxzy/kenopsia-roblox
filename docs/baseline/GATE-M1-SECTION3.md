@@ -560,6 +560,41 @@ READY rule gets tested was the one environment where it did not apply.
 Consequence, accepted on instruction: the room flow can no longer be exercised
 with a single player; it needs Start Server + 2 clients.
 
+#### 4. Trial screens could not render at all
+
+`KenopsiaGui` ships `Enabled = false` and **nothing ever set it true**. `show()`
+raised `Monitor.Visible` while the container stayed disabled — and toggling
+`Visible` inside a disabled `ScreenGui` is invisible work. `Countdown`,
+`TrialIntro`, `Trial`, `TrialResult` and `FinalResult` all live in that
+container, so every trial screen was unreachable.
+
+`Enabled` now tracks the monitor exactly: raised in `show()`, dropped in
+`hideMonitor()`.
+
+Dropping it on the way out matters as much as raising it. `KenopsiaGui` also
+contains `Backdrop` — a full-screen **opaque black** frame with no code owner.
+While the container is disabled that frame is inert, but leaving the container
+enabled after a trial would black out the 3D street menu. Tying `Enabled` to the
+monitor gives `Backdrop` the job it was authored for (the dark ground behind the
+CRT during a trial) without letting it escape into the menu.
+
+Checked before the change, so that enabling the container could not surface
+something unintended:
+
+| Instance | State |
+|---|---|
+| six `Templates` + `Components.SelectionHighlight` | `Visible = false` |
+| all five trial screens | `Visible = false` |
+| `ScreenArea.PowerOn` | `Visible = false` |
+| `Content.Banner` | `Visible`, but empty text |
+| `MenuSceneController`'s `gui.Enabled = true` | its own fade cover, **not** this container |
+
+`MenuController` is therefore the sole owner of `KenopsiaGui.Enabled`.
+
+Not yet proven at runtime: no trial has been played since. This closes a defect
+that made the screens impossible to render, but it does not by itself
+demonstrate that they render correctly.
+
 #### Two latent defects caught while gating the button
 
 Both would have silently undone the fix:
@@ -589,10 +624,14 @@ identical sweep bug — a non-host regained `Interactable` on every page change.
   at `PixelsPerStud 256`, so it renders nowhere. `SessionWallController` built
   its own `SurfaceGui` under `PlayerGui` in §3B, which makes this instance dead
   rather than pending. **0 code references.** Deletion candidate.
-- `ScreenArea.PowerOn`, `Content.Banner`, `Backdrop`, and the six `Templates`
-  (`MenuButton`, `Card`, `ToggleRow`, `SliderRow`, `PlayerRow`, `PlayerSlot`)
-  plus `Components.SelectionHighlight`: **0 code references** each. Not deleted —
-  outside what was authorised.
+- `ScreenArea.PowerOn`, `Content.Banner`, and the six `Templates` (`MenuButton`,
+  `Card`, `ToggleRow`, `SliderRow`, `PlayerRow`, `PlayerSlot`) plus
+  `Components.SelectionHighlight`: **0 code references** each, all
+  `Visible = false` except `Banner`, which is visible but empty and coloured with
+  the forbidden red. Not deleted — outside what was authorised.
+- `Backdrop` is **no longer** on this list. It has no code owner, but it now has a
+  defined role: the black ground behind the CRT while a trial screen is up, which
+  is exactly what tying `KenopsiaGui.Enabled` to the monitor gives it.
 - §5 acceptance (12 playtests) has not been run. The cursor needs a live check in
   particular: no automated signal distinguishes a correct pointer from a missing
   one, which is the whole reason this regression survived a gate.
