@@ -44,14 +44,24 @@ task.spawn(function()
 	end
 end)
 
-local function fxFolder()
+-- FX are grouped per SCOPE so one trial's teardown cannot wipe another's.
+-- Without the subfolder the only available reset was ClearAllChildren on the
+-- shared folder, which is why REQ-DZ-03 exists.
+local function fxFolder(scope)
 	local f = workspace:FindFirstChild("KenopsiaFX")
 	if not f then
 		f = Instance.new("Folder")
 		f.Name = "KenopsiaFX"
 		f.Parent = workspace
 	end
-	return f
+	if not scope then return f end
+	local sub = f:FindFirstChild(scope)
+	if not sub then
+		sub = Instance.new("Folder")
+		sub.Name = scope
+		sub.Parent = f
+	end
+	return sub
 end
 
 local function v(pos) return { pos.X, pos.Y, pos.Z } end
@@ -75,7 +85,7 @@ function BloodFX.shatter(char, pos, recipients)
 end
 
 -- steife PS1-Leiche: geklonter Skin fliegt vom Explosionspunkt weg
-function BloodFX.corpse(char, impulse)
+function BloodFX.corpse(char, impulse, scope)
 	local mesh = char and char:FindFirstChild("Beta_Joints")
 	if not (mesh and mesh:IsA("BasePart")) then return end
 	local c = mesh:Clone()
@@ -100,7 +110,7 @@ function BloodFX.corpse(char, impulse)
 	drip.Acceleration = Vector3.new(0, -50, 0)
 	drip.Rate = 18
 	drip.Parent = att
-	c.Parent = fxFolder()
+	c.Parent = fxFolder(scope)
 	c.AssemblyLinearVelocity = impulse or Vector3.new(0, 24, 0)
 	c.AssemblyAngularVelocity = Vector3.new(math.random(-8, 8), math.random(-8, 8), math.random(-8, 8))
 	mesh.Transparency = 1
@@ -124,11 +134,11 @@ function BloodFX.maim(char, recipients)
 	BloodFX.bleed(char, recipients)
 end
 
-function BloodFX.bleed(char, recipients)
+function BloodFX.bleed(char, recipients, scope)
 	if not char or bleeding[char] then return end
 	local root = char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
-	local entry = { alive = true, recipients = recipients }
+	local entry = { alive = true, recipients = recipients, scope = scope }
 	bleeding[char] = entry
 	task.spawn(function()
 		while entry.alive and char.Parent do
@@ -155,14 +165,26 @@ function BloodFX.clearClients(recipients)
 	if recipients then ev({ t = "clear" }, recipients) end
 end
 
--- Globaler Legacy-Reset fuer explizite serverweite Uebergaenge.
-function BloodFX.clear()
-	for char in pairs(bleeding) do
-		BloodFX.stopBleed(char)
+-- REQ-DZ-03. Scoped by default: clears only this scope's folder, stops only
+-- the bleeds started under it, and tells only this round's audience.
+--
+-- Called with NO scope it still performs the old server-wide reset, which is
+-- correct for a genuine shutdown but wrong for a trial ending -- with two
+-- rooms running, the global path wiped the other room's effects and sent a
+-- clear to players who were mid-round somewhere else.
+function BloodFX.clear(scope, recipients)
+	for char, entry in pairs(bleeding) do
+		if not scope or entry.scope == scope then
+			BloodFX.stopBleed(char)
+		end
 	end
 	local f = workspace:FindFirstChild("KenopsiaFX")
-	if f then f:ClearAllChildren() end
-	ev({ t = "clear" })
+	if f then
+		local target = scope and f:FindFirstChild(scope) or f
+		if target then target:ClearAllChildren() end
+		if scope and target then target:Destroy() end
+	end
+	ev({ t = "clear" }, recipients)
 end
 
 return BloodFX

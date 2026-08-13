@@ -274,9 +274,11 @@ local function runRoundInner(room, roundIndex, guard)
 			roundState.runtime:Destroy()
 			roundState.runtime = nil
 		end
-		-- REQ-DZ-03 (deferred): this global clear must become scoped. Moved
-		-- inside the single path so it cannot be skipped or run twice.
-		BloodFX.clear()
+		-- REQ-DZ-03, closed. This used to be the server-wide BloodFX.clear():
+		-- it stopped EVERY bleed, wiped the shared FX folder, and broadcast a
+		-- clear to every player on the server -- including anyone mid-round in
+		-- another room. Now scoped to this round's own folder and audience.
+		BloodFX.clear(roundState.roundToken, audienceOf(room))
 		if MachineState then
 			for _, mm in room.members do
 				local plr = Players:GetPlayerByUserId(mm.userId)
@@ -417,9 +419,10 @@ local function runRoundInner(room, roundIndex, guard)
 					if d <= KILL_RADIUS then
 						ps.done = true
 						ps.cardAt = os.clock()
-						-- sofortige Zerstueckelung: Koerper zerreisst am Ort der Mine
+						-- One localized burst, not a stack. kill() plus shatter() ran both
+						-- the blood hit AND the gib fountain on the same death, which is
+						-- the gore stack the plan rules out and a maturity problem besides.
 						BloodFX.kill(s.root.Position)
-						BloodFX.shatter(s.char)
 						s.hum.Health = 0
 						tellOne(uid, { kind = "announce", style = "death", text = "YOU STEPPED WRONG." })
 						if R.cam then
@@ -432,10 +435,19 @@ local function runRoundInner(room, roundIndex, guard)
 									look = { R.exit.Position.X, g.gTop, R.exit.Position.Z } })
 							end)
 						end
-					elseif d <= KNOCK_RADIUS then
-						-- Ueberlebt, aber der KASTRIERER nimmt die Beine: ab jetzt Zombie-Crawl
+					elseif d <= KNOCK_RADIUS and not ps.crawling then
+						-- Survived the outer ring: from here on, crawl.
+						--
+						-- LATCHED. Without ps.crawling a second blast re-applied the
+						-- whole effect to someone already crawling -- another bleed
+						-- stacked on the first, and the attribute rewritten under an
+						-- animation that had already started.
+						--
+						-- bleed(), not maim(): maim is the leg-severing effect, and the
+						-- outer ring is crawl plus glitch with no severing.
+						ps.crawling = true
 						s.char:SetAttribute("XBotCrawl", true)
-						BloodFX.maim(s.char)
+						BloodFX.bleed(s.char, audienceOf(room), roundState.roundToken)
 					end
 				end
 			end
