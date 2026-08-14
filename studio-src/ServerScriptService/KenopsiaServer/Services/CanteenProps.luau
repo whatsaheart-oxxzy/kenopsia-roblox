@@ -142,7 +142,8 @@ local function makeObserver(tpl)
 		for _, d in ipairs(c:GetDescendants()) do
 			if d:IsA("BasePart") then decorate(d) end
 		end
-		return c
+		-- Second return: authored. See poseObserver for why this matters.
+		return c, true
 	end
 	local model = Instance.new("Model")
 	model.Name = "Observer"
@@ -198,8 +199,19 @@ local function poseFork(model, cf)
 	end
 end
 
-local function poseObserver(model, cf)
+-- `authored` is not cosmetic: an authored CP_Observer is a rigid model whose
+-- parts are already placed relative to each other, and moving it means moving
+-- the PIVOT and nothing else. The per-part placement below exists only because
+-- the procedural build is a loose bag of parts.
+--
+-- Without this flag the lookups by name are a trap for the very models this
+-- slot exists to accept: any authored model that happens to name a part "Eye"
+-- or "Stalk" -- which a lens and a ceiling mount plainly would -- gets those
+-- parts yanked onto procedural offsets and tears itself apart on frame one.
+local function poseObserver(model, cf, authored)
 	setPivot(model, cf)
+	if authored then return end
+
 	local eye = model:FindFirstChild("Eye")
 	if eye then eye.CFrame = cf * CFrame.new(0, 0, -0.7) end
 	local stalk = model:FindFirstChild("Stalk")
@@ -271,11 +283,12 @@ function CanteenProps.build(arena, opts)
 		self.seats[i] = seat
 	end
 
-	local observer = makeObserver(tpl)
+	local observer, observerAuthored = makeObserver(tpl)
 	local restCF = arena.Observer.CFrame
 	self.observerRest = restCF
 	self.observerHidden = restCF + Vector3.new(0, OBSERVER_HIDE_RISE, 0)
-	poseObserver(observer, self.observerHidden)
+	self.observerAuthored = observerAuthored
+	poseObserver(observer, self.observerHidden, observerAuthored)
 	observer.Parent = folder
 	self.observer = observer
 
@@ -372,10 +385,10 @@ function CanteenProps.build(arena, opts)
 			while self.alive do
 				local a = (os.clock() - t0) / math.max(duration, 0.05)
 				if a >= 1 then break end
-				poseObserver(self.observer, from:Lerp(target, a))
+				poseObserver(self.observer, from:Lerp(target, a), self.observerAuthored)
 				task.wait()
 			end
-			if self.alive then poseObserver(self.observer, target) end
+			if self.alive then poseObserver(self.observer, target, self.observerAuthored) end
 		end)
 	end
 

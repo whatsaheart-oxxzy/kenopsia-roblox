@@ -253,10 +253,20 @@ local tc = tableCF.Position
 local longAxis = (tableSize.X >= tableSize.Z) and Vector3.new(1, 0, 0) or Vector3.new(0, 0, 1)
 local obsPos = Vector3.new(tc.X, tableTopY + OBSERVER_ABOVE_TABLE, tc.Z)
 local obsLook = Vector3.new(tc.X, tableTopY, tc.Z)
--- Straight down is parallel to lookAt's default up vector and would produce a
--- NaN CFrame -- the same trap as the execution muzzles. The table's long axis
--- is horizontal by construction, so it is always a valid up reference.
-marker("Observer", CFrame.lookAt(obsPos, obsLook, longAxis), rig)
+
+-- HORIZONTAL look, world up. This frame hosts an authored CP_Observer, and an
+-- authored Observer is a FIGURE -- something that hangs upright.
+--
+-- lookAt derives local +Y from the part of `up` perpendicular to the look
+-- direction, so a look tilted down by an angle tilts the whole model back by
+-- that same angle. The previous straight-down look therefore put local +Y along
+-- world +X: a figure modelled upright in Blender would have come out lying on
+-- its side. Any head tilt belongs in the model, where an artist can see it, not
+-- baked into the marker where it silently rotates everything else too.
+--
+-- The long axis is horizontal by construction, so this is also free of the
+-- degenerate parallel-to-up case that the execution muzzles hit.
+marker("Observer", CFrame.lookAt(obsPos, obsPos + longAxis, Vector3.yAxis), rig)
 
 -- ObserverCamera: Tamem placed "Camera for Canteen" by hand -- honour that
 -- POSITION, but compute the direction, because the part's stored rotation does
