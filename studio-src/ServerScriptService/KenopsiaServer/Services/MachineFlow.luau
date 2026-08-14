@@ -21,7 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("GameConfig"))
 local BirdHunting = require(script.Parent.BirdHunting)
 local Minefield = require(script.Parent.Minefield)
-local TableManners = require(script.Parent.TableManners)
+local CanteenProtocol = require(script.Parent.CanteenProtocol)
 local Contexts = require(script.Parent.Contexts)
 
 local Shared = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
@@ -61,17 +61,23 @@ local TRIALS = {
 		module = Minefield,
 	},
 	{
-		-- REQ-CP-01..04: arena markers, refs() lookup, mechanic and audio are
-		-- all outstanding. ready = false keeps it out of the playlist. Do not
-		-- flip this until its acceptance gate passes.
+		-- REQ-CP-01/02 done: the arena markers exist under
+		-- Workspace.CanteenProtocol.Rig (built by tools/build-canteen-arena.luau)
+		-- and CanteenProtocol.validateArena() gates them. REQ-CP-03 (client HUD
+		-- and input) and REQ-CP-04 (original audio and models) are outstanding,
+		-- so ready STAYS false: the server mechanic below cannot be played
+		-- without a client that can send `plate` and `mouth`.
 		--
 		-- The id is "canteen", NOT "tablemanners". "Table Manners" is the name
 		-- the reference game uses for this minigame, and carrying it in the
 		-- shipped source is the copyright exposure REQ-IP-01 exists to remove.
 		-- Playlist.Ids agrees, and tests/rules.lua asserts that the old spelling
-		-- is rejected so it cannot quietly come back. The MODULE is still
-		-- TableManners.luau; it is replaced wholesale by CanteenProtocol at
-		-- Gate 4, which is where that file is renamed.
+		-- is rejected so it cannot quietly come back.
+		--
+		-- TableManners.luau still exists on disk but is no longer required by
+		-- anything, so its init() never runs, its beat handler never connects
+		-- and the old rhythm mechanic is already unreachable at runtime. The
+		-- file is deleted once this gate passes, per the plan.
 		id = "canteen",
 		displayName = "CANTEEN PROTOCOL",
 		icon = "Saw",
@@ -79,7 +85,7 @@ local TRIALS = {
 		tagline = "FREEZE WHEN THE INSPECTOR LOOKS.",
 		ready = false,
 		showInterRoundScore = false,
-		module = TableManners,
+		module = CanteenProtocol,
 	},
 }
 local DECOY_ICONS = { "Magnifier", "Saw", "Factory", "Train", "Bug" }

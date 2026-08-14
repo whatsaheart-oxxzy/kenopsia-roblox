@@ -59,6 +59,7 @@
           "BirdHunting":   { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/BirdHunting.luau" },
           "Minefield":     { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Minefield.luau" },
           "TableManners":  { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/TableManners.luau" },
+          "CanteenProtocol": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CanteenProtocol.luau" },
           "BloodFX":       { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/BloodFX.luau" }
         }
       }
