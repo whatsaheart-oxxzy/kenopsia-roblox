@@ -443,9 +443,6 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 				hum.WalkSpeed = 0
 			end
 			if char then
-				if state[member.userId] and state[member.userId].sniper then
-					char:SetAttribute("XBotAction", "SniperEnd#" .. tostring(math.floor(os.clock() * 1000)))
-				end
 				char:SetAttribute("XBotMoves", "")
 				local mesh = char:FindFirstChild("Beta_Joints")
 				if mesh and mesh:IsA("BasePart") then mesh.Transparency = 0 end
@@ -502,9 +499,19 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 						d.Transparency = 1
 					end
 				end
-				-- kneeling at the parapet, facing down the lane
+				-- Parked at the parapet. The pose no longer matters visually --
+				-- every part above was just set invisible and the machine does
+				-- the aiming -- but the character must still exist and sit here,
+				-- because the scope camera and the shot's raycast filter both
+				-- hang off it.
+				--
+				-- The XBotAction "SniperAim"/"SniperEnd" writes that used to be
+				-- here are gone: nothing in the codebase ever read that
+				-- attribute, and since the turret hides the hunter they would
+				-- drive an animation on an invisible body. Leaving them would
+				-- have put a sniper-aim clip on the Blender animation list that
+				-- no one will ever see.
 				s.root.CFrame = CFrame.lookAt(eye + Vector3.new(0, -3.2, 0), Vector3.new(startPos.X, eye.Y - 3.2, startPos.Z))
-				s.char:SetAttribute("XBotAction", "SniperAim#" .. tostring(math.floor(os.clock() * 1000)))
 			else
 				local x = startPos.X - 16 + (lane % 4) * 10
 				lane += 1

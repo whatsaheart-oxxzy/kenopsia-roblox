@@ -78,7 +78,15 @@ local TRIALS = {
 		icon = "Saw",
 		subtitle = "RATION ISSUED. EAT ONLY WHEN UNOBSERVED._",
 		tagline = "FREEZE WHEN THE INSPECTOR LOOKS.",
-		ready = false,
+		-- The session becomes THREE minigames here. Both gates flip together:
+		-- this flag and the "canteen" entry in Config.Playlist.TrialIds. The
+		-- loop itself is unchanged -- it has iterated #order since Gate 1 and
+		-- simply now receives three.
+		--
+		-- validateArena() still gates every round independently: a broken or
+		-- missing rig makes runRound warn and return zeros rather than drop a
+		-- player into an arena that is not there.
+		ready = true,
 		showInterRoundScore = false,
 		module = CanteenProtocol,
 	},

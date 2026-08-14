@@ -35,7 +35,7 @@ return {
 		-- spelled with the reference game's name for that minigame; that name
 		-- is the copyright exposure REQ-IP-01 exists to remove, and it appears
 		-- nowhere in shipped source, comments included.
-		TrialIds = { "birdhunt", "minefield" },
+		TrialIds = { "birdhunt", "minefield", "canteen" },
 		PlacementPoints = { 3, 2, 1, 0 },
 	},
 
