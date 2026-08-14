@@ -32,6 +32,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BloodFX = require(script.Parent.BloodFX)
+local CanteenProps = require(script.Parent.CanteenProps)
 local Pacing = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 	:WaitForChild("Rules"):WaitForChild("Pacing"))
 
@@ -76,6 +77,11 @@ local FINISHED_BAND = 2000
 local PEA_STEP = 50
 local FINISH_SPEED_STEP = 10
 local SURVIVAL_STEP = 2
+
+-- cos(40 degrees). Roblox's default FOV is 70, so the half-angle is 35 vertical
+-- and wider horizontally; 40 keeps the Observer on screen from any seat without
+-- demanding it sit dead centre.
+local MIN_OBSERVER_COSINE = 0.766
 
 local SEAT_IDS = { "P1", "P2", "P3", "P4" }
 local MARKER_GROUPS = {
@@ -224,6 +230,34 @@ function CanteenProtocol.validateArena()
 		end
 	end
 
+	-- And the PLAYER must be able to see their own plate. This check was
+	-- missing, and the first screenshot from a player camera came back as a
+	-- brown blur: the cameras were placed by fixed offsets from the seat and
+	-- ended up INSIDE the chair backrests, which are 16 studs tall. A camera
+	-- that renders the inside of a chair passes every name, count and distance
+	-- check ever written.
+	for i, id in ipairs(SEAT_IDS) do
+		local eye = a.cams[i].Position
+		local target = a.plates[i].Position
+		local hit = workspace:Raycast(eye, target - eye, rp)
+		if hit and (target - hit.Position).Magnitude > 3.5 then
+			return false, ("%s camera cannot see its plate - blocked by %s"):format(id, hit.Instance.Name)
+		end
+
+		-- And the Observer must be ON SCREEN from that camera. This is the
+		-- check that the first player-view screenshot forced: with the Observer
+		-- parked past the head of the table the angle was ~57 degrees, outside
+		-- a 70-degree FOV. Every other check passed and the tell was invisible.
+		-- MAX_OBSERVER_ANGLE is deliberately tighter than the half-FOV so the
+		-- warning is comfortably in view rather than clipping the edge.
+		local toObserver = (a.Observer.Position - eye).Unit
+		local cosAngle = a.cams[i].CFrame.LookVector:Dot(toObserver)
+		if cosAngle < MIN_OBSERVER_COSINE then
+			return false, ("%s cannot see the Observer - %.0f degrees off screen"):format(
+				id, math.deg(math.acos(math.clamp(cosAngle, -1, 1))))
+		end
+	end
+
 	return true
 end
 
@@ -267,6 +301,12 @@ end
 local function pushState(st, userId)
 	local ps = st.state[userId]
 	if not ps then return end
+	-- The props ARE the readout. The payload below is the future client HUD's
+	-- copy; if it never arrives, the plate and the fork still show the truth.
+	if st.props and ps.seat then
+		st.props.setPeas(ps.seat, ps.remaining)
+		st.props.setFork(ps.seat, ps.fork)
+	end
 	tellOne(userId, {
 		kind = "cpstate",
 		peas = ps.remaining,
@@ -306,6 +346,10 @@ end
 local function setPhase(st, phase, duration)
 	st.phase = phase
 	st.phaseEndsAt = os.clock() + duration
+	-- The Observer physically descends. That is the tell -- readable with the
+	-- eyes, needing no client code and impossible for a client to hide from
+	-- itself.
+	if st.props then st.props.observerTo(phase, duration) end
 	announce(st.room, { kind = "cpobs", phase = phase, dur = duration })
 end
 
@@ -395,6 +439,7 @@ local function handleAction(player, action)
 	ps.fork = 0
 	ps.eaten = ps.eaten + load
 	ps.eatUntil = now + EAT_WINDOW
+	if st.props and ps.seat then st.props.eat(ps.seat, load) end
 	pushState(st, player.UserId)
 
 	-- Caught the moment it happens, if the eyes are already open. The other
@@ -467,6 +512,16 @@ function CanteenProtocol.runRound(room, roundIndex)
 		phase = "hidden",
 		startedAt = os.clock(),
 	}
+
+	-- Built AFTER validateArena, never before: the gate raycasts from the
+	-- Observer to every MouthTarget, and props standing on the table during
+	-- that check could block the very line of sight it is there to prove.
+	-- (They also carry CanQuery = false, so this is belt and braces.)
+	st.props = CanteenProps.build(a, {
+		peas = PEAS_TOTAL,
+		forkCapacity = FORK_CAPACITY,
+		eatWindow = EAT_WINDOW,
+	})
 
 	-- Seat everyone. More members than seats cannot happen (the room caps at 4)
 	-- but the loop is written so a fifth member is skipped rather than
@@ -569,6 +624,7 @@ function CanteenProtocol.runRound(room, roundIndex)
 			r.hum.JumpPower = r.jump
 		end
 	end
+	st.props.destroy()
 	BloodFX.clear(st.roundToken, audience)
 	for _, s in livingOf(room) do
 		s.char:SetAttribute("XBotMoves", "")

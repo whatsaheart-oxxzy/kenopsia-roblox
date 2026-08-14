@@ -25,11 +25,21 @@ local SEAT_ROOT_ABOVE_SEAT = 2.6   -- HumanoidRootPart centre above the chair se
 local MOUTH_ABOVE_SEAT     = 4.6   -- mouth height above the chair seat
 local FORK_ABOVE_PLATE     = 1.6   -- fork rest height above the plate surface
 local FORK_TOWARD_SEAT     = 1.8   -- fork sits between plate and eater
-local CAM_BACK             = 5.0   -- player camera behind the seat
-local CAM_UP               = 3.2   -- ...and above it
+-- Player camera clearance, measured from the CHAIR rather than the seat.
+-- Fixed offsets from the seat put the camera inside the backrest: these chairs
+-- are 16 studs tall and 8.8 deep, so "5 back, 3.2 up" landed the eye 0.6 studs
+-- behind the back face and 1.5 studs BELOW the top of it -- looking through
+-- solid wood. Deriving from the chair's own bounding box survives Tamem
+-- swapping the chair model.
+local CAM_ABOVE_CHAIR      = 1.8   -- above the chair's highest point
+local CAM_BEHIND_CHAIR     = 3.0   -- clear of its back face
 local MUZZLE_Y             = 30.0  -- ceiling-mounted execution muzzle
-local OBSERVER_BEYOND_END  = 6.0   -- observer past the head of the table
-local OBSERVER_ABOVE_TABLE = 6.0
+-- The Observer hangs over the CENTRE of the table, not past its head.
+-- Measured: from the head of the table the angle between a seated player's
+-- view direction and the Observer is ~57 degrees, which is outside a 70-degree
+-- FOV. The Observer is the tell the entire minigame is played on -- a player
+-- who cannot see it is guessing. Above the centre the angle drops to ~24.
+local OBSERVER_ABOVE_TABLE = 7.0
 local SPECTATOR_BACK       = 26.0
 local SPECTATOR_UP         = 12.0
 
@@ -127,7 +137,15 @@ for _, entry in ipairs(chairs) do
 	local pos = entry.part.Position
 	local hit = workspace:Raycast(Vector3.new(pos.X, pos.Y + 12, pos.Z), Vector3.new(0, -24, 0), rp)
 	local seatY = hit and hit.Position.Y or (pos.Y + entry.part.Size.Y * 0.28)
-	table.insert(seats, { x = pos.X, z = pos.Z, seatY = seatY })
+	local size = entry.part.Size
+	table.insert(seats, {
+		x = pos.X, z = pos.Z, seatY = seatY,
+		-- The chair's own extents, so the camera can be placed clear of it.
+		-- max(X, Z) rather than the axis along `facing`: it is the conservative
+		-- one and does not depend on how the chair model happens to be rotated.
+		chairTop = pos.Y + size.Y / 2,
+		chairHalfDepth = math.max(size.X, size.Z) / 2,
+	})
 end
 
 -- Deterministic P1..P4: sort by Z then X. Child order in the DataModel is not
@@ -220,7 +238,8 @@ for i, s in ipairs(seats) do
 	local mouthPos = Vector3.new(s.x, s.seatY + MOUTH_ABOVE_SEAT, s.z) + facing * 0.6
 	marker(id, CFrame.lookAt(mouthPos, mouthPos + facing), fMouths, i)
 
-	local camPos = seatPos - facing * CAM_BACK + Vector3.new(0, CAM_UP, 0)
+	local camPos = Vector3.new(s.x, s.chairTop + CAM_ABOVE_CHAIR, s.z)
+		- facing * (s.chairHalfDepth + CAM_BEHIND_CHAIR)
 	marker(id, CFrame.lookAt(camPos, s.plate), fCams, i)
 
 	-- Straight down. The explicit up vector is REQUIRED, not decorative:
@@ -234,16 +253,16 @@ for i, s in ipairs(seats) do
 		i, s.x, s.seatY, s.z, s.plateDist, facing.X, facing.Z)
 end
 
--- Observer: past the head of the table, looking down its long axis. The long
--- axis is whichever of X/Z the bounding box is longer in -- not hardcoded.
+-- Observer: directly above the centre of the table, looking straight down at
+-- it. Equidistant from all four seats and inside every one of their view cones.
 local tc = tableCF.Position
 local longAxis = (tableSize.X >= tableSize.Z) and Vector3.new(1, 0, 0) or Vector3.new(0, 0, 1)
-local halfLong = math.max(tableSize.X, tableSize.Z) / 2
-local obsPos = tc * Vector3.new(1, 0, 1)
-	+ longAxis * (halfLong + OBSERVER_BEYOND_END)
-	+ Vector3.new(0, tableTopY + OBSERVER_ABOVE_TABLE, 0)
+local obsPos = Vector3.new(tc.X, tableTopY + OBSERVER_ABOVE_TABLE, tc.Z)
 local obsLook = Vector3.new(tc.X, tableTopY, tc.Z)
-marker("Observer", CFrame.lookAt(obsPos, obsLook), rig)
+-- Straight down is parallel to lookAt's default up vector and would produce a
+-- NaN CFrame -- the same trap as the execution muzzles. The table's long axis
+-- is horizontal by construction, so it is always a valid up reference.
+marker("Observer", CFrame.lookAt(obsPos, obsLook, longAxis), rig)
 
 -- ObserverCamera: Tamem placed "Camera for Canteen" by hand -- honour that
 -- POSITION, but compute the direction, because the part's stored rotation does
