@@ -40,6 +40,12 @@ local FORK_TINE_COUNT = 3
 -- table and still under the ceiling.
 local OBSERVER_HIDE_RISE = 9.0
 
+-- How far the newspaper tips forward when the Observer looks up from it.
+-- 74 degrees was measured in Blender as the swing that clears the lens (paper
+-- top drops from z 2.68 to 0.06, lens sits at 2.06) without the paper passing
+-- through the table.
+local PAPER_DOWN_RADIANS = math.rad(74)
+
 local function templates()
 	local props = ServerStorage:FindFirstChild("KenopsiaAssets")
 	props = props and props:FindFirstChild("Props")
@@ -288,7 +294,41 @@ function CanteenProps.build(arena, opts)
 	self.observerRest = restCF
 	self.observerHidden = restCF + Vector3.new(0, OBSERVER_HIDE_RISE, 0)
 	self.observerAuthored = observerAuthored
-	poseObserver(observer, self.observerHidden, observerAuthored)
+
+	-- A "Newspaper" part is an explicit contract, not a guess at the model's
+	-- internals: it opts the model into the hinge behaviour. Anything without
+	-- one keeps the whole-model rise and fall, so the procedural placeholder is
+	-- unaffected.
+	local paper = observer:IsA("Model") and observer:FindFirstChild("Newspaper", true) or nil
+	if paper and paper:IsA("BasePart") then
+		-- PLACE FIRST, then capture. Reading paper.CFrame before poseObserver
+		-- moves the model records the pose it had while still sitting at the
+		-- origin, and the paper would then swing about a hinge point it has
+		-- never actually occupied.
+		--
+		-- With a paper the figure never retreats: it hangs at rest for the whole
+		-- round and only the paper moves.
+		poseObserver(observer, restCF, observerAuthored)
+		self.paper = paper
+		self.paperRest = paper.CFrame
+		-- The hinge is the BOTTOM edge of the panel -- where the folded hands
+		-- hold it. Roblox rebuilds a MeshPart's pivot at its bounding-box centre
+		-- on import, so the origin authored in Blender does not survive;
+		-- deriving the hinge from the part's own size does, and survives a
+		-- resize too.
+		self.paperHinge = paper.CFrame * CFrame.new(0, -paper.Size.Y / 2, 0)
+		self.paperAngle = 0
+	else
+		poseObserver(observer, self.observerHidden, observerAuthored)
+	end
+
+	function self.setPaperAngle(rad)
+		if not self.paper or not self.paper.Parent then return end
+		local r = CFrame.Angles(-rad, 0, 0)
+		-- Rotate the rest pose ABOUT the hinge frame, rather than about the
+		-- part's own centre, which would swing the paper through his chest.
+		self.paper.CFrame = self.paperHinge * r * self.paperHinge:Inverse() * self.paperRest
+	end
 	observer.Parent = folder
 	self.observer = observer
 
@@ -372,12 +412,36 @@ function CanteenProps.build(arena, opts)
 
 	function self.observerTo(phase, duration)
 		if not self.alive then return end
-		local target
-		if phase == "lowering" or phase == "watching" then
-			target = self.observerRest
-		else
-			target = self.observerHidden
+		local down = (phase == "lowering" or phase == "watching")
+
+		-- NEWSPAPER, if the authored model brought one. The figure then stays
+		-- put and only the paper hinges, which is a better tell than a whole
+		-- body rising into the ceiling: he never stops looming, and lowering a
+		-- paper is a decision a person makes rather than machinery moving.
+		--
+		-- The swing is driven by the SAME phase and the SAME duration the server
+		-- uses to rule on a swallow, for the same reason the fork's travel
+		-- equals EAT_WINDOW: what the player watches has to be what is
+		-- detectable, not an animation timed separately from the rule.
+		if self.paper then
+			local target = down and PAPER_DOWN_RADIANS or 0
+			local from = self.paperAngle or 0
+			if math.abs(target - from) < 0.01 then return end
+			self.paperAngle = target
+			task.spawn(function()
+				local t0 = os.clock()
+				while self.alive do
+					local a = (os.clock() - t0) / math.max(duration, 0.05)
+					if a >= 1 then break end
+					self.setPaperAngle(from + (target - from) * a)
+					task.wait()
+				end
+				if self.alive then self.setPaperAngle(target) end
+			end)
+			return
 		end
+
+		local target = down and self.observerRest or self.observerHidden
 		local from = pivotOf(self.observer)
 		if (from.Position - target.Position).Magnitude < 0.05 then return end
 		task.spawn(function()
