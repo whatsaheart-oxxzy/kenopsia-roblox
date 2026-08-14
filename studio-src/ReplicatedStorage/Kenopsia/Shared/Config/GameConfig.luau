@@ -31,7 +31,10 @@ return {
 		-- Candidate trials. A trial is scheduled only if it appears here AND
 		-- its registry entry in MachineFlow declares ready = true. Both gates
 		-- must pass, so an unfinished trial cannot reach the roulette.
-		-- "tablemanners" joins this list when REQ-CP-01..04 are complete.
+		-- "canteen" joins this list when REQ-CP-01..04 are complete. It is NOT
+		-- spelled with the reference game's name for that minigame; that name
+		-- is the copyright exposure REQ-IP-01 exists to remove, and it appears
+		-- nowhere in shipped source, comments included.
 		TrialIds = { "birdhunt", "minefield" },
 		PlacementPoints = { 3, 2, 1, 0 },
 	},

@@ -575,6 +575,12 @@ function CanteenProtocol.runRound(room, roundIndex)
 	st.acceptInput = true
 	for _, mm in room.members do pushState(st, mm.userId) end
 
+	-- Dead Zone and Bird Hunting both log their round start, and those lines
+	-- have repeatedly answered in seconds what guessing could not. Seats is the
+	-- number that matters: a member who could not be seated plays no part.
+	print(("[CP] go; members=%d seated=%d peas=%d token=%s")
+		:format(#room.members, seatIndex, PEAS_TOTAL, st.roundToken))
+
 	local observerThread = task.spawn(runObserver, st)
 
 	local deadline = st.startedAt + ROUND_TIME
@@ -588,6 +594,17 @@ function CanteenProtocol.runRound(room, roundIndex)
 		end
 		if not anyLeft then break end
 	end
+
+	local finished, eliminated = 0, 0
+	for _, ps in st.state do
+		if ps.finished then
+			finished = finished + 1
+		elseif ps.eliminated then
+			eliminated = eliminated + 1
+		end
+	end
+	print(("[CP] round over, elapsed=%.1f finished=%d caught=%d")
+		:format(os.clock() - st.startedAt, finished, eliminated))
 
 	st.active = false
 	st.acceptInput = false

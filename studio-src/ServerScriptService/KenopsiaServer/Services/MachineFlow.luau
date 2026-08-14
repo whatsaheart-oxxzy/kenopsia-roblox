@@ -68,16 +68,11 @@ local TRIALS = {
 		-- so ready STAYS false: the server mechanic below cannot be played
 		-- without a client that can send `plate` and `mouth`.
 		--
-		-- The id is "canteen", NOT "tablemanners". "Table Manners" is the name
-		-- the reference game uses for this minigame, and carrying it in the
-		-- shipped source is the copyright exposure REQ-IP-01 exists to remove.
-		-- Playlist.Ids agrees, and tests/rules.lua asserts that the old spelling
-		-- is rejected so it cannot quietly come back.
-		--
-		-- TableManners.luau still exists on disk but is no longer required by
-		-- anything, so its init() never runs, its beat handler never connects
-		-- and the old rhythm mechanic is already unreachable at runtime. The
-		-- file is deleted once this gate passes, per the plan.
+		-- The id is "canteen". The reference game's name for this minigame is
+		-- the copyright exposure REQ-IP-01 exists to remove, so it appears
+		-- nowhere in shipped source -- not in ids, not in UI text, and not in
+		-- comments like this one. Playlist.Ids agrees, and tests/rules.lua
+		-- asserts the old spelling is rejected so it cannot quietly come back.
 		id = "canteen",
 		displayName = "CANTEEN PROTOCOL",
 		icon = "Saw",

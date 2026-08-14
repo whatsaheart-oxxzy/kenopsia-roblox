@@ -1003,15 +1003,36 @@ if scanBtn then
 	end)
 end
 
--- CANTEEN PROTOCOL: Beat-Track-HUD + Ess-Eingabe (E / ButtonA / EAT-Button) --
+-- CANTEEN PROTOCOL: the eating readout and its input.
+--
+-- The plate, the peas, the fork and the descending Observer are REAL PARTS,
+-- built and driven by the server (Services/CanteenProps). This HUD is a second,
+-- deliberately redundant readout -- not the only one. The props can be hidden
+-- by a camera angle or another player, and the watching phase has to be
+-- readable WITHOUT looking away from your own plate, which is what the screen
+-- edge is for.
+--
+-- Nothing here decides anything. Every number arrives from the server, and the
+-- server alone rules on whether a swallow was seen. A client that lies about
+-- the phase changes only what its own player sees.
 local canteenActive = false
 local canteenHud = nil
-local canteenTicks = {}
-local canteenPlan = nil
-local canteenLoop = nil
-local biteReadyAt = 0
-local biteLockUntil = 0
-local CP_PXPS = 140
+local cpPlateReadyAt = 0
+local cpMouthReadyAt = 0
+
+-- Matched to the server MIN_PLATE_INTERVAL / MIN_MOUTH_INTERVAL. These exist to
+-- stop the client spamming a remote it already knows will be refused; they are
+-- NOT the rule. The server re-checks both on its own clock, so editing these
+-- numbers locally buys nothing.
+local CP_PLATE_COOLDOWN = 0.16
+local CP_MOUTH_COOLDOWN = 0.35
+local CP_FORK_CAPACITY = 4
+
+local CP_IDLE = Color3.fromRGB(150, 158, 152)
+local CP_WARN = Color3.fromRGB(255, 176, 40)
+local CP_DANGER = Color3.fromRGB(255, 58, 44)
+local CP_SAFE = Color3.fromRGB(120, 208, 128)
+local CP_PIP_EMPTY = Color3.fromRGB(40, 46, 40)
 
 local function charEatAllowed()
 	local char = player.Character
@@ -1020,144 +1041,241 @@ end
 
 local function buildCanteenHud()
 	if canteenHud then return canteenHud end
+
 	local f = Instance.new("Frame")
 	f.Name = "CanteenHud"
-	f.AnchorPoint = Vector2.new(0.5, 1)
-	f.Position = UDim2.new(0.5, 0, 1, -18)
-	f.Size = UDim2.new(0, 560, 0, 116)
-	f.BackgroundColor3 = Color3.fromRGB(6, 12, 9)
-	f.BackgroundTransparency = 0.15
-	f.BorderSizePixel = 0
+	f.BackgroundTransparency = 1
+	f.Size = UDim2.new(1, 0, 1, 0)
 	f.Visible = false
-	local st = Instance.new("UIStroke")
-	st.Color = PHOSPHOR
-	st.Thickness = 1
-	st.Parent = f
-	local title = Instance.new("TextLabel")
-	title.Name = "Title"
-	title.BackgroundTransparency = 1
-	title.Position = UDim2.new(0, 10, 0, 6)
-	title.Size = UDim2.new(1, -90, 0, 16)
-	title.Font = Enum.Font.Code
-	title.TextSize = 14
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.TextColor3 = PHOSPHOR
-	title.Text = "CANTEEN PROTOCOL \u{2014} EAT [E]"
-	title.Parent = f
-	local counter = Instance.new("TextLabel")
-	counter.Name = "Counter"
-	counter.BackgroundTransparency = 1
-	counter.Position = UDim2.new(1, -70, 0, 6)
-	counter.Size = UDim2.new(0, 60, 0, 16)
-	counter.Font = Enum.Font.Code
-	counter.TextSize = 14
-	counter.TextXAlignment = Enum.TextXAlignment.Right
-	counter.TextColor3 = PHOSPHOR
-	counter.Text = "00/16"
-	counter.Parent = f
-	local track = Instance.new("Frame")
-	track.Name = "Track"
-	track.Position = UDim2.new(0, 10, 0, 30)
-	track.Size = UDim2.new(1, -20, 0, 46)
-	track.BackgroundColor3 = Color3.fromRGB(10, 18, 13)
-	track.BorderSizePixel = 0
-	track.ClipsDescendants = true
-	track.Parent = f
-	local zg = Instance.new("Frame")
-	zg.Name = "ZoneGood"
-	zg.AnchorPoint = Vector2.new(0.5, 0.5)
-	zg.Position = UDim2.new(0.5, 0, 0.5, 0)
-	zg.Size = UDim2.new(0, math.floor(2 * 0.15 * CP_PXPS), 1, -8)
-	zg.BackgroundColor3 = Color3.fromRGB(38, 66, 46)
-	zg.BackgroundTransparency = 0.35
-	zg.BorderSizePixel = 0
-	zg.Parent = track
-	local zp = Instance.new("Frame")
-	zp.Name = "ZonePerfect"
-	zp.AnchorPoint = Vector2.new(0.5, 0.5)
-	zp.Position = UDim2.new(0.5, 0, 0.5, 0)
-	zp.Size = UDim2.new(0, math.floor(2 * 0.07 * CP_PXPS), 1, -8)
-	zp.BackgroundColor3 = Color3.fromRGB(52, 120, 66)
-	zp.BackgroundTransparency = 0.45
-	zp.BorderSizePixel = 0
-	zp.ZIndex = 2
-	zp.Parent = track
-	local grade = Instance.new("TextLabel")
-	grade.Name = "Grade"
-	grade.BackgroundTransparency = 1
-	grade.AnchorPoint = Vector2.new(0.5, 0)
-	grade.Position = UDim2.new(0.5, 0, 0, 78)
-	grade.Size = UDim2.new(0, 200, 0, 18)
-	grade.Font = Enum.Font.Code
-	grade.TextSize = 16
-	grade.TextColor3 = PHOSPHOR
-	grade.TextTransparency = 1
-	grade.Text = ""
-	grade.Parent = f
-	local stress = Instance.new("Frame")
-	stress.Name = "Stress"
-	stress.Position = UDim2.new(0, 10, 1, -14)
-	stress.Size = UDim2.new(1, -20, 0, 8)
-	stress.BackgroundColor3 = DIM
-	stress.BorderSizePixel = 0
-	stress.Parent = f
-	local fill = Instance.new("Frame")
-	fill.Name = "Fill"
-	fill.Size = UDim2.new(0, 0, 1, 0)
-	fill.BackgroundColor3 = Color3.fromRGB(255, 70, 60)
-	fill.BorderSizePixel = 0
-	fill.Parent = stress
+	-- 66, with HipCross -- NOT a low number. KenopsiaMachine uses
+	-- ZIndexBehavior.Sibling, so only the top-level container's ZIndex decides
+	-- what draws over what, and Scope.Mask sits at 65 painting opaque letterbox
+	-- bars over the left, right and bottom of the screen. At the ZIndex 6 this
+	-- started with, the edge glow -- which lives at the very screen edge, under
+	-- those bars -- was invisible. The warning the whole minigame is played on
+	-- would never have been seen.
+	f.ZIndex = 66
+
+	-- Peripheral warning. A screen-edge glow is readable without looking at it,
+	-- which is the whole point: your eyes are on the plate, not on a label.
+	local edge = Instance.new("Frame")
+	edge.Name = "Edge"
+	edge.BackgroundTransparency = 1
+	edge.Size = UDim2.new(1, 0, 1, 0)
+	edge.ZIndex = 6
+	local glow = Instance.new("UIStroke")
+	glow.Name = "Glow"
+	glow.Thickness = 12
+	glow.Color = CP_DANGER
+	glow.Transparency = 1
+	glow.Parent = edge
+	edge.Parent = f
+
+	local phase = Instance.new("TextLabel")
+	phase.Name = "Phase"
+	phase.AnchorPoint = Vector2.new(0.5, 0)
+	phase.Position = UDim2.new(0.5, 0, 0, 24)
+	phase.Size = UDim2.new(0, 460, 0, 34)
+	phase.BackgroundTransparency = 1
+	phase.Font = Enum.Font.Code
+	phase.TextSize = 26
+	phase.TextColor3 = CP_IDLE
+	phase.Text = ""
+	phase.ZIndex = 7
+	phase.Parent = f
+
+	local panel = Instance.new("Frame")
+	panel.Name = "Panel"
+	panel.AnchorPoint = Vector2.new(0.5, 1)
+	panel.Position = UDim2.new(0.5, 0, 1, -28)
+	panel.Size = UDim2.new(0, 300, 0, 74)
+	panel.BackgroundColor3 = Color3.fromRGB(9, 12, 10)
+	panel.BackgroundTransparency = 0.25
+	panel.BorderSizePixel = 0
+	panel.ZIndex = 7
+	panel.Parent = f
+
+	local ration = Instance.new("TextLabel")
+	ration.Name = "Ration"
+	ration.Position = UDim2.new(0, 0, 0, 6)
+	ration.Size = UDim2.new(1, 0, 0, 26)
+	ration.BackgroundTransparency = 1
+	ration.Font = Enum.Font.Code
+	ration.TextSize = 20
+	ration.TextColor3 = CP_IDLE
+	ration.Text = "PLATE 16    EATEN 00/16"
+	ration.ZIndex = 8
+	ration.Parent = panel
+
+	-- Fork capacity as pips: four of them, because the fork holds four. Reading
+	-- a number means looking at it; reading four dots does not.
+	local fork = Instance.new("Frame")
+	fork.Name = "Fork"
+	fork.AnchorPoint = Vector2.new(0.5, 0)
+	fork.Position = UDim2.new(0.5, 0, 0, 38)
+	fork.Size = UDim2.new(0, CP_FORK_CAPACITY * 30, 0, 24)
+	fork.BackgroundTransparency = 1
+	fork.ZIndex = 8
+	fork.Parent = panel
+	for i = 1, CP_FORK_CAPACITY do
+		local pip = Instance.new("Frame")
+		pip.Name = "Pip" .. i
+		pip.AnchorPoint = Vector2.new(0.5, 0.5)
+		pip.Position = UDim2.new(0, (i - 0.5) * 30, 0.5, 0)
+		pip.Size = UDim2.new(0, 18, 0, 18)
+		pip.BackgroundColor3 = CP_PIP_EMPTY
+		pip.BorderSizePixel = 0
+		pip.ZIndex = 8
+		local round = Instance.new("UICorner")
+		round.CornerRadius = UDim.new(1, 0)
+		round.Parent = pip
+		pip.Parent = fork
+	end
+
 	f.Parent = machine
 	canteenHud = f
 	return f
 end
 
-local function canteenStep()
-	if not canteenPlan or not canteenHud then return end
-	local track = canteenHud:FindFirstChild("Track")
-	if not track then return end
-	local now = workspace:GetServerTimeNow()
-	local half = track.AbsoluteSize.X / 2
-	for i, tk in canteenTicks do
-		if tk.frame.Visible then
-			local dt = (canteenPlan.startAt + canteenPlan.beats[i]) - now
-			tk.frame.Position = UDim2.new(0, half + dt * CP_PXPS, 0.5, 0)
-			if not tk.eaten and not tk.dead and dt < -0.16 then
-				tk.dead = true
-				tk.frame.BackgroundColor3 = Color3.fromRGB(140, 34, 26)
-				TweenService:Create(tk.frame, TweenInfo.new(0.4), { BackgroundTransparency = 1 }):Play()
-				task.delay(0.45, function() tk.frame.Visible = false end)
-			end
+local function cpSetState(peas, forkLoad, eaten, total)
+	local hud = buildCanteenHud()
+	hud.Panel.Ration.Text = string.format("PLATE %02d    EATEN %02d/%02d", peas, eaten, total)
+	for i = 1, CP_FORK_CAPACITY do
+		local pip = hud.Panel.Fork:FindFirstChild("Pip" .. i)
+		if pip then
+			pip.BackgroundColor3 = (i <= forkLoad) and CP_SAFE or CP_PIP_EMPTY
 		end
 	end
 end
 
-local function sendBite()
-	if not canteenActive or not charEatAllowed() then return end
-	local now = os.clock()
-	if now < biteReadyAt or now < biteLockUntil then return end
-	biteReadyAt = now + 0.35
-	if TrialInput then
-		TrialInput:FireServer({ trialId = "tablemanners", action = "bite" })
-	end
-	local track = canteenHud and canteenHud:FindFirstChild("Track")
-	local zp = track and track:FindFirstChild("ZonePerfect")
-	if zp then
-		zp.BackgroundTransparency = 0.05
-		TweenService:Create(zp, TweenInfo.new(0.25), { BackgroundTransparency = 0.45 }):Play()
+local function cpSetPhase(phaseName)
+	local hud = buildCanteenHud()
+	local label = hud.Phase
+	local glow = hud.Edge.Glow
+	if phaseName == "lowering" then
+		label.Text = "OBSERVER DESCENDING"
+		label.TextColor3 = CP_WARN
+		glow.Color = CP_WARN
+		TweenService:Create(glow, TweenInfo.new(0.3), { Transparency = 0.45 }):Play()
+	elseif phaseName == "watching" then
+		label.Text = "OBSERVED - DO NOT SWALLOW"
+		label.TextColor3 = CP_DANGER
+		glow.Color = CP_DANGER
+		-- Snappier than the wind-up on purpose: the warning may fade in slowly,
+		-- the danger may not.
+		TweenService:Create(glow, TweenInfo.new(0.12), { Transparency = 0 }):Play()
+	else
+		label.Text = ""
+		TweenService:Create(glow, TweenInfo.new(0.35), { Transparency = 1 }):Play()
 	end
 end
 
+local function cpSend(action)
+	if not canteenActive or not charEatAllowed() then return end
+	if not TrialInput then return end
+	local now = os.clock()
+	if action == "plate" then
+		if now < cpPlateReadyAt then return end
+		cpPlateReadyAt = now + CP_PLATE_COOLDOWN
+	else
+		if now < cpMouthReadyAt then return end
+		cpMouthReadyAt = now + CP_MOUTH_COOLDOWN
+	end
+	-- Echo this round token. Without it the server refuses the action, which is
+	-- what stops a packet from an earlier round landing in a later one.
+	TrialInput:FireServer({
+		trialId = "canteen",
+		action = action,
+		roundToken = trialRoundToken,
+	})
+	sfx("Click")
+end
+
+-- Touch controls, built here rather than reusing TouchControls.Btn_EAT: that
+-- button belonged to the deleted rhythm mechanic, and PLATE / MOUTH need two
+-- targets side by side, big enough to hit under time pressure.
+local function buildCanteenTouch()
+	local existing = machine:FindFirstChild("CanteenTouch")
+	if existing then return existing end
+
+	local pad = Instance.new("Frame")
+	pad.Name = "CanteenTouch"
+	pad.BackgroundTransparency = 1
+	pad.Size = UDim2.new(1, 0, 1, 0)
+	pad.Visible = false
+	-- 68, exactly matching TouchControls, which this replaces for this minigame.
+	-- Every shipped touch button deliberately sits ON the letterbox bars -- that
+	-- black margin is thumb space outside the play area. Sitting there only
+	-- works above the mask at 65; below it the buttons are painted over and the
+	-- player has no controls at all.
+	pad.ZIndex = 68
+
+	local function button(name, text, xScale, colour)
+		local b = Instance.new("TextButton")
+		b.Name = name
+		b.AnchorPoint = Vector2.new(0.5, 1)
+		b.Position = UDim2.new(xScale, 0, 1, -120)
+		-- 110 px. The plan floor is 64, and these get pressed repeatedly
+		-- against a countdown, so they are given room.
+		b.Size = UDim2.new(0, 110, 0, 110)
+		b.BackgroundColor3 = Color3.fromRGB(12, 16, 13)
+		b.BackgroundTransparency = 0.2
+		b.BorderSizePixel = 0
+		b.Font = Enum.Font.Code
+		b.TextSize = 18
+		b.TextColor3 = colour
+		b.Text = text
+		b.ZIndex = 9
+		local round = Instance.new("UICorner")
+		round.CornerRadius = UDim.new(0, 12)
+		round.Parent = b
+		b.Parent = pad
+		return b
+	end
+
+	button("Btn_PLATE", "PLATE", 0.18, CP_IDLE).Activated:Connect(function()
+		cpSend("plate")
+	end)
+	button("Btn_MOUTH", "MOUTH", 0.82, CP_SAFE).Activated:Connect(function()
+		cpSend("mouth")
+	end)
+
+	pad.Parent = machine
+	return pad
+end
+
+local function cpShowHud()
+	canteenActive = true
+	local hud = buildCanteenHud()
+	hud.Visible = true
+	local pad = buildCanteenTouch()
+	pad.Visible = touchAllowed()
+end
+
+local function cpHideHud()
+	canteenActive = false
+	if canteenHud then
+		canteenHud.Edge.Glow.Transparency = 1
+		canteenHud.Phase.Text = ""
+		canteenHud.Visible = false
+	end
+	local pad = machine:FindFirstChild("CanteenTouch")
+	if pad then pad.Visible = false end
+end
+
+-- LMB / left trigger loads the fork; RMB / right trigger eats. The guard on
+-- canteenActive is what keeps this from fighting the sniper handler above,
+-- which claims the same two buttons behind its own sniperActive guard.
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == Enum.KeyCode.E or (input.KeyCode == Enum.KeyCode.ButtonA and canteenActive) then
-		sendBite()
+	if gameProcessed or not canteenActive then return end
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.KeyCode == Enum.KeyCode.ButtonL2 then
+		cpSend("plate")
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2
+		or input.KeyCode == Enum.KeyCode.ButtonR2 then
+		cpSend("mouth")
 	end
 end)
-local eatBtn = touchControls:FindFirstChild("Btn_EAT")
-if eatBtn then
-	eatBtn.Activated:Connect(sendBite)
-end
 
 UserInputService.InputChanged:Connect(function(input, gameProcessed)
 	if gameProcessed or not sniperActive or not scoped then return end
@@ -1818,82 +1936,50 @@ MachineState.OnClientEvent:Connect(function(p)
 		end
 		return
 	end
-	if p.kind == "beatplan" then
-		canteenPlan = { startAt = p.startAt, beats = p.beats or {} }
-		canteenActive = true
-		biteLockUntil = 0
-		local hud = buildCanteenHud()
-		for _, tk in canteenTicks do tk.frame:Destroy() end
-		table.clear(canteenTicks)
-		local track = hud:FindFirstChild("Track")
-		for i = 1, #canteenPlan.beats do
-			local t = Instance.new("Frame")
-			t.AnchorPoint = Vector2.new(0.5, 0.5)
-			t.Size = UDim2.new(0, 6, 0, 30)
-			t.Position = UDim2.new(0, -100, 0.5, 0)
-			t.BackgroundColor3 = Color3.fromRGB(235, 245, 238)
-			t.BorderSizePixel = 0
-			t.ZIndex = 3
-			t.Parent = track
-			canteenTicks[i] = { frame = t }
-		end
-		hud.Counter.Text = "00/" .. tostring(p.total or 16)
-		hud.Stress.Fill.Size = UDim2.new(0, 0, 1, 0)
-		hud.Visible = true
-		local eb = touchControls:FindFirstChild("Btn_EAT")
-		if eb and touchAllowed() then
-			eb.Visible = true
-			touchControls.Visible = true
-		end
-		if canteenLoop then canteenLoop:Disconnect() end
-		canteenLoop = RunService.RenderStepped:Connect(canteenStep)
+	-- CANTEEN PROTOCOL. Every one of these is a pure readout: the server has
+	-- already decided by the time the packet arrives.
+	if p.kind == "cpstate" then
+		cpShowHud()
+		cpSetState(p.peas or 0, p.fork or 0, p.eaten or 0, p.total or 16)
 		return
 	end
-	if p.kind == "bite" then
-		local hud = buildCanteenHud()
-		if p.idx and canteenTicks[p.idx] then
-			local tk = canteenTicks[p.idx]
-			tk.eaten = true
-			tk.frame.BackgroundColor3 = p.grade == "perfect" and Color3.fromRGB(64, 255, 120) or Color3.fromRGB(255, 196, 32)
-			TweenService:Create(tk.frame, TweenInfo.new(0.3), { BackgroundTransparency = 1, Size = UDim2.new(0, 14, 0, 40) }):Play()
-			task.delay(0.35, function() tk.frame.Visible = false end)
-		end
-		local g = hud:FindFirstChild("Grade")
-		if g then
-			g.Text = p.grade == "perfect" and "PERFECT" or (p.grade == "good" and "GOOD" or "MISS")
-			g.TextColor3 = p.grade == "perfect" and Color3.fromRGB(64, 255, 120)
-				or (p.grade == "good" and Color3.fromRGB(255, 196, 32) or Color3.fromRGB(255, 70, 60))
-			g.TextTransparency = 0
-			TweenService:Create(g, TweenInfo.new(0.6), { TextTransparency = 1 }):Play()
-		end
-		if p.hits then hud.Counter.Text = string.format("%02d/16", p.hits) end
-		TweenService:Create(hud.Stress.Fill, TweenInfo.new(0.25), { Size = UDim2.new(p.stress or 0, 0, 1, 0) }):Play()
-		sfx(p.grade == "miss" and "Click" or "Submit")
+	if p.kind == "cpobs" then
+		cpSetPhase(p.phase)
 		return
 	end
-	if p.kind == "cough" then
-		biteLockUntil = os.clock() + (p.until_ or 1.2)
+	if p.kind == "cpmiss" then
+		-- Empty fork to the mouth. Harmless by design, so this is a nudge and
+		-- not a punishment: it says "nothing on the fork", not "you failed".
 		local hud = buildCanteenHud()
-		local g = hud:FindFirstChild("Grade")
-		if g then
-			g.Text = "CHOKING"
-			g.TextColor3 = Color3.fromRGB(255, 48, 32)
-			g.TextTransparency = 0
-			TweenService:Create(g, TweenInfo.new(p.until_ or 1.2), { TextTransparency = 1 }):Play()
-		end
-		TweenService:Create(hud.Stress.Fill, TweenInfo.new(0.2), { Size = UDim2.new(0, 0, 1, 0) }):Play()
-		sfx("Click")
+		hud.Panel.Ration.TextColor3 = CP_WARN
+		TweenService:Create(hud.Panel.Ration, TweenInfo.new(0.4), { TextColor3 = CP_IDLE }):Play()
+		return
+	end
+	if p.kind == "cpdone" then
+		local hud = buildCanteenHud()
+		hud.Phase.Text = "RATION COMPLETE - YOU ARE SAFE"
+		hud.Phase.TextColor3 = CP_SAFE
+		-- Finished players cannot be caught and cannot act. Dropping
+		-- canteenActive here stops the client sending input the server would
+		-- only throw away.
+		canteenActive = false
+		local pad = machine:FindFirstChild("CanteenTouch")
+		if pad then pad.Visible = false end
+		return
+	end
+	if p.kind == "cpout" then
+		local hud = buildCanteenHud()
+		hud.Phase.Text = "PROTOCOL VIOLATION"
+		hud.Phase.TextColor3 = CP_DANGER
+		hud.Edge.Glow.Color = CP_DANGER
+		hud.Edge.Glow.Transparency = 0
+		canteenActive = false
+		local pad = machine:FindFirstChild("CanteenTouch")
+		if pad then pad.Visible = false end
 		return
 	end
 	if p.kind == "cpend" then
-		canteenActive = false
-		canteenPlan = nil
-		if canteenLoop then canteenLoop:Disconnect() canteenLoop = nil end
-		if canteenHud then canteenHud.Visible = false end
-		for _, tk in canteenTicks do tk.frame:Destroy() end
-		table.clear(canteenTicks)
-		local eb = touchControls:FindFirstChild("Btn_EAT")
-		if eb then eb.Visible = false end
+		cpHideHud()
 		return
 	end
 	if p.kind == "count" then
@@ -2096,8 +2182,10 @@ do
 		local page = 1
 
 		local function hasSecondPage()
-			-- The two release trials show only their reference-supported controls.
-			return machine:GetAttribute("TrialId") == "tablemanners"
+			-- Only Canteen has a second page: its scoring rules do not fit on
+			-- one. This compared against the reference game's name for the
+			-- minigame, which the server never sends, so the page was dead.
+			return machine:GetAttribute("TrialId") == "canteen"
 		end
 
 		local function renderPage()

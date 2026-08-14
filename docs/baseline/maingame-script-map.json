@@ -2,8 +2,8 @@
   "_comment": "studio-src -> KenopsiaMainGame (110672791536316). Derived from default.project.json, which is the authoritative mapping. Used by Get-KenopsiaParity. Kept as a file because Gate 0 has to be repeatable, and the DEV tree had a map while MainGame did not.",
   "_placeId": 110672791536316,
   "_sourceRoot": "studio-src",
-  "_count": 21,
-  "_history": "Gate 1 added the four pure modules (Rules/*, Net/Envelope) and Services/Contexts, and removed the five XBot animation scripts together with the rig itself, leaving the count at 19. Gate 4 adds Services/CanteenProtocol (20). TableManners.luau is still mapped and still in the place, but MachineFlow no longer requires it, so it is inert; it is deleted once Canteen passes its gate. CanteenProps (the peas, forks and Observer prop driver) joins at 21.",
+  "_count": 20,
+  "_history": "Gate 1 added the four pure modules (Rules/*, Net/Envelope) and Services/Contexts, and removed the five XBot animation scripts together with the rig itself, leaving the count at 19. Gate 4 adds Services/CanteenProtocol (20). TableManners.luau is still mapped and still in the place, but MachineFlow no longer requires it, so it is inert; it is deleted once Canteen passes its gate. CanteenProps (the peas, forks and Observer prop driver) joins at 21. The old rhythm prototype module is deleted: its safety-net value ended when the client's bite path was removed, and it carried the reference game's name in shipped source.",
   "map": {
     "ReplicatedFirst/KenopsiaLoading.client.luau": "game.ReplicatedFirst.KenopsiaLoading",
     "ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau": "game.ReplicatedStorage.Kenopsia.Shared.Config.GameConfig",
@@ -18,7 +18,6 @@
     "ServerScriptService/KenopsiaServer/Services/MachineFlow.luau": "game.ServerScriptService.KenopsiaServer.Services.MachineFlow",
     "ServerScriptService/KenopsiaServer/Services/BirdHunting.luau": "game.ServerScriptService.KenopsiaServer.Services.BirdHunting",
     "ServerScriptService/KenopsiaServer/Services/Minefield.luau": "game.ServerScriptService.KenopsiaServer.Services.Minefield",
-    "ServerScriptService/KenopsiaServer/Services/TableManners.luau": "game.ServerScriptService.KenopsiaServer.Services.TableManners",
     "ServerScriptService/KenopsiaServer/Services/CanteenProtocol.luau": "game.ServerScriptService.KenopsiaServer.Services.CanteenProtocol",
     "ServerScriptService/KenopsiaServer/Services/BloodFX.luau": "game.ServerScriptService.KenopsiaServer.Services.BloodFX",
     "StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau": "game.StarterPlayer.StarterPlayerScripts.KenopsiaClient",

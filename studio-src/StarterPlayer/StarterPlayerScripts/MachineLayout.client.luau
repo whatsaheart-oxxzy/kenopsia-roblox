@@ -133,35 +133,41 @@ local TRIAL_TEXT = {
 		},
 		scoring = {},
 	},
-	tablemanners = {
-		sec1 = "DINERS:", sec2 = "TIMING:",
+	-- Keyed "canteen". The key IS the lookup: this table used to be keyed on the
+	-- reference game's name for the minigame, which is not what the server sets
+	-- TrialId to -- so it matched nothing and fell through to TRIAL_TEXT.birdhunt.
+	-- Players would have been shown the SNIPER controls while sitting at the
+	-- dinner table. Renaming it also clears the last of that name from shipped
+	-- source (REQ-IP-01).
+	canteen = {
+		sec1 = "DINERS:", sec2 = "OBSERVER:",
 		Desktop = {
 			Row1 = "Seated - no moving",
-			Row1b = "Eat [E] on the beat",
-			Row2 = "Perfect  within 70 ms",
-			Row3 = "Good  within 150 ms",
-			icons = true, noteRows = { Row1 = true, Row2 = true, Row3 = true },
+			Row1b = "Load fork [LMB]",
+			Row2 = "Swallow [RMB]",
+			Row3 = "Never swallow while watched",
+			icons = true, noteRows = { Row1 = true, Row3 = true },
 		},
 		Mobile = {
 			Row1 = "Seated - no moving",
-			Row1b = "EAT button on the beat",
-			Row2 = "Perfect  within 70 ms",
-			Row3 = "Good  within 150 ms",
+			Row1b = "PLATE button loads",
+			Row2 = "MOUTH button swallows",
+			Row3 = "Never swallow while watched",
 			icons = false,
 		},
 		Console = {
 			Row1 = "Seated - no moving",
-			Row1b = "A  Eat on the beat",
-			Row2 = "Perfect  within 70 ms",
-			Row3 = "Good  within 150 ms",
+			Row1b = "LT  Load fork",
+			Row2 = "RT  Swallow",
+			Row3 = "Never swallow while watched",
 			icons = false,
 		},
 		scoring = {
-			"Bite          +8",
-			"Perfect       +4 bonus",
-			"Miss          -2 / 3 = choke",
-			"All 16        +25 & tempo",
-			"Last place    disposal",
+			"Plate         16 rations",
+			"Fork          holds 4",
+			"Loading       always safe",
+			"Swallowing    only unobserved",
+			"Finish first  ranks highest",
 		},
 	},
 }

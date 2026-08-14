@@ -43,18 +43,17 @@ local OBSERVER_ABOVE_TABLE = 7.0
 local SPECTATOR_BACK       = 26.0
 local SPECTATOR_UP         = 12.0
 
--- Structural parts that must never be dynamic. Loose dressing (cans, trash,
--- drinks, packaging) is deliberately NOT in this list: those may be intentional
--- physics props and are Tamem's call, not mine.
-local ANCHOR_STRUCTURE = {
-	["Floor Canteen Protocol"] = true,
-	["Ceiling"] = true,
-	["Wall"] = true,
-	["Door Ceilin"] = true,
-	["Plate"] = true,
-	["Canteen_table_large_3"] = true,
-	["Canteen_chair_wooden_1"] = true,
-}
+-- EVERYTHING in this room is anchored. The first pass anchored only the
+-- structure and left 40 dressing parts dynamic in case they were intentional
+-- physics props. Measured in a running server, they were not:
+--   * Canteen_canned_food_3 sank to Y = 0.05, BELOW the floor top at 1.00
+--   * Canteen_Mesh_Trolley_01 was still settling on a table after 4 s
+--   * "Camera for Canteen" fell 24.5 studs, from Y = 26 to the floor
+--   * 20 more rest on tables and shelves, asleep only until something nudges them
+-- Nothing in this minigame touches a can, so dynamics here buy no gameplay and
+-- cost a permanent physics simulation. Reversible in one line if Tamem ever
+-- wants kickable props.
+local ANCHOR_ALL = true
 
 local root = workspace:FindFirstChild(ROOT_NAME)
 assert(root, "Workspace." .. ROOT_NAME .. " not found")
@@ -71,17 +70,12 @@ local recording = ChangeHistoryService:TryBeginRecording("Build Canteen arena ri
 ---------------------------------------------------------------------------
 local anchored = 0
 for _, d in ipairs(root:GetDescendants()) do
-	if d:IsA("BasePart") and not d.Anchored then
-		-- Match on the part OR its model parent: meshes are wrapped in a Model
-		-- whose name carries the identity (Canteen_table_large_3.Canteen_table_large_3).
-		local parentName = d.Parent and d.Parent.Name or ""
-		if ANCHOR_STRUCTURE[d.Name] or ANCHOR_STRUCTURE[parentName] then
-			d.Anchored = true
-			anchored = anchored + 1
-		end
+	if ANCHOR_ALL and d:IsA("BasePart") and not d.Anchored then
+		d.Anchored = true
+		anchored = anchored + 1
 	end
 end
-note("anchored %d structural parts", anchored)
+note("anchored %d parts", anchored)
 
 ---------------------------------------------------------------------------
 -- 2. Collect geometry.
