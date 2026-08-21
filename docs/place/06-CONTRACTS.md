@@ -166,8 +166,8 @@ Match = {
 }
 ```
 
-> `MaximumPerServer = 4` steht gegen `Players.MaxPlayers = 60` im Place.
-> Siehe [`07-FINDINGS.md`](07-FINDINGS.md) F-02.
+> Die publizierte Kapazität stimmt: Game Settings > Places > Server Size steht auf 4.
+> Die Edit-Modus-API meldet irreführend 60 — siehe [`07-FINDINGS.md`](07-FINDINGS.md) F-02.
 
 ---
 

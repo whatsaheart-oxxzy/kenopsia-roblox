@@ -7,45 +7,53 @@ war rein lesend.
 Einstufung: **A** = blockiert die Veröffentlichung · **B** = wichtig, nicht dringend ·
 **C** = Aufräumarbeit.
 
+> **Korrektur 21.08.2026:** F-02 ist zurückgezogen. Es war ein Messfehler meinerseits,
+> kein Konfigurationsfehler im Place. Die Begründung steht unten bei F-02 und ist dort
+> bewusst stehen geblieben, statt gelöscht zu werden.
+
 ---
 
 ## A — Blockierend
 
 ### F-01 · Die Arbeit existiert nur einmal
 
-**Beleg:** `.git/logs/HEAD` endet am 14.08.2026 mit `d5b4486`. Die Dateien
+**Beleg:** `.git/logs/HEAD` endete am 14.08.2026 mit `d5b4486`. Die Dateien
 `docs/MP-01…06` (17.08.), `studio-src/.../TrialKit.luau` (17.08.), 36 Stub-Dateien
-(17.08.) und `Canteen{Boss,Diner,Props,Protocol}.luau` (19.08.) sind in keinem
-Commit. `.git/config` enthält **keinen** `[remote]`-Block.
+(17.08.) und `Canteen{Boss,Diner,Props,Protocol}.luau` (19.08.) waren in keinem
+Commit. `.git/config` enthielt **keinen** `[remote]`-Block.
 
 **Wirkung:** ~227 KB Design- und Vertragsarbeit plus das komplette Framework
-existieren nur auf einer Festplatte, ohne Versionierung und ohne Kopie.
+existierten nur auf einer Festplatte, ohne Versionierung und ohne Kopie.
 
-**Behebung:**
-```
-git add -A
-git commit -m "MP framework, 12 trial stubs, canteen finale"
-gh repo create kenopsia-roblox --private --source=. --remote=origin --push
-```
-Vorher `.gitignore` prüfen: `globalTypes.d.luau` (818 KB, regenerierbar) und
-`roblox.yml` (740 KB) raus, `.blend`-Dateien rein.
+**Status: ERLEDIGT am 21.08.2026.** Zwei getrennte Commits — `bc1160b` (diese
+Dokumentation) und `081a8b8` (Framework, 36 Stubs, Canteen-Finale, MP-Dokumente) —
+und ein privates Remote: `https://github.com/whatsaheart-oxxzy/kenopsia-roblox`,
+Branch `master`. `.gitignore` schließt seither zusätzlich `*.blend1` aus;
+`CP_Observer.blend` bleibt bewusst versioniert.
 
 ---
 
-### F-02 · Die publizierte Serverkapazität ist 60, das Spiel erwartet 4
+### F-02 · ZURÜCKGEZOGEN — Messartefakt, die Kapazität stimmt
 
-**Beleg:** `Players.MaxPlayers = 60`, `PreferredPlayers = 60`.
-`GameConfig.Players.MaximumPerServer = 4`, `Room.MaxPlayers = 4`.
-Der Kommentar in `GameConfig` sagt selbst: *"Published capacity must match this."*
+**Ursprüngliche Behauptung:** Die publizierte Serverkapazität sei `60`, während
+`GameConfig` vier erwartet, und auf einem öffentlichen Server kämen dadurch 56
+Spieler in eine leere Welt.
 
-**Wirkung:** Auf einem Live-Server können 60 Spieler beitreten. Der kanonische Raum
-nimmt vier davon auf; die übrigen 56 landen als `spectators` und bekommen von den
-Trials **gar nichts** (siehe F-16). Das ist kein theoretischer Fall — es ist der
-Normalfall, sobald das Spiel öffentlich ist.
+**Das war falsch.** `Players.MaxPlayers` aus dem Studio-**Edit**-Modus meldet `60` —
+den Engine-Standard, nicht den konfigurierten Wert des Place. Maßgeblich ist
+*File → Game Settings → Places → Server Size*, und der steht für Kenopsia_MainGame
+auf **4**, in Übereinstimmung mit `GameConfig.Players.MaximumPerServer = 4` und
+`Room.MaxPlayers = 4`. Kenopsia_DEV steht davon getrennt auf 28.
 
-**Behebung:** In Studio unter *File → Game Settings → Places → Server Size* auf den
-Wert setzen, der auch in `GameConfig` steht. `Players.MaxPlayers` ist für Skripte
-schreibgeschützt.
+**Lehre für künftige Aufnahmen:** Die Server-Größe ist über **keine** API und über
+keinen MCP-Aufruf lesbar. `Players.MaxPlayers` ist im Edit-Modus dafür wertlos. Wer
+sie dokumentieren will, sieht im Dialog nach oder hält fest, dass der Wert nicht
+erhoben werden konnte — und zitiert nicht die API.
+
+**Folge für F-09:** Die dortige Wirkung ist kleiner als beschrieben. Bei Kapazität 4
+und Raumgröße 4 entstehen Zuschauer nur durch Nachzügler in ein laufendes Match,
+nicht serverweit. F-09 bleibt gültig, rutscht aber von „betrifft die Mehrheit der
+Spieler" auf „betrifft Nachzügler".
 
 ---
 
@@ -166,11 +174,10 @@ berücksichtigt. `RoomService` hält Nachzügler bewusst in `spectators`, damit
 `BirdHunting` und `Minefield` ihre Annahme über `members` behalten.
 
 **Wirkung:** Wer während eines Matches beitritt, sieht bis zur nächsten Session eine
-leere Welt. In Kombination mit F-02 (60 Slots, 4 Plätze) betrifft das im Normalfall
-die Mehrheit der Spieler.
+leere Welt. Betrifft Nachzügler, nicht den Regelfall — siehe die Korrektur unter F-02.
 
-**Behebung:** Zusammen mit der Serverkapazität entscheiden. Entweder Kapazität auf
-die Raumgröße senken, oder Zuschauern einen echten Zuschauermodus geben.
+**Behebung:** Entweder Zuschauern einen echten Zuschauermodus geben, oder Beitritte
+während eines laufenden Matches gar nicht erst zulassen.
 
 ---
 
@@ -256,12 +263,13 @@ das ist eine der Abweichungen zwischen Live und Mirror.
 | `GameConfig`, `Pacing`, `Playlist`, `KenopsiaClient`, `MachineLayout` | | | **Repo ist voraus** |
 | `RoomService`, `BirdHunting`, `Minefield`, `BloodFX`, `Contexts`, `CanteenProtocol`, `CanteenProps`, `CanteenBoss`, `CanteenDiner`, `Scoring`, `Envelope` | | | identisch |
 
-**Wirkung:** `studio-src/` ist **kein** Spiegel des Places mehr. Die Frage "was läuft
-live?" darf niemals durch Lesen von `studio-src/` beantwortet werden.
+**Wirkung:** `studio-src/` ist **kein** Spiegel des Places mehr. Die Frage „was läuft
+live?" darf niemals durch Lesen von `studio-src/` beantwortet werden — dafür ist
+dieses Verzeichnis da.
 
 **Behebung:** Der Unterschied ist gewollt — die sechs abweichenden Dateien tragen die
 Framework-Änderungen, die noch nicht gepusht sind. Beim Push von F-04 gleichen sie
-sich an. Bis dahin: im Repo-README festhalten, welche Dateien voraus sind.
+sich an.
 
 ---
 
@@ -363,8 +371,8 @@ Runner-Kameras auf echten Netzwerk-Clients). Aktuell 1 793 Workspace-Instanzen f
 drei Arenen.
 
 **Wirkung:** Bei fünfzehn Arenen à bis zu 300 statischen Teilen kommen bis zu
-4 500 dauerhaft geladene Teile dazu. Bei vier Spielern auf Desktop egal, bei mehr
-Spielern auf schwachen Telefonen nicht.
+4 500 dauerhaft geladene Teile dazu. Bei vier Spielern auf Desktop egal, auf
+schwachen Telefonen nicht.
 
 **Behebung:** Sicherstellen, dass `TrialKit.ensureArena` wirklich erst beim ersten
 Spielen baut und nicht beim Boot. Das ist im Framework so angelegt — beim Einbau
@@ -376,9 +384,11 @@ prüfen.
 
 | Einstufung | Anzahl | Betrifft |
 |---|---:|---|
-| **A** blockierend | 5 | Sicherung, Serverkapazität, Springen, Framework, Animations-Freigaben |
+| **A** blockierend | 3 offen | Springen (F-03), Framework (F-04), Animations-Freigaben (F-05) |
+| **A** erledigt | 1 | Sicherung (F-01) |
+| **A** zurückgezogen | 1 | Serverkapazität (F-02) — Messartefakt |
 | **B** wichtig | 10 | Rundentimeout, Envelope, Token-Kanal, Zuschauer, Audio, Animations-IDs, Touch, Remotes, Pacing, Live/Repo-Drift |
 | **C** Aufräumen | 7 | Lampen, Teller, versunkene Props, Altlasten, tote Konfiguration, Chat, Streaming |
 
-Die drei mit dem größten Verhältnis von Wirkung zu Aufwand: **F-01** (Minuten),
-**F-02** (eine Einstellung) und **F-03** (eine Eigenschaft).
+Das beste Verhältnis von Wirkung zu Aufwand hat jetzt **F-03** — eine einzige
+Eigenschaft, und Springen ist aus.

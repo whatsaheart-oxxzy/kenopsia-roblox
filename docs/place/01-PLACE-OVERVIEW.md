@@ -73,8 +73,8 @@ Nachkommen pro Service, ohne Studios eigene Plugin-Instanzen:
 
 | Eigenschaft | Wert |
 |---|---|
-| `MaxPlayers` | **`60`** ← widerspricht `GameConfig` (siehe [F-02](07-FINDINGS.md)) |
-| `PreferredPlayers` | `60` |
+| `MaxPlayers` | `60` laut Edit-Modus-API — **nicht aussagekräftig**; maßgeblich sind die Game Settings: **4** (siehe [F-02](07-FINDINGS.md)) |
+| `PreferredPlayers` | `60` — ebenfalls nur der Edit-Modus-Standard, nicht der konfigurierte Wert |
 | `RespawnTime` | `3` |
 | `CharacterAutoLoads` | `true` |
 
