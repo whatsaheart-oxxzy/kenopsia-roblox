@@ -52,3 +52,7 @@ desktop.ini
 
 # Blender auto-backups; die .blend-Quelldatei selbst bleibt versioniert.
 *.blend1
+
+# Claude Code local permissions and worktrees - never commit these.
+/.claude/settings.local.json
+/.claude/worktrees/

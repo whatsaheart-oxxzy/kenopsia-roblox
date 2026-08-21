@@ -215,7 +215,7 @@ local function buildArena(folder, origin) ... return { spawn = ..., cam = ... } 
 
 function Trial.init()
 	TrialKit.wireInput(TRIAL_ID, { actions = {...}, handler = function(player, ps, payload, R) ... end })
-	pcall(TrialKit.ensureArena, TRIAL_ID, buildArena)
+	-- kein Boot-Bau: runRoundInner ruft ensureArena in der ersten Runde (MP-07 R-01)
 end
 
 local function runRoundInner(room, roundIndex, guard)

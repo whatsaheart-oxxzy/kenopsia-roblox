@@ -353,6 +353,18 @@ function TrialKit.wireInput(trialId, spec)
 		inputConns[trialId] = nil
 	end
 	local actions = spec.actions or {}
+	-- R-03: the array form is the one mistake here that fails SILENTLY and totally.
+	-- `actions["cut"]` is nil for `{ "cut" }`, so step 3 below drops every packet and
+	-- the trial renders perfectly while responding to nothing -- the same shape as the
+	-- Canteen token bug. Normalise so it works, warn so it gets fixed; the Integrate
+	-- stage reads the console anyway.
+	if actions[1] ~= nil then
+		warn(("[TrialKit:%s] actions was given as an array; expected a map like "
+			.. "{ cut = true }. Normalising - fix the trial module."):format(trialId))
+		local map = {}
+		for _, name in ipairs(actions) do map[name] = true end
+		actions = map
+	end
 	local cooldown = spec.cooldown or DEFAULT_COOLDOWN
 	local perAction = spec.perAction or {}
 	local handler = spec.handler
@@ -376,6 +388,12 @@ function TrialKit.wireInput(trialId, spec)
 		if not ps or ps.done then return end
 		-- 10: monotonic seq when the client sends one (D3).
 		if type(payload.seq) == "number" then
+			-- R-02: NaN survives every comparison (`NaN <= x` is false), so without this
+			-- line a client sending seq = NaN on every packet passes step 10 forever.
+			-- Step 11 is the real replay bound inside a round; seq is advisory (D3),
+			-- because a client that omits it skips this check entirely. No trial may
+			-- derive ordering guarantees from seq.
+			if payload.seq ~= payload.seq then return end
 			if payload.seq <= (ps.lastSeq or 0) then return end
 			ps.lastSeq = payload.seq
 		end

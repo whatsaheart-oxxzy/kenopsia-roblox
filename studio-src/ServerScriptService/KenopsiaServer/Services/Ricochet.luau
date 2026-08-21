@@ -38,7 +38,9 @@ end
 function Trial.init()
 	-- No input yet: a stub accepts nothing. The implementer adds
 	-- TrialKit.wireInput(TRIAL_ID, { actions = ..., handler = ... }) here.
-	pcall(TrialKit.ensureArena, TRIAL_ID, buildArena)
+	-- R-01: kein Arena-Bau beim Boot. runRoundInner ruft ensureArena in der ersten
+	-- Runde auf, damit nur die tatsaechlich gespielten Arenen existieren.
+	-- Siehe docs/MP-07-PREPUSH-REVIEW.md.
 end
 
 local function runRoundInner(room, roundIndex, guard)
