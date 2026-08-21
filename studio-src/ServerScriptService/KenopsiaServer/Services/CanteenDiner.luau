@@ -1,0 +1,312 @@
+--!nonstrict
+-- CANTEEN DINER -- the visible PS1 body at each occupied seat.
+--
+-- Mirror of CanteenBoss for the eaters. The real Roblox character stays the
+-- gameplay subject (Humanoid, Health, BloodFX targets) and is merely made
+-- invisible by CanteenProtocol; this actor is the thing the table camera
+-- sees.
+--
+-- THE DINER IS STILL. No idle loop, no breathing, no fidget: a table of
+-- motionless figures is the reference game's whole atmosphere, and it is also
+-- what makes the Observer's movement the only thing on screen that moves. The
+-- seated pose is a BIND-POSE offset (see `sit`), not a clip, so the rig holds
+-- it forever at zero cost. Only two moments animate:
+--   Eat   for one eat window          -> eat(duration)   (only with a real id)
+--   Death once, held on its last frame -> die()
+-- Every play is generation-guarded, so a track that outlives its window can
+-- never fire on the next round's diner.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+
+local AnimationIds = require(ReplicatedStorage:WaitForChild("Kenopsia")
+	:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("AnimationIds"))
+
+local CanteenDiner = {}
+
+-- Seat marker attributes (all optional, tuned in Studio). They MULTIPLY the
+-- scale the arena implies rather than replacing it, so a 1.0 means "whatever
+-- this table asks for" and not "import scale".
+--   DinerScale  1.0   multiplier on the arena-derived scale
+--   DinerLift   0.0   extra studs added to the resolved root height
+--   DinerSeated true  fold the legs 90 degrees at hip and knee
+local SCALE_LIMITS = { min = 0.4, max = 3.0 }
+
+local function findTemplate()
+	local assets = ServerStorage:FindFirstChild("KenopsiaAssets")
+	local rigs = assets and assets:FindFirstChild("Rigs")
+	return rigs and rigs:FindFirstChild("PS1Player")
+end
+
+-- Rig proportions in ITS OWN units, measured off the template rather than
+-- written down: a re-export at another size then re-scales itself instead of
+-- silently sinking into the floor.
+--   pelvis = LowerTorso, the bone that rests on a chair
+--   mouth  = the Head BONE, which sits in the lower third of the skull mesh --
+--            jaw height, which is where a fork is supposed to arrive
+function CanteenDiner.metrics()
+	local template = findTemplate()
+	local root = template and template:FindFirstChild("RootPart")
+	if not (root and root:IsA("BasePart")) then return nil end
+	local function offset(boneName)
+		local b = template:FindFirstChild(boneName, true)
+		return b and b:IsA("Bone") and (b.WorldCFrame.Position.Y - root.Position.Y) or nil
+	end
+	local pelvis, mouth = offset("LowerTorso"), offset("Head")
+	if not (pelvis and mouth and mouth > pelvis) then return nil end
+	return { pelvis = pelvis, mouth = mouth }
+end
+
+-- The scale at which a diner's pelvis reaches `seatY` AND its mouth reaches
+-- `mouthY` at the same time. Two anchors, one unknown -- so the figure is never
+-- guessed at: it is whatever this arena's chair and MouthTarget imply. Returns
+-- nil when the rig or the anchors are unusable, and the caller keeps scale 1.
+function CanteenDiner.scaleFor(seatY, mouthY)
+	local m = CanteenDiner.metrics()
+	if not m then return nil end
+	local reach = mouthY - seatY
+	if reach <= 0 then return nil end
+	local scale = reach / (m.mouth - m.pelvis)
+	return math.clamp(scale, SCALE_LIMITS.min, SCALE_LIMITS.max)
+end
+
+local function stopAll(self, except, fade)
+	for _, track in self.tracks do
+		if track ~= except and track.IsPlaying then track:Stop(fade or 0.1) end
+	end
+end
+
+-- Rotate a bone about a WORLD axis while keeping its position. Bone.CFrame is
+-- the replicated bind offset; animation Transforms stack on top of it, which
+-- is exactly what a seated base pose wants.
+local function rotateBoneWorld(bone, axis, angle)
+	local w = bone.WorldCFrame
+	local newW = CFrame.new(w.Position) * CFrame.fromAxisAngle(axis, angle) * (w - w.Position)
+	local parent = bone.Parent
+	local parentW = parent:IsA("Bone") and parent.WorldCFrame or parent.CFrame
+	bone.CFrame = parentW:ToObjectSpace(newW)
+end
+
+-- The seated pose, built entirely out of bind-pose offsets so it costs nothing
+-- to hold and never drifts. Without it the rig keeps its A-pose: legs straight
+-- down through the chair and arms held out sideways, which at a dinner table
+-- reads as a mannequin rather than a diner.
+-- Angles measured on the rig itself, not guessed: at ARM_DROP the hand ends up
+-- 2.58 units below the shoulder and 0.01 OUTWARD of it -- arms hanging straight
+-- against the ribs -- with ELBOW_BEND carrying the forearm 0.55 forward. Note
+-- the diner cannot reach the table and is not meant to: at this arena's scale
+-- her shoulders sit level with the tabletop and her arm spans 4.2 studs against
+-- a 6.3-stud gap, so a "hands on the table" pose would float them in mid-air.
+local HIP_FOLD = math.pi / 2 -- thighs forward, horizontal
+local KNEE_FOLD = -math.pi / 2 -- shins back down, vertical
+local ARM_DROP = math.rad(60) -- A-pose arms in against the ribs
+local ELBOW_BEND = math.rad(25) -- forearms slightly forward
+
+local function sit(model, root)
+	local right = root.CFrame.RightVector
+	local forward = root.CFrame.LookVector
+	for _, side in { "Left", "Right" } do
+		local upperLeg = model:FindFirstChild(side .. "UpperLeg", true)
+		local lowerLeg = model:FindFirstChild(side .. "LowerLeg", true)
+		if upperLeg and upperLeg:IsA("Bone") then rotateBoneWorld(upperLeg, right, HIP_FOLD) end
+		if lowerLeg and lowerLeg:IsA("Bone") then rotateBoneWorld(lowerLeg, right, KNEE_FOLD) end
+
+		-- Arms swing about the FORWARD axis (mirrored per side) to come down, then
+		-- the elbow bends about the same axis the knees use. The Left side takes
+		-- the NEGATIVE angle: the mirrored sign lifts the arms above the shoulders
+		-- instead, which measured as a scarecrow with both hands 6 studs out.
+		local drop = (side == "Left") and -ARM_DROP or ARM_DROP
+		local upperArm = model:FindFirstChild(side .. "UpperArm", true)
+		local lowerArm = model:FindFirstChild(side .. "LowerArm", true)
+		if upperArm and upperArm:IsA("Bone") then rotateBoneWorld(upperArm, forward, drop) end
+		if lowerArm and lowerArm:IsA("Bone") then rotateBoneWorld(lowerArm, right, ELBOW_BEND) end
+	end
+end
+
+-- opts = { scale = <arena-derived world scale>, seatY = <chair surface Y> }
+function CanteenDiner.spawn(marker, parent, seatIndex, opts)
+	local template = findTemplate()
+	if not (template and marker and parent) then return nil end
+	opts = opts or {}
+
+	local model = template:Clone()
+	model.Name = "CanteenDiner" .. tostring(seatIndex or "")
+	for _, junk in { "InitialPoses", "AnimSaves" } do
+		local j = model:FindFirstChild(junk)
+		if j then j:Destroy() end
+	end
+	local root = model:FindFirstChild("RootPart")
+	if not (root and root:IsA("BasePart")) then
+		model:Destroy()
+		return nil
+	end
+	model.PrimaryPart = root
+
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = d == root
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CastShadow = false
+			d.Massless = true
+			if d:IsA("MeshPart") then
+				-- White + SmoothPlastic: the atlas is the whole look; any tint or
+				-- material response smears the pixels. (RenderFidelity is baked
+				-- into the template -- it is not writable at runtime.)
+				d.Color = Color3.new(1, 1, 1)
+				d.Material = Enum.Material.SmoothPlastic
+			end
+		end
+	end
+	root.Transparency = 1
+
+	-- Proportions BEFORE scaling: ScaleTo multiplies bone offsets too, so the
+	-- ratio has to be read at 1.
+	local metrics = CanteenDiner.metrics()
+	local scale = math.clamp(
+		(tonumber(opts.scale) or 1) * (tonumber(marker:GetAttribute("DinerScale")) or 1),
+		SCALE_LIMITS.min, SCALE_LIMITS.max)
+	if math.abs(scale - 1) > 0.001 then model:ScaleTo(scale) end
+
+	-- SIT ON THE CHAIR, not on the marker. The seat markers were placed for the
+	-- default R15 avatar and sit at its hip height -- 2.6 studs above the actual
+	-- chair pad in the shipped canteen -- so pivoting to the marker left the
+	-- diner hovering with nothing under it. The chair surface is passed in by
+	-- CanteenProps, which raycast for it; the marker still supplies position and
+	-- facing.
+	local pelvisHeight = (metrics and metrics.pelvis or 3.95) * scale
+	local seatY = tonumber(opts.seatY) or (marker.Position.Y - pelvisHeight)
+	local lift = tonumber(marker:GetAttribute("DinerLift")) or 0
+	local facing = marker.CFrame - marker.CFrame.Position
+	model:PivotTo(CFrame.new(marker.Position.X, seatY - pelvisHeight + lift, marker.Position.Z) * facing)
+	if marker:GetAttribute("DinerSeated") ~= false then sit(model, root) end
+	model.Parent = parent
+
+	local controller = model:FindFirstChildOfClass("AnimationController")
+	if not controller then
+		controller = Instance.new("AnimationController")
+		controller.Parent = model
+	end
+	local animator = controller:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = controller
+	end
+
+	local self = setmetatable({
+		alive = true,
+		dead = false,
+		model = model,
+		root = root,
+		seatIndex = seatIndex,
+		generation = 0,
+		tracks = {
+			-- No Idle on purpose (see the header). Eat is loaded ONLY when a real
+			-- clip has been published: the obvious stand-in, Push, animates the
+			-- legs, which would tear the diner out of the seated pose for the
+			-- length of every bite. The fork's own travel already reads as the
+			-- bite, so the honest placeholder is no motion at all.
+			Eat = AnimationIds.load(animator, "Player", "Eat"),
+			Death = AnimationIds.load(animator, "Player", "Death"),
+		},
+		scale = scale,
+	}, { __index = CanteenDiner })
+	return self
+end
+
+-- Head position for blood; falls back to the root.
+function CanteenDiner.headPosition(self)
+	local head = self.model:FindFirstChild("Player_Head", true)
+	return head and head:IsA("BasePart") and head.Position or self.root.Position
+end
+
+-- Plays the eating gesture for exactly `duration` seconds -- the same number
+-- the server uses as the detectable window, so what the table camera shows is
+-- what the Observer can catch. A second call inside the window RESTARTS the
+-- gesture rather than being swallowed: a bite that was accepted must be seen.
+function CanteenDiner.eat(self, duration)
+	if not self.alive or self.dead then return end
+	local track = self.tracks.Eat
+	if not track then return end
+	self.generation += 1
+	local gen = self.generation
+	local window = math.max(0.1, tonumber(duration) or 0.45)
+	if track.IsPlaying then track:Stop(0) end
+	track.Looped = false
+	track.Priority = Enum.AnimationPriority.Action
+	-- Length is 0 until the clip has streamed in; assume the authored 1.33 s
+	-- Push in that case so the first bite is not played at speed 0.
+	local length = track.Length > 0 and track.Length or 1.33
+	track:Play(0.05, 1, length / window)
+	task.delay(window, function()
+		if self.generation == gen and track.IsPlaying then track:Stop(0.1) end
+	end)
+end
+
+-- One-shot, then frozen on the last frame so the body stays down.
+--
+-- The hold must survive a slow frame. Parking the track with AdjustSpeed(0)
+-- shortly before its end only works if the thread wakes while the track is
+-- still playing: task.wait resumes on the first Heartbeat past the deadline,
+-- and the animator has already stepped that frame -- so on any frame longer
+-- than the margin the non-looped track reaches its end, auto-stops, and the
+-- body springs back to the seated bind pose and STAYS there (Idle was stopped
+-- and `dead` blocks every other play). Hence both belts: a generous margin
+-- AND a Stopped handler that re-parks the pose if the track ends anyway.
+local DEATH_HOLD_MARGIN = 0.1
+
+local function parkAtEnd(self, death)
+	if not (self.alive and self.dead) then return end
+	local length = death.Length
+	if length <= 0 then return end
+	if not death.IsPlaying then death:Play(0, 1, 0) end
+	death:AdjustSpeed(0)
+	death.TimePosition = math.max(0, length - 0.03)
+end
+
+function CanteenDiner.die(self)
+	if not self.alive or self.dead then return end
+	self.dead = true
+	self.generation += 1
+	local death = self.tracks.Death
+	stopAll(self, death, 0.05)
+	if not death then return end
+	death.Looped = false
+	death.Priority = Enum.AnimationPriority.Action4
+	-- Fires whether the clip ran out or something stopped it. Either way the
+	-- corpse must not stand back up.
+	self.deathStopped = death.Stopped:Connect(function()
+		task.defer(parkAtEnd, self, death)
+	end)
+	death:Play(0.05, 1, 1)
+	task.spawn(function()
+		-- Wait for the length to resolve, then park just before the end. A clip
+		-- that resolves later still ends held, because Stopped catches it.
+		local deadline = os.clock() + 4
+		while self.alive and death.Length <= 0 and os.clock() < deadline do task.wait(0.05) end
+		if not self.alive or death.Length <= 0 then return end
+		task.wait(math.max(0, death.Length - DEATH_HOLD_MARGIN - death.TimePosition))
+		if not (self.alive and self.dead) then return end
+		if death.IsPlaying then
+			death:AdjustSpeed(0)
+			death.TimePosition = math.max(0, death.Length - 0.03)
+		else
+			parkAtEnd(self, death)
+		end
+	end)
+end
+
+function CanteenDiner.destroy(self)
+	if not self.alive then return end
+	self.alive = false
+	self.generation += 1
+	if self.deathStopped then
+		self.deathStopped:Disconnect()
+		self.deathStopped = nil
+	end
+	for _, track in self.tracks do pcall(track.Stop, track, 0) end
+	if self.model.Parent then self.model:Destroy() end
+end
+
+return CanteenDiner

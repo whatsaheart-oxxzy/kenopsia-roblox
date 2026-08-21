@@ -3,8 +3,8 @@
 -- Troepfchen = simulierte Punkte: Heartbeat-Schleife mit Gravitation, pro
 -- Frame ein kurzer Raycast in Flugrichtung; beim Einschlag entsteht ein
 -- flacher Splat EXAKT auf der Flaechennormale (RaycastResult.Normal).
--- Farben: tiefes Burgund (50,4,4 / 80,0,0), Material Glass mit leichter
--- Reflectance fuer den nassen Look. Alles gedeckelt + selbstaufraeumend.
+-- Farben: tiefes Burgund (50,4,4 / 80,0,0), mattes SmoothPlastic fuer den
+-- flachen PS1-Look. Alles gedeckelt + selbstaufraeumend.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local SoundService = game:GetService("SoundService")
@@ -65,8 +65,8 @@ local function splatAt(pos, normal, big)
 	p.CanQuery = false
 	p.CanTouch = false
 	p.CastShadow = false
-	p.Material = Enum.Material.Glass
-	p.Reflectance = 0.15
+	p.Material = Enum.Material.SmoothPlastic
+	p.Reflectance = 0
 	p.Color = math.random() < 0.6 and DEEP or DARK
 	local w = (big and 1.0 or 0.4) + math.random() * (big and 1.4 or 0.7)
 	p.Size = Vector3.new(w, w * (0.55 + math.random() * 0.9), 0.04)
@@ -106,8 +106,8 @@ local function pool(pos, size)
 		p.CanQuery = false
 		p.CanTouch = false
 		p.CastShadow = false
-		p.Material = Enum.Material.Glass
-		p.Reflectance = 0.2
+		p.Material = Enum.Material.SmoothPlastic
+		p.Reflectance = 0
 		p.Color = layer == 1 and DARK or DEEP
 		p.Size = Vector3.new(0.3, 0.3, 0.05)
 		p.CFrame = CFrame.lookAt(hit.Position + hit.Normal * (0.015 * layer), hit.Position + hit.Normal * 2)
@@ -135,8 +135,8 @@ end
 local dropletTpl = Instance.new("Part")
 dropletTpl.Name = "Droplet"
 dropletTpl.Size = Vector3.new(0.14, 0.14, 0.14)
-dropletTpl.Material = Enum.Material.Glass
-dropletTpl.Reflectance = 0.1
+dropletTpl.Material = Enum.Material.SmoothPlastic
+dropletTpl.Reflectance = 0
 dropletTpl.Color = DARK
 dropletTpl.Anchored = true
 dropletTpl.CanCollide = false

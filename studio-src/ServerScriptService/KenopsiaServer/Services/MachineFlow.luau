@@ -6,11 +6,11 @@
 -- and unwinds through a finally-style cleanup on either a clean finish or an
 -- abort.
 --
--- Gate 1 turns the single roulette-picked trial into a SESSION: every enabled
--- trial is played once, in a seed-shuffled order, with no return to the lobby
--- between them. The loop iterates #order rather than a hardcoded three, so it
--- runs two trials today and three the moment Canteen flips to ready = true at
--- Gate 4 -- with no change to this file.
+-- Gate 1 turns the single roulette-picked trial into a SESSION: enabled trials
+-- are played once each, in a seed-shuffled order, with no return to the lobby
+-- between them. The loop iterates #order rather than a hardcoded count, so it
+-- runs however many ids survive the two gates -- and, since MP-05, at most
+-- GameConfig.Playlist.PerSession of them (D7) -- with no change to this file.
 --
 -- The trial modules are still invoked with their EXISTING signatures. Threading
 -- RoundContext into them belongs to Gates 2/3/4; here Contexts supplies the
@@ -23,6 +23,21 @@ local BirdHunting = require(script.Parent.BirdHunting)
 local Minefield = require(script.Parent.Minefield)
 local CanteenProtocol = require(script.Parent.CanteenProtocol)
 local Contexts = require(script.Parent.Contexts)
+-- MP-05: the twelve new trials (Framework-stage stubs until each implementer
+-- fills its module in). Every one is required at boot so a missing file fails
+-- loudly here, not mid-session.
+local CutToSpec = require(script.Parent.CutToSpec)
+local ArmsIssue = require(script.Parent.ArmsIssue)
+local Upstream = require(script.Parent.Upstream)
+local FloorCheck = require(script.Parent.FloorCheck)
+local Clearance = require(script.Parent.Clearance)
+local Carrier = require(script.Parent.Carrier)
+local Breather = require(script.Parent.Breather)
+local ClearTheDeck = require(script.Parent.ClearTheDeck)
+local Crawler = require(script.Parent.Crawler)
+local Ricochet = require(script.Parent.Ricochet)
+local PalletDuty = require(script.Parent.PalletDuty)
+local SortingFloor = require(script.Parent.SortingFloor)
 
 local Shared = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 local Rules = Shared:WaitForChild("Rules")
@@ -89,6 +104,130 @@ local TRIALS = {
 		ready = true,
 		showInterRoundScore = false,
 		module = CanteenProtocol,
+	},
+	-- MP-05 -- the twelve new trials (docs/MP-05-BUILD-PLAN.md section A).
+	-- ready = false for every one until its Integrate/QA pass flips it, one
+	-- trial at a time. Ids and display names are original (REQ-IP-01); the
+	-- reference names live in docs/ only. Text is the plan's, verbatim.
+	{
+		id = "carve",
+		displayName = "CUT TO SPEC",
+		icon = "Cube",
+		subtitle = "MATCH THE TEMPLATE. THE BLOCK IS NOT FORGIVING._",
+		tagline = "CUT ONLY WHAT IS SHOWN.",
+		ready = false,
+		showInterRoundScore = false,
+		module = CutToSpec,
+	},
+	{
+		id = "armory",
+		displayName = "ARMS ISSUE",
+		icon = "Crosshair",
+		subtitle = "PARTS ARE ON THE FLOOR. THE ISSUE IS NOT._",
+		tagline = "COLLECT. ASSEMBLE. DISCHARGE.",
+		ready = false,
+		showInterRoundScore = false,
+		module = ArmsIssue,
+	},
+	{
+		id = "upstream",
+		displayName = "UPSTREAM",
+		icon = "Factory",
+		subtitle = "THE STAIRS RUN DOWN. YOU RUN UP._",
+		tagline = "READ THE ARROWS. CLIMB.",
+		ready = false,
+		showInterRoundScore = false,
+		module = Upstream,
+	},
+	{
+		id = "floorcheck",
+		displayName = "FLOOR CHECK",
+		icon = "Cube",
+		subtitle = "ONE PLATE HOLDS. THE REST GIVE WAY._",
+		tagline = "STAND WHERE YOU ARE TOLD.",
+		ready = false,
+		showInterRoundScore = false,
+		module = FloorCheck,
+	},
+	{
+		id = "clearance",
+		displayName = "CLEARANCE",
+		icon = "Train",
+		subtitle = "THE LINE IS LIVE. FIND YOUR RECESS._",
+		tagline = "OFF THE TRACK BEFORE THE HORN.",
+		ready = false,
+		showInterRoundScore = false,
+		module = Clearance,
+	},
+	{
+		id = "carrier",
+		displayName = "CARRIER",
+		icon = "Bug",
+		subtitle = "ONE OF YOU IS ALREADY SICK._",
+		tagline = "FIND THE NEEDLE. OR AVOID IT.",
+		ready = false,
+		showInterRoundScore = false,
+		module = Carrier,
+	},
+	{
+		id = "breather",
+		displayName = "BREATHER",
+		icon = "Factory",
+		subtitle = "ONE CIGARETTE. THIRTY SECONDS. NOTHING ELSE._",
+		tagline = "INHALE. NOT TOO DEEP.",
+		ready = false,
+		showInterRoundScore = false,
+		module = Breather,
+	},
+	{
+		id = "sweep",
+		displayName = "CLEAR THE DECK",
+		icon = "Saw",
+		subtitle = "THE PRESS ONLY WAITS FOR WEIGHT._",
+		tagline = "KEEP YOUR PLATE CLEAN.",
+		ready = false,
+		showInterRoundScore = false,
+		module = ClearTheDeck,
+	},
+	{
+		id = "crawler",
+		displayName = "CRAWLER",
+		icon = "Bug",
+		subtitle = "IT WANTS A BACK TO BREAK._",
+		tagline = "DODGE IT. OR PASS IT ON.",
+		ready = false,
+		showInterRoundScore = false,
+		module = Crawler,
+	},
+	{
+		id = "ricochet",
+		displayName = "RICOCHET",
+		icon = "Saw",
+		subtitle = "THE BLADES DO NOT STOP AT WALLS._",
+		tagline = "WATCH THE ANGLES.",
+		ready = false,
+		showInterRoundScore = false,
+		module = Ricochet,
+	},
+	{
+		id = "stacker",
+		displayName = "PALLET DUTY",
+		icon = "Factory",
+		subtitle = "TWENTY SECONDS. STACK HIGH. DO NOT DROP._",
+		tagline = "HIGHEST STACK KEEPS THE JOB.",
+		ready = false,
+		showInterRoundScore = false,
+		module = PalletDuty,
+	},
+	{
+		id = "sorting",
+		displayName = "SORTING FLOOR",
+		icon = "Magnifier",
+		subtitle = "GOOD LEFT. BAD RIGHT. NO EXCEPTIONS._",
+		tagline = "MISFILE AND YOU FOLLOW IT.",
+		ready = false,
+		showInterRoundScore = false,
+		module = SortingFloor,
 	},
 }
 local DECOY_ICONS = { "Magnifier", "Saw", "Factory", "Train", "Bug" }
@@ -261,19 +400,20 @@ end
 
 -- The trials this session will play, in seed-shuffled order.
 --
--- Playlist.order permutes ALL THREE ids; the filter drops whatever is not
--- schedulable while preserving the shuffled relative order of the rest. That is
--- why the loop below needs no knowledge of how many trials exist: two survive
--- the filter today, three the moment Canteen passes Gate 4.
+-- Playlist.order permutes ALL ids in Playlist.Ids; Playlist.session drops
+-- whatever is not schedulable while preserving the shuffled relative order of
+-- the rest, and (D7) keeps only the first GameConfig.Playlist.PerSession of the
+-- survivors. That is why the loop below needs no knowledge of how many trials
+-- exist: three survive both gates today, up to PerSession once the MP-05
+-- trials flip ready.
 local function playableOrder(seed)
 	local enabled = {}
 	for _, t in enabledTrials() do
 		enabled[t.id] = t
 	end
 	local out = {}
-	for _, id in Playlist.order(seed) do
-		local t = enabled[id]
-		if t then table.insert(out, t) end
+	for _, id in Playlist.session(Playlist.order(seed), enabled, Config.Playlist.PerSession) do
+		table.insert(out, enabled[id])
 	end
 	return out
 end
@@ -406,7 +546,13 @@ local function runMatch(room)
 			-- Pacing owns this now. The registry used to hardcode 10 rounds for
 			-- Dead Zone and 5 for Bird; both are named in the plan as errors not
 			-- to repeat, and for Bird the number is LEGS, not rounds.
-			local rounds = Pacing.roundsFor(trial.id, playerCount) or 1
+			local rounds = Pacing.roundsFor(trial.id, playerCount)
+			if not rounds then
+				-- MP-01 section 9.2: a missing Pacing row used to become 1 round
+				-- silently. It is still 1 round, but never silently.
+				warn(("[MachineFlow] no Pacing.ROUNDS row for '%s' - playing 1 round"):format(trial.id))
+				rounds = 1
+			end
 			local trialTotals = {}
 
 			for roundIndex = 1, rounds do

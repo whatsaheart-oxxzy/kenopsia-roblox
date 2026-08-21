@@ -40,6 +40,7 @@ local MUZZLE_Y             = 30.0  -- ceiling-mounted execution muzzle
 -- FOV. The Observer is the tell the entire minigame is played on -- a player
 -- who cannot see it is guessing. Above the centre the angle drops to ~24.
 local OBSERVER_ABOVE_TABLE = 7.0
+local BOSS_HEAD_CLEARANCE  = 3.5  -- beyond the west end of the long table
 local SPECTATOR_BACK       = 26.0
 local SPECTATOR_UP         = 12.0
 
@@ -198,6 +199,7 @@ local function marker(name, cf, parent, seatIndex)
 	p.CanQuery = false
 	p.CanTouch = false
 	p.Transparency = 1
+	p.CastShadow = false
 	p.TopSurface = Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
 	if seatIndex then
@@ -268,6 +270,21 @@ local obsLook = Vector3.new(tc.X, tableTopY, tc.Z)
 -- degenerate parallel-to-up case that the execution muzzles hit.
 marker("Observer", CFrame.lookAt(obsPos, obsPos + longAxis, Vector3.yAxis), rig)
 
+-- Boss: at the west/negative head of the long table, facing the diners. The
+-- vertical position is derived from the same measured chair surfaces as the
+-- players, so a rebuilt or rescaled room does not leave the actor under the
+-- tabletop. The marker is a foot/root pivot, not a camera.
+local seatRootY = 0
+for _, s in ipairs(seats) do
+	seatRootY = seatRootY + s.seatY + SEAT_ROOT_ABOVE_SEAT
+end
+seatRootY = seatRootY / #seats
+local longHalf = math.max(tableSize.X, tableSize.Z) / 2
+local bossPos = Vector3.new(tc.X, seatRootY, tc.Z) - longAxis * (longHalf + BOSS_HEAD_CLEARANCE)
+local bossLook = Vector3.new(tc.X, seatRootY, tc.Z)
+local bossMarker = marker("BossSeat", CFrame.lookAt(bossPos, bossLook, Vector3.yAxis), rig)
+bossMarker:SetAttribute("BossScale", 1)
+
 -- ObserverCamera: Tamem placed "Camera for Canteen" by hand -- honour that
 -- POSITION, but compute the direction, because the part's stored rotation does
 -- not point at the table.
@@ -288,8 +305,8 @@ end
 note("table top Y=%.2f  bbox=(%.1f, %.1f, %.1f)", tableTopY, tableSize.X, tableSize.Y, tableSize.Z)
 
 -- Count the parts, not "descendants minus children": that arithmetic silently
--- omitted the three standalone markers (Observer / ObserverCamera /
--- SpectatorCamera) and under-reported 27 as 24.
+-- omitted the standalone markers (Observer / BossSeat / ObserverCamera /
+-- SpectatorCamera) and under-reported the rig.
 local markerCount = 0
 for _, d in ipairs(rig:GetDescendants()) do
 	if d:IsA("BasePart") then

@@ -25,8 +25,19 @@ task.spawn(function()
 	SniperFire = SniperFire or remotes:WaitForChild("SniperFire")
 	SniperAim = SniperAim or remotes:WaitForChild("SniperAim")
 end)
-local XBotPush = remotes:WaitForChild("XBotPush", 15)
-local XBotCrouch = remotes:WaitForChild("XBotCrouch", 15)
+-- Left over from the removed XBot rig: no server code creates either remote any
+-- more, so both WaitForChild calls always ran to their full timeout and cost
+-- EVERY client 30 seconds of dead boot before the rest of this script executed
+-- (measured: "[Kenopsia] client online" landed ~34 s after join, and the
+-- crosshair, HUD and input bindings below with it). Resolve them the way
+-- SniperFire/SniperAim are resolved above -- optional, off the critical path,
+-- and still adopted if they ever come back. Both uses are already nil-guarded.
+local XBotPush = remotes:FindFirstChild("XBotPush")
+local XBotCrouch = remotes:FindFirstChild("XBotCrouch")
+task.spawn(function()
+	XBotPush = XBotPush or remotes:WaitForChild("XBotPush", 15)
+	XBotCrouch = XBotCrouch or remotes:WaitForChild("XBotCrouch", 15)
+end)
 
 local machine = playerGui:WaitForChild("KenopsiaMachine")
 
@@ -200,6 +211,21 @@ local tickerDefaultText = nil
 -- not match. Cleared on role="none" so a stale token can never be replayed.
 local trialRoundToken = nil
 local pendingRunner = false
+-- MP-05 ROUTER. Packets with kind="trial" are dispatched to
+-- StarterPlayerScripts.TrialClients.<id> through TrialClientKit; this file only
+-- lends closures over its own locals (built after the helpers exist, right
+-- before the funnel). The WaitForChild is bounded so a place where the kit has
+-- not been pushed yet still boots -- router disabled, one warn.
+local trialKitModule = script.Parent:FindFirstChild("TrialClientKit")
+	or script.Parent:WaitForChild("TrialClientKit", 10)
+local TrialClientKit = trialKitModule and require(trialKitModule) or nil
+if not TrialClientKit then
+	warn("[KenopsiaClient] TrialClientKit missing - MP-05 trials disabled")
+end
+local trialClientsFolder = script.Parent:FindFirstChild("TrialClients")
+local trialRouter = nil
+local trialCam = nil        -- { mode = "top"|"fixed"|"follow", ... } owned by the router
+local trialWalkSpeed = 0    -- WalkSpeed while moveState == "trial"
 
 -- SESSION SETTINGS + UI AUDIO -----------------------------------------------
 
@@ -406,6 +432,9 @@ local function applyMovement()
 		-- Ueberall sonst wird sofort gerannt (kein Anlauf mehr).
 		local moves = char:GetAttribute("XBotMoves") or ""
 		hum.WalkSpeed = string.find(moves, "scan") and 7 or 14
+	elseif moveState == "trial" then
+		-- MP-05: a TrialClients module set this through kit.movement.set.
+		hum.WalkSpeed = trialWalkSpeed
 	else
 		hum.WalkSpeed = 0
 	end
@@ -482,6 +511,12 @@ RunService.RenderStepped:Connect(function(dt)
 		else
 			camera.CFrame = spectateCF
 		end
+	elseif trialCam then
+		-- MP-05: kit.camera.* modes. Spectate (above) wins over the trial cam,
+		-- so the death cam keeps working for new trials; the runner cam
+		-- below is never set by them.
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = TrialClientKit.computeCamera(trialCam, player.Character, camera, dt)
 	elseif runnerCam then
 		local char = player.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -532,6 +567,34 @@ workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 	end
 end)
 
+-- THE CROSSHAIR MUST SIT WHERE THE BULLET GOES, and the bullet goes along
+-- `camera.CFrame.LookVector` (see the SniperAim fire below) -- dead centre of
+-- the viewport. An authored scale position cannot promise that: it is measured
+-- in the ScreenGui's own space, which is displaced by the GUI inset and
+-- DeviceSafeInsets, and then shrunk again by MachineLayout's UIScale. Measured
+-- on a 932x576 viewport the authored {0.524, 0.498} landed 22 px right and
+-- 59 px ABOVE the aim point -- the player was aiming by a crosshair that lied.
+--
+-- So do not compute where it should go; measure where it IS and cancel the
+-- error. AbsolutePosition already carries every inset and scale in the chain,
+-- so one corrective offset lands it exactly, whatever the platform did.
+local function alignHipCross()
+	if not hipCross.Visible then return end
+	local centre = hipCross.AbsolutePosition + hipCross.AbsoluteSize / 2
+	local target = camera.ViewportSize / 2
+	local dx, dy = target.X - centre.X, target.Y - centre.Y
+	-- Sub-pixel residue is not worth a property write every frame.
+	if math.abs(dx) < 0.5 and math.abs(dy) < 0.5 then return end
+	hipCross.Position = hipCross.Position + UDim2.fromOffset(dx, dy)
+end
+
+-- Checked every frame rather than wired to one event: a resize, a platform
+-- change (MachineLayout re-applies its UIScale asynchronously) and a fresh
+-- camera after respawn all move the target, and the function above costs two
+-- vector reads and returns immediately while the crosshair is hidden or already
+-- within half a pixel.
+RunService.RenderStepped:Connect(alignHipCross)
+
 local function applyScope()
 	local targetFov = scoped and ZOOMS[zoomIdx].fov or (sniperActive and SNIPER_BASE_FOV or 70)
 	TweenService:Create(camera, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = targetFov }):Play()
@@ -544,6 +607,7 @@ local function applyScope()
 		zb.Text = ZOOMS[zoomIdx].label
 	end
 	hipCross.Visible = sniperActive and not scoped
+	alignHipCross()
 	scopeLook.Visible = sniperActive and scoped
 	for part, tr in vmParts do
 		part.Transparency = scoped and 1 or tr
@@ -1860,10 +1924,63 @@ local function applyGoreFx(pos, power, force)
 	if near > 0.2 then screenBlood(near) end
 end
 
+-- MP-05 ROUTER BUILD. Every closure below exists by now (sfx, touchAllowed,
+-- applyMovement, restoreCamera, TrialInput, applyGoreFx, showAnnounce).
+if TrialClientKit then
+	trialRouter = TrialClientKit.newRouter({
+		player = player,
+		machine = machine,
+		camera = camera,
+		TrialInput = TrialInput,
+		trialClientsFolder = trialClientsFolder,
+		sfx = sfx,
+		touchAllowed = touchAllowed,
+		applyGoreFx = applyGoreFx,
+		showCard = function(text, style)
+			session += 1
+			showAnnounce({ text = text, style = style }, session)
+		end,
+		getToken = function() return trialRoundToken end,
+		setToken = function(tok) trialRoundToken = tok end,
+		setMove = function(state, speed)
+			moveState = state
+			trialWalkSpeed = speed or 0
+			applyMovement()
+		end,
+		setCam = function(tbl)
+			trialCam = tbl
+			smoothCamPos = nil
+		end,
+		clearSpectate = function()
+			spectateCF = nil
+			spectateWatch = nil
+			spectateEye = nil
+		end,
+		restoreCamera = restoreCamera,
+		hideCountText = function()
+			local c = machine:FindFirstChild("CountText")
+			if c then c.Visible = false end
+		end,
+	})
+	-- Abort backstop: MachineFlow clears KenopsiaActiveTrial on every exit
+	-- path, including the ones where the trial's own `end` packet never went
+	-- out. A module still active for a different id than the attribute is
+	-- ended here.
+	player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(function()
+		local id = player:GetAttribute("KenopsiaActiveTrial") or ""
+		if trialRouter and trialRouter.activeId and trialRouter.activeId ~= id then
+			trialRouter.endActive()
+		end
+	end)
+end
+
 -- DISPATCH ------------------------------------------------------------------
 
 MachineState.OnClientEvent:Connect(function(p)
 	if type(p) ~= "table" then return end
+	-- MP-05: kind="trial" is consumed by the router; generic kinds are observed
+	-- and fall through to the legacy handlers below.
+	if trialRouter and trialRouter.handle(p) then return end
 	if p.kind == "huntersetup" then
 		setHunterSetup(sniperActive)
 		return
@@ -1873,6 +1990,11 @@ MachineState.OnClientEvent:Connect(function(p)
 		return
 	end
 	if p.kind == "role" then
+		-- F-1 (MP-05 D14): Canteen delivers the round token INSIDE its spectate
+		-- role packet, and this handler used to return before adopting it, so
+		-- every plate/mouth was sent with a nil token and dropped. Adopt a
+		-- token whenever one is present, before the spectate early-return.
+		if p.roundToken ~= nil then trialRoundToken = p.roundToken end
 		if p.role == "spectate" then
 			-- toter Beobachter: feste Kamera ueber dem Feld
 			local pos = Vector3.new(p.pos[1], p.pos[2], p.pos[3])
@@ -2077,6 +2199,8 @@ MachineState.OnClientEvent:Connect(function(p)
 	end
 	local lobbyKinds = { selection = true, info = true, score = true }
 	setLobbyMusic(lobbyKinds[p.kind] == true)
+	-- MP-05 belt: a lobby screen means no trial is running.
+	if trialRouter and lobbyKinds[p.kind] then trialRouter.endActive() end
 	if p.kind == "selection" then
 		showSelection(p, token)
 	elseif p.kind == "info" then

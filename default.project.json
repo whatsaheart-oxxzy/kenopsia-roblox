@@ -18,13 +18,27 @@
           "$className": "Folder",
           "Config": {
             "$className": "Folder",
-            "GameConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau" }
+            "GameConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau" },
+            "AnimationIds": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/AnimationIds.luau" }
           },
           "Rules": {
             "$className": "Folder",
             "Pacing":   { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Pacing.luau" },
             "Playlist": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Playlist.luau" },
-            "Scoring":  { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Scoring.luau" }
+            "Scoring":  { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/Scoring.luau" },
+            "TrialRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/TrialRules.luau" },
+            "CutToSpecRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/CutToSpecRules.luau" },
+            "ArmsIssueRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/ArmsIssueRules.luau" },
+            "UpstreamRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/UpstreamRules.luau" },
+            "FloorCheckRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/FloorCheckRules.luau" },
+            "ClearanceRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/ClearanceRules.luau" },
+            "CarrierRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/CarrierRules.luau" },
+            "BreatherRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/BreatherRules.luau" },
+            "ClearTheDeckRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/ClearTheDeckRules.luau" },
+            "CrawlerRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/CrawlerRules.luau" },
+            "RicochetRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/RicochetRules.luau" },
+            "PalletDutyRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/PalletDutyRules.luau" },
+            "SortingFloorRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/SortingFloorRules.luau" }
           },
           "Net": {
             "$className": "Folder",
@@ -60,7 +74,22 @@
           "Minefield":     { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Minefield.luau" },
           "CanteenProtocol": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CanteenProtocol.luau" },
           "CanteenProps":    { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CanteenProps.luau" },
-          "BloodFX":       { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/BloodFX.luau" }
+          "CanteenBoss":     { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CanteenBoss.luau" },
+          "CanteenDiner":    { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CanteenDiner.luau" },
+          "BloodFX":       { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/BloodFX.luau" },
+          "TrialKit":      { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/TrialKit.luau" },
+          "CutToSpec": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CutToSpec.luau" },
+          "ArmsIssue": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/ArmsIssue.luau" },
+          "Upstream": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Upstream.luau" },
+          "FloorCheck": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/FloorCheck.luau" },
+          "Clearance": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Clearance.luau" },
+          "Carrier": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Carrier.luau" },
+          "Breather": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Breather.luau" },
+          "ClearTheDeck": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/ClearTheDeck.luau" },
+          "Crawler": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Crawler.luau" },
+          "Ricochet": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Ricochet.luau" },
+          "PalletDuty": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/PalletDuty.luau" },
+          "SortingFloor": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/SortingFloor.luau" }
         }
       }
     },
@@ -72,7 +101,23 @@
         "$className": "StarterPlayerScripts",
         "KenopsiaClient": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau" },
         "MachineLayout":  { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/MachineLayout.client.luau" },
-        "GoreClient":     { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/GoreClient.client.luau" }
+        "GoreClient":     { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/GoreClient.client.luau" },
+        "TrialClientKit": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClientKit.luau" },
+        "TrialClients": {
+          "$className": "Folder",
+          "carve": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/carve.luau" },
+          "armory": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/armory.luau" },
+          "upstream": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/upstream.luau" },
+          "floorcheck": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/floorcheck.luau" },
+          "clearance": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/clearance.luau" },
+          "carrier": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/carrier.luau" },
+          "breather": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/breather.luau" },
+          "sweep": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/sweep.luau" },
+          "crawler": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/crawler.luau" },
+          "ricochet": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/ricochet.luau" },
+          "stacker": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/stacker.luau" },
+          "sorting": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClients/sorting.luau" }
+        }
       },
 
       "StarterCharacterScripts": {

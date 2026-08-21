@@ -49,3 +49,6 @@ desktop.ini
 # selene's generated Roblox standard library (regenerate with
 # `selene generate-roblox-std`).
 /roblox.yml
+
+# Blender auto-backups; die .blend-Quelldatei selbst bleibt versioniert.
+*.blend1

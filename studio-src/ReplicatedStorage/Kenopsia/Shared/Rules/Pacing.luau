@@ -34,6 +34,21 @@ end
 local ROUNDS = {
 	minefield = { [2] = 4, [3] = 3, [4] = 3 },
 	canteen   = { [2] = 3, [3] = 2, [4] = 2 },
+	-- MP-05 section A. One row per new trial; a trial with no row is a plan
+	-- error, not a default (roundsFor returns nil and MachineFlow falls back
+	-- to 1 loudly).
+	carve      = { [2] = 3, [3] = 3, [4] = 2 },
+	armory     = { [2] = 3, [3] = 2, [4] = 2 },
+	upstream   = { [2] = 3, [3] = 3, [4] = 2 },
+	floorcheck = { [2] = 3, [3] = 3, [4] = 2 },
+	clearance  = { [2] = 2, [3] = 2, [4] = 2 },
+	carrier    = { [2] = 2, [3] = 3, [4] = 2 },
+	breather   = { [2] = 3, [3] = 3, [4] = 3 },
+	sweep      = { [2] = 3, [3] = 2, [4] = 2 },
+	crawler    = { [2] = 3, [3] = 2, [4] = 2 },
+	ricochet   = { [2] = 3, [3] = 3, [4] = 2 },
+	stacker    = { [2] = 3, [3] = 3, [4] = 3 },
+	sorting    = { [2] = 3, [3] = 2, [4] = 2 },
 }
 
 -- Bird Hunting counts LEGS, not rounds: one leg per scheduled Hunter. 3-player
@@ -62,6 +77,21 @@ Pacing.RoundSeconds = {
 	minefield = 55,
 	birdhunt  = 90,
 	canteen   = 45,
+	-- MP-05 section A / D8: ONE number per trial, whatever the player count.
+	-- TrialKit's R:setDeadline reads this; no trial derives its length from
+	-- anything else.
+	carve      = 45,
+	armory     = 50,
+	upstream   = 40,
+	floorcheck = 35,
+	clearance  = 50,
+	carrier    = 45,
+	breather   = 30,
+	sweep      = 45,
+	crawler    = 40,
+	ricochet   = 45,
+	stacker    = 20,
+	sorting    = 40,
 }
 
 -- Session and presentation timing, seconds. Every delay in the session loop

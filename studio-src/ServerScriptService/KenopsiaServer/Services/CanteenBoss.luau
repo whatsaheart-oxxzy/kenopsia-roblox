@@ -1,0 +1,316 @@
+--!nonstrict
+-- CANTEEN BOSS -- visual actor for the Canteen Protocol observer state.
+--
+-- The gameplay authority remains CanteenProtocol. This module owns only the
+-- low-poly actor, its four published animation tracks and the serial execution
+-- queue. Every callback is generation-guarded so an aborted round cannot fire
+-- a late shot into the lobby.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+
+local AnimationIds = require(ReplicatedStorage:WaitForChild("Kenopsia")
+	:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("AnimationIds"))
+
+local CanteenBoss = {}
+
+local FRAME_RATE = 30
+local PISTOL_FRAME = 14
+local PRIMARY_FIRE_FRAME = 28
+local SECOND_FIRE_FRAME = 36
+local SHOT_END_FRAME = 49
+local LOOK_UP_TELL_FRAME = 11
+local LOOK_DOWN_FRAMES = 20
+local READING_FRAME_TIME = 0
+
+-- The clips are SEATED: every one of them drops the root by this much against
+-- the A-pose the template ships in (authored in Blender as SEAT_DROP; measured
+-- live at 0.650 on Idle, LookUp, LookDown and Shoot alike). The figure must
+-- therefore be placed by where its pelvis ends up ONCE A CLIP IS PLAYING, not
+-- by where the bind pose puts it -- otherwise he hovers half a stud above his
+-- chair for the whole round.
+local SEAT_DROP = 0.65
+local SCALE_LIMITS = { min = 0.4, max = 3.0 }
+
+local function findTemplate()
+	local assets = ServerStorage:FindFirstChild("KenopsiaAssets")
+	local rigs = assets and assets:FindFirstChild("Rigs")
+	local template = rigs and rigs:FindFirstChild("CanteenBoss")
+	if template then return template end
+
+	-- Compatibility with the documented prop slot while older places migrate.
+	local props = assets and assets:FindFirstChild("Props")
+	local canteen = props and props:FindFirstChild("CanteenProtocol")
+	return canteen and canteen:FindFirstChild("CP_Boss")
+end
+
+-- Pelvis height above the model's own origin while seated, in rig units.
+-- Measured off the template so a re-export re-derives it.
+local function seatedPelvisOffset(template)
+	local root = template:FindFirstChild("RootPart")
+	local pelvis = template:FindFirstChild("LowerTorso", true)
+	if not (root and pelvis and pelvis:IsA("Bone")) then return nil end
+	return (pelvis.WorldCFrame.Position.Y - root.Position.Y) - SEAT_DROP
+end
+
+local function setPistolVisible(self, visible)
+	local pistol = self.pistol
+	if pistol and pistol.Parent then
+		pistol.Transparency = visible and 0 or 1
+	end
+end
+
+local function stopTracks(self, except)
+	for _, track in self.tracks do
+		if track ~= except and track.IsPlaying then
+			track:Stop(0.08)
+		end
+	end
+end
+
+local function playTrack(self, name, looped, priority, speed)
+	local track = self.tracks[name]
+	if not track then return nil end
+	stopTracks(self, track)
+	if track.IsPlaying then track:Stop(0.04) end
+	track.Looped = looped == true
+	track.Priority = priority or Enum.AnimationPriority.Movement
+	track:Play(0.08, 1, speed or 1)
+	return track
+end
+
+local function holdReading(self)
+	setPistolVisible(self, false)
+	local track = playTrack(self, "LookUp", false, Enum.AnimationPriority.Idle)
+	if track then
+		-- The user has no separate reading clip. Frame zero of LookUp is the
+		-- authored paper-reading pose, so hold it without manufacturing another
+		-- animation asset or loading the same clip twice.
+		track.TimePosition = READING_FRAME_TIME
+		track:AdjustSpeed(0)
+	end
+end
+
+local function applyPhase(self)
+	if not self.alive or self.executing then return end
+	local phase = self.phase
+	if phase == "lowering" then
+		setPistolVisible(self, false)
+		-- Frame 11 is the authored EyesUp/decision pose. Only that tell segment
+		-- must land at the end of lowering; frames 11-44 are a glare hold that
+		-- the watching Idle replaces.
+		local duration = math.max(0.05,
+			tonumber(self.phaseDuration) or (LOOK_UP_TELL_FRAME / FRAME_RATE))
+		playTrack(self, "LookUp", false, Enum.AnimationPriority.Movement,
+			(LOOK_UP_TELL_FRAME / FRAME_RATE) / duration)
+	elseif phase == "watching" then
+		setPistolVisible(self, false)
+		playTrack(self, "Idle", true, Enum.AnimationPriority.Idle)
+	elseif phase == "raising" then
+		setPistolVisible(self, false)
+		local duration = math.max(0.05, tonumber(self.phaseDuration) or (LOOK_DOWN_FRAMES / FRAME_RATE))
+		playTrack(self, "LookDown", false, Enum.AnimationPriority.Movement,
+			(LOOK_DOWN_FRAMES / FRAME_RATE) / duration)
+	else
+		holdReading(self)
+	end
+end
+
+local function waitCurrent(self, shot, duration)
+	local deadline = os.clock() + duration
+	while os.clock() < deadline do
+		if not self.alive or self.currentShot ~= shot then return false end
+		task.wait(math.min(0.03, deadline - os.clock()))
+	end
+	return self.alive and self.currentShot == shot
+end
+
+local function fireOnce(self, shot)
+	if shot.fired or not self.alive or self.currentShot ~= shot then return end
+	shot.fired = true
+	local ok, err = pcall(shot.onFire)
+	if not ok then warn("[CanteenBoss] fire callback failed: " .. tostring(err)) end
+end
+
+local function finishShot(shot)
+	if shot.finished then return end
+	shot.finished = true
+	local ok, err = pcall(shot.onDone)
+	if not ok then warn("[CanteenBoss] completion callback failed: " .. tostring(err)) end
+end
+
+local function pump(self)
+	if self.executing or not self.alive then return end
+	self.executing = true
+	task.spawn(function()
+		while self.alive and #self.queue > 0 do
+			local shot = table.remove(self.queue, 1)
+			self.currentShot = shot
+			setPistolVisible(self, false)
+			playTrack(self, "Shoot", false, Enum.AnimationPriority.Action)
+
+			if waitCurrent(self, shot, PISTOL_FRAME / FRAME_RATE) then
+				setPistolVisible(self, true)
+			end
+			if waitCurrent(self, shot, (PRIMARY_FIRE_FRAME - PISTOL_FRAME) / FRAME_RATE) then
+				fireOnce(self, shot)
+			end
+			-- The clip has a second muzzle event at frame 36. It remains visual:
+			-- gameplay damage and blood are deliberately deduplicated above.
+			waitCurrent(self, shot, (SECOND_FIRE_FRAME - PRIMARY_FIRE_FRAME) / FRAME_RATE)
+			waitCurrent(self, shot, (SHOT_END_FRAME - SECOND_FIRE_FRAME) / FRAME_RATE)
+
+			if self.currentShot == shot then self.currentShot = nil end
+			finishShot(shot)
+		end
+		self.executing = false
+		setPistolVisible(self, false)
+		applyPhase(self)
+	end)
+end
+
+-- opts = { scale = <arena-derived world scale>, seatY = <chair surface Y> }
+function CanteenBoss.spawn(marker, parent, opts)
+	local template = findTemplate()
+	if not (template and marker and parent) then return nil end
+	opts = opts or {}
+	local pelvisOffset = seatedPelvisOffset(template)
+
+	local model = template:Clone()
+	model.Name = "CanteenBoss"
+	local initialPoses = model:FindFirstChild("InitialPoses")
+	if initialPoses then initialPoses:Destroy() end
+	local animSaves = model:FindFirstChild("AnimSaves")
+	if animSaves then animSaves:Destroy() end
+
+	local root = model:FindFirstChild("RootPart")
+	if not (root and root:IsA("BasePart")) then
+		model:Destroy()
+		return nil
+	end
+	model.PrimaryPart = root
+	-- Same world scale as the diners: he sits at THEIR table, so a scale of his
+	-- own would read as a different room. BossScale multiplies it rather than
+	-- replacing it.
+	local scale = math.clamp(
+		(tonumber(opts.scale) or 1) * (tonumber(marker:GetAttribute("BossScale")) or 1),
+		SCALE_LIMITS.min, SCALE_LIMITS.max)
+	if math.abs(scale - 1) > 0.001 then model:ScaleTo(scale) end
+
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = d == root
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CastShadow = false
+			d.Massless = true
+			if d:IsA("MeshPart") then
+				d.Color = Color3.new(1, 1, 1)
+				d.Material = Enum.Material.SmoothPlastic
+				-- RenderFidelity is a Plugin-security property at runtime. The
+				-- ServerStorage template is configured to Performance in Edit mode,
+				-- and Clone preserves it; writing it here aborts the live round.
+			end
+		end
+	end
+	root.Transparency = 1
+
+	local newspaper = model:FindFirstChild("Boss_Newspaper", true)
+	if newspaper and newspaper:IsA("MeshPart") then newspaper.DoubleSided = true end
+	local pistol = model:FindFirstChild("Boss_Pistol", true)
+	if pistol and pistol:IsA("BasePart") then pistol.Transparency = 1 end
+
+	-- Seat him on the chair the user actually built. PivotTo(marker.CFrame) put
+	-- his FEET on a marker that stands at hip height, which left him standing in
+	-- mid-air above the seat; the pelvis is the part that belongs on a chair.
+	if pelvisOffset and opts.seatY then
+		local facing = marker.CFrame - marker.CFrame.Position
+		model:PivotTo(CFrame.new(marker.Position.X, opts.seatY - pelvisOffset * scale, marker.Position.Z) * facing)
+	else
+		model:PivotTo(marker.CFrame)
+	end
+	model.Parent = parent
+
+	local controller = model:FindFirstChildOfClass("AnimationController")
+	if not controller then
+		controller = Instance.new("AnimationController")
+		controller.Name = "AnimationController"
+		controller.Parent = model
+	end
+	local animator = controller:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = controller
+	end
+
+	local self = setmetatable({
+		alive = true,
+		model = model,
+		pistol = pistol,
+		phase = "hidden",
+		tracks = {
+			LookUp = AnimationIds.load(animator, "Boss", "LookUp"),
+			LookDown = AnimationIds.load(animator, "Boss", "LookDown"),
+			Idle = AnimationIds.load(animator, "Boss", "Idle"),
+			Shoot = AnimationIds.load(animator, "Boss", "Shoot"),
+		},
+		queue = {},
+		executing = false,
+		currentShot = nil,
+		connections = {},
+	}, { __index = CanteenBoss })
+
+	local shoot = self.tracks.Shoot
+	if shoot then
+		table.insert(self.connections, shoot:GetMarkerReachedSignal("PistolShow"):Connect(function()
+			if self.currentShot then setPistolVisible(self, true) end
+		end))
+		table.insert(self.connections, shoot:GetMarkerReachedSignal("Fire"):Connect(function()
+			local shot = self.currentShot
+			if shot then fireOnce(self, shot) end
+		end))
+	end
+
+	holdReading(self)
+	return self
+end
+
+function CanteenBoss.setPhase(self, phase, duration)
+	if not self.alive then return end
+	self.phase = phase
+	self.phaseDuration = duration
+	applyPhase(self)
+end
+
+function CanteenBoss.execute(self, onFire, onDone)
+	if not self.alive then
+		onFire()
+		onDone()
+		return
+	end
+	table.insert(self.queue, {
+		onFire = onFire,
+		onDone = onDone,
+		fired = false,
+		finished = false,
+	})
+	pump(self)
+end
+
+function CanteenBoss.destroy(self)
+	if not self.alive then return end
+	self.alive = false
+	for _, connection in self.connections do connection:Disconnect() end
+	table.clear(self.connections)
+	for _, shot in self.queue do finishShot(shot) end
+	table.clear(self.queue)
+	if self.currentShot then finishShot(self.currentShot) end
+	self.currentShot = nil
+	for _, track in self.tracks do
+		pcall(track.Stop, track, 0)
+	end
+	if self.model.Parent then self.model:Destroy() end
+end
+
+return CanteenBoss

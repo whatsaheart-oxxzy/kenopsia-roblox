@@ -35,6 +35,8 @@ local BloodFX = require(script.Parent.BloodFX)
 local CanteenProps = require(script.Parent.CanteenProps)
 local Pacing = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 	:WaitForChild("Rules"):WaitForChild("Pacing"))
+local AnimationIds = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("AnimationIds"))
 
 local CanteenProtocol = {}
 
@@ -47,7 +49,7 @@ local FORK_CAPACITY = 4
 -- exist so a macro cannot empty a plate in one frame, and they are checked on
 -- the SERVER clock so a client cannot argue about them.
 local MIN_PLATE_INTERVAL = 0.16
-local MIN_MOUTH_INTERVAL = 0.35
+local MIN_MOUTH_INTERVAL = 0.50
 
 -- How long a swallow stays detectable. An eating window that overlaps the
 -- watching phase AT ANY POINT is caught, so committing to a mouthful just
@@ -59,6 +61,9 @@ local HIDDEN_MIN, HIDDEN_MAX = 2.0, 4.0
 local LOWERING_TIME = 0.35
 local WATCH_MIN, WATCH_MAX = 0.9, 1.8
 local RAISING_TIME = 0.30
+-- Four simultaneous catches are executed serially. The watchdog is a ceiling,
+-- not a mandatory hold: the loop exits as soon as every visible shot finishes.
+local EXECUTION_GRACE = 8.0
 
 -- RANKING BANDS. runRound returns one ordering key per player and MachineFlow
 -- sums those across rounds, then ranks and distributes exactly 1700. The bands
@@ -92,10 +97,12 @@ local MARKER_GROUPS = {
 	{ folder = "PlayerCameras", key = "cams" },
 	{ folder = "ExecutionMuzzles", key = "muzzles" },
 }
-local SOLO_MARKERS = { "Observer", "ObserverCamera", "SpectatorCamera" }
+local SOLO_MARKERS = { "Observer", "BossSeat", "ObserverCamera", "SpectatorCamera" }
 
 local current = nil
 local TrialInput
+local arenaBusy = false
+local arenaOwnerSessionId = nil
 
 -- ARENA --------------------------------------------------------------------
 
@@ -319,6 +326,14 @@ end
 
 -- ELIMINATION ---------------------------------------------------------------
 
+local function roundActive(st)
+	return current == st
+		and st.active
+		and st.room ~= nil
+		and st.room.phase == "Playing"
+		and st.room.sessionId == st.sessionId
+end
+
 local function eliminate(st, userId, reason)
 	local ps = st.state[userId]
 	if not ps or ps.finished or ps.eliminated then return end
@@ -326,19 +341,59 @@ local function eliminate(st, userId, reason)
 	ps.eliminatedAt = os.clock() - st.startedAt
 	ps.fork = 0
 
-	local subject = st.subjects[userId]
-	if subject and subject.char and subject.hum and subject.hum.Health > 0 then
-		-- The body STAYS at the table: seeing the empty chairs fill up with the
-		-- caught is the pressure the round runs on. It is cleaned up with
-		-- everything else when the round ends.
-		BloodFX.bleed(subject.char, st.audience, st.roundToken)
-		subject.hum.Health = 0
-	end
-
 	tellOne(userId, { kind = "cpout", reason = reason })
 	announce(st.room, { kind = "announce", style = "death",
 		text = ("PROTOCOL VIOLATION - %s"):format(
 			(Players:GetPlayerByUserId(userId) and Players:GetPlayerByUserId(userId).DisplayName) or "SUBJECT") })
+
+	-- Logical elimination happens immediately, but the body and blood wait for
+	-- the boss's first visible muzzle event. Simultaneous catches are queued by
+	-- the prop controller so the Shoot track is never restarted mid-execution.
+	local subject = st.subjects[userId]
+	if not (subject and subject.char and subject.hum and subject.hum.Health > 0) then
+		-- No live subject to shoot (left, reset, respawned). There is still a
+		-- PS1 body sitting at that plate, and leaving it breathing through an
+		-- elimination reads as a bug at the table. Drop it without a muzzle.
+		if st.props and st.props.dinerDie and ps.seat then
+			pcall(st.props.dinerDie, ps.seat)
+		end
+		return
+	end
+	st.pendingExecutions = (st.pendingExecutions or 0) + 1
+	local completed = false
+	local function finish()
+		if completed then return end
+		completed = true
+		st.pendingExecutions = math.max(0, (st.pendingExecutions or 1) - 1)
+	end
+	local function fire()
+		if not roundActive(st) then return end
+		local live = st.subjects[userId]
+		local plr = Players:GetPlayerByUserId(userId)
+		if live ~= subject or not plr or plr.Character ~= subject.char then return end
+		if not subject.char.Parent or not subject.hum.Parent or subject.hum.Health <= 0 then return end
+
+		-- Keep the R15 body intact instead of exploding into Roblox body parts.
+		-- The avatar is invisible at the table; the PS1 diner is what falls.
+		subject.hum.BreakJointsOnDeath = false
+		local diner = st.props and st.props.diner and ps.seat and st.props.diner(ps.seat)
+		if diner then st.props.dinerDie(ps.seat) end
+		local hitPart = subject.char:FindFirstChild("Head") or subject.root
+		local at = diner and diner:headPosition() or (hitPart and hitPart:IsA("BasePart") and hitPart.Position)
+		if at then BloodFX.hit(at, st.audience) end
+		subject.hum.Health = 0
+	end
+
+	if st.props and st.props.execute then
+		local ok = pcall(st.props.execute, fire, finish)
+		if not ok then
+			fire()
+			finish()
+		end
+	else
+		fire()
+		finish()
+	end
 end
 
 -- OBSERVER ------------------------------------------------------------------
@@ -367,16 +422,27 @@ end
 local function sleepWhileActive(st, duration)
 	local deadline = os.clock() + duration
 	while os.clock() < deadline do
-		if not st.active then return false end
+		if not roundActive(st) then return false end
 		task.wait(0.05)
 	end
-	return st.active
+	return roundActive(st)
 end
 
 local function runObserver(st)
 	local rng = Random.new()
-	while st.active do
+	while roundActive(st) do
 		if not sleepWhileActive(st, rng:NextNumber(HIDDEN_MIN, HIDDEN_MAX)) then break end
+		-- Never open the eyes while an execution is still being played. The boss
+		-- is a serial actor: he cannot lower the paper and shoot at the same
+		-- time, so a sweep launched during a queue of shots would arrive with NO
+		-- visible wind-up and the survivors would be caught on a tell that was
+		-- never shown. Three simultaneous catches take ~4.9 s, which is longer
+		-- than the shortest hidden+watch cycle, so this is reachable in a
+		-- four-player room rather than theoretical. The rule waits for the
+		-- picture; the picture is never faked to keep up with the rule.
+		while (st.pendingExecutions or 0) > 0 do
+			if not sleepWhileActive(st, 0.1) then return end
+		end
 		setPhase(st, "lowering", LOWERING_TIME)
 		if not sleepWhileActive(st, LOWERING_TIME) then break end
 
@@ -406,9 +472,23 @@ local function handleAction(player, action)
 	local ps = st.state[player.UserId]
 	-- A finished player is SAFE and silent: no further input can un-finish them
 	-- or get them caught after the fact.
-	if not ps or ps.finished or ps.eliminated then return end
+	if not ps or ps.finished or ps.finishing or ps.eliminated then return end
+	local subject = st.subjects[player.UserId]
+	if not subject
+		or player.Character ~= subject.char
+		or not subject.char.Parent
+		or not subject.hum.Parent
+		or subject.hum.Health <= 0
+	then
+		eliminate(st, player.UserId, "subject lost")
+		return
+	end
 
 	local now = os.clock()
+	if st.deadline and now >= st.deadline then
+		st.acceptInput = false
+		return
+	end
 
 	if action == "plate" then
 		if now < (ps.nextPlateAt or 0) then return end
@@ -450,9 +530,21 @@ local function handleAction(player, action)
 	end
 
 	if ps.eaten >= PEAS_TOTAL then
-		ps.finished = true
-		ps.finishedAt = now - st.startedAt
-		tellOne(player.UserId, { kind = "cpdone", at = ps.finishedAt })
+		-- The last mouthful is not safe until its complete visible/detectable
+		-- window closes. A watcher who opens during that interval still catches
+		-- the player; only then does the run become finished and immune.
+		ps.finishing = true
+		local finishAt = ps.eatUntil
+		task.delay(math.max(0, finishAt - os.clock()), function()
+			local remaining = finishAt - os.clock()
+			if remaining > 0 then task.wait(remaining) end
+			if not roundActive(st) then return end
+			if st.state[player.UserId] ~= ps or ps.eliminated or ps.finished then return end
+			ps.finishing = false
+			ps.finished = true
+			ps.finishedAt = os.clock() - st.startedAt
+			tellOne(player.UserId, { kind = "cpdone", at = ps.finishedAt })
+		end)
 	end
 end
 
@@ -464,6 +556,9 @@ function CanteenProtocol.init()
 		TrialInput.Name = "TrialInput"
 		TrialInput.Parent = folder
 	end
+	-- Decides once whether the published clips play in this place; the boss
+	-- and diners load their tracks through the same module.
+	AnimationIds.warmup()
 	TrialInput.OnServerEvent:Connect(function(player, payload)
 		if type(payload) ~= "table" then return end
 		if payload.trialId ~= "canteen" then return end
@@ -476,7 +571,84 @@ end
 
 -- ROUND ---------------------------------------------------------------------
 
-function CanteenProtocol.runRound(room, roundIndex)
+local function cleanupRound(st)
+	if not st or st.cleaned then return end
+	st.cleaned = true
+	st.active = false
+	st.acceptInput = false
+	if current == st then current = nil end
+
+	if st.observerThread then
+		pcall(task.cancel, st.observerThread)
+		st.observerThread = nil
+	end
+	if not st.endAnnounced and st.room then
+		announce(st.room, { kind = "cpend" })
+		st.endAnnounced = true
+	end
+
+	for _, r in ipairs(st.restore or {}) do
+		if r.root and r.root.Parent then r.root.Anchored = r.anchored end
+		for inst, transparency in r.visibility or {} do
+			if inst.Parent then inst.Transparency = transparency end
+		end
+		if r.hum and r.hum.Parent then
+			r.hum.WalkSpeed = r.walk
+			r.hum.AutoRotate = r.autoRotate
+			r.hum.BreakJointsOnDeath = r.breakJoints
+			if r.useJumpPower then
+				r.hum.JumpPower = r.jumpPower
+			else
+				r.hum.JumpHeight = r.jumpHeight
+			end
+		end
+	end
+
+	for userId, subject in st.subjects or {} do
+		if subject.char and subject.char.Parent then
+			subject.char:SetAttribute("XBotMoves", "")
+		end
+		local plr = Players:GetPlayerByUserId(userId)
+		local char = plr and plr.Character
+		if char and char ~= subject.char then char:SetAttribute("XBotMoves", "") end
+	end
+
+	if st.props then
+		pcall(st.props.destroy)
+		st.props = nil
+	end
+	pcall(BloodFX.clear, st.roundToken, st.audience)
+	for userId in st.state or {} do
+		tellOne(userId, { kind = "role", role = "none" })
+	end
+end
+
+function CanteenProtocol.cleanup(ctx)
+	local st = current
+	if not st then return end
+	if ctx and ctx.sessionId ~= nil
+		and tostring(ctx.sessionId) ~= tostring(st.sessionId) then
+		return
+	end
+	cleanupRound(st)
+end
+
+local function waitForArena(room)
+	local announced = false
+	while arenaBusy do
+		if #room.members == 0 or room.phase ~= "Playing" then return false end
+		if not announced then
+			announced = true
+			announce(room, { kind = "announce", text = "CANTEEN OCCUPIED. STANDBY." })
+		end
+		task.wait(0.25)
+	end
+	arenaBusy = true
+	arenaOwnerSessionId = room.sessionId
+	return true
+end
+
+local function runRoundInner(room, roundIndex, guard)
 	local scores = {}
 	for _, mm in room.members do scores[mm.userId] = 0 end
 
@@ -511,7 +683,11 @@ function CanteenProtocol.runRound(room, roundIndex)
 		acceptInput = false,
 		phase = "hidden",
 		startedAt = os.clock(),
+		pendingExecutions = 0,
+		restore = {},
 	}
+	current = st
+	guard.cleanup = function() cleanupRound(st) end
 
 	-- Built AFTER validateArena, never before: the gate raycasts from the
 	-- Observer to every MouthTarget, and props standing on the table during
@@ -527,13 +703,12 @@ function CanteenProtocol.runRound(room, roundIndex)
 	-- but the loop is written so a fifth member is skipped rather than
 	-- overwriting seat 1 -- silently stacking two players on one chair would be
 	-- a far worse failure than one player sitting out.
-	local restore = {}
 	local seatIndex = 0
 	for _, mm in room.members do
 		local s = subjects[mm.userId]
 		st.state[mm.userId] = {
 			remaining = PEAS_TOTAL, fork = 0, eaten = 0,
-			finished = false, eliminated = s == nil,
+			finished = false, finishing = false, eliminated = s == nil,
 			eatUntil = 0, nextPlateAt = 0, nextMouthAt = 0,
 		}
 		if s and seatIndex < #SEAT_IDS then
@@ -541,8 +716,17 @@ function CanteenProtocol.runRound(room, roundIndex)
 			local i = seatIndex
 			st.state[mm.userId].seat = i
 
-			table.insert(restore, { root = s.root, hum = s.hum,
-				anchored = s.root.Anchored, walk = s.hum.WalkSpeed, jump = s.hum.JumpPower })
+			table.insert(st.restore, {
+				root = s.root,
+				hum = s.hum,
+				anchored = s.root.Anchored,
+				walk = s.hum.WalkSpeed,
+				autoRotate = s.hum.AutoRotate,
+				breakJoints = s.hum.BreakJointsOnDeath,
+				useJumpPower = s.hum.UseJumpPower,
+				jumpPower = s.hum.JumpPower,
+				jumpHeight = s.hum.JumpHeight,
+			})
 
 			s.hum.Health = s.hum.MaxHealth
 			s.hum.WalkSpeed = 0
@@ -554,24 +738,65 @@ function CanteenProtocol.runRound(room, roundIndex)
 			s.root.Anchored = true
 			s.char:SetAttribute("XBotMoves", "eat")
 
+			-- The PS1 diner is the body at the table; the avatar stays the
+			-- Humanoid the rules act on and is simply hidden underneath it.
+			-- Only when a diner actually spawned -- an empty rig slot must not
+			-- leave a player with no body at all.
+			local diner = st.props.seatDiner and st.props.seatDiner(i)
+			if diner then
+				local visibility = {}
+				for _, d in s.char:GetDescendants() do
+					if (d:IsA("BasePart") or d:IsA("Decal")) and d.Transparency < 1 then
+						visibility[d] = d.Transparency
+						d.Transparency = 1
+					end
+				end
+				st.restore[#st.restore].visibility = visibility
+			end
+
+			-- One fixed table camera for everybody, seat-independent: the
+			-- ObserverCamera marker looks down the table at the boss with all
+			-- four diners in frame, so you watch your own body eat. It is a
+			-- validated SOLO_MARKER, so it exists whenever the round runs.
+			local eye = a.ObserverCamera.CFrame
+			local aim = eye.Position + eye.LookVector * 10
 			tellOne(mm.userId, { kind = "role", role = "spectate",
-				pos = { a.cams[i].Position.X, a.cams[i].Position.Y, a.cams[i].Position.Z },
-				look = { a.plates[i].Position.X, a.plates[i].Position.Y, a.plates[i].Position.Z },
+				pos = { eye.Position.X, eye.Position.Y, eye.Position.Z },
+				look = { aim.X, aim.Y, aim.Z },
 				roundToken = st.roundToken })
 		end
 	end
 
+	do
+		local boss = st.props.boss
+		local bossTracks = 0
+		for _ in (boss and boss.tracks or {}) do bossTracks += 1 end
+		local diners, scale, eatClip = 0, nil, false
+		for _, d in (st.props.diners or {}) do
+			diners += 1
+			scale = d.scale
+			if d.tracks.Eat then eatClip = true end
+		end
+		-- Diners are deliberately still: no idle track, and no eat clip until one
+		-- is published. "eat=none" is the expected reading, not a fault.
+		print(("[CP] rigs: boss=%s (%d tracks) diners=%d scale=%.2f eat=%s published=%s")
+			:format(boss and "seated" or "MISSING", bossTracks, diners, scale or 0,
+				eatClip and "clip" or "none", tostring(AnimationIds.publishedPlayable)))
+	end
+
 	announce(room, { kind = "announce", text = "EAT EVERYTHING. DO NOT BE SEEN." })
-	task.wait(2.4)
+	if not sleepWhileActive(st, 2.4) then return scores end
 
 	for c = 3, 1, -1 do
+		if not roundActive(st) then return scores end
 		announce(room, { kind = "count", n = c })
-		task.wait(1)
+		if not sleepWhileActive(st, 1) then return scores end
 	end
+	if not roundActive(st) then return scores end
 	announce(room, { kind = "go" })
 
-	current = st
 	st.startedAt = os.clock()
+	st.deadline = st.startedAt + ROUND_TIME
 	st.acceptInput = true
 	for _, mm in room.members do pushState(st, mm.userId) end
 
@@ -581,19 +806,56 @@ function CanteenProtocol.runRound(room, roundIndex)
 	print(("[CP] go; members=%d seated=%d peas=%d token=%s")
 		:format(#room.members, seatIndex, PEAS_TOTAL, st.roundToken))
 
-	local observerThread = task.spawn(runObserver, st)
+	st.observerThread = task.spawn(runObserver, st)
 
-	local deadline = st.startedAt + ROUND_TIME
-	while os.clock() < deadline do
+	local deadline = st.deadline
+	local hardDeadline = deadline + EXECUTION_GRACE
+	while os.clock() < hardDeadline do
 		task.wait(0.1)
-		if #room.members == 0 then break end
-		if room.phase ~= "Playing" then break end
-		local anyLeft = false
-		for _, ps in st.state do
-			if not (ps.finished or ps.eliminated) then anyLeft = true break end
+		if not roundActive(st) or #room.members == 0 then break end
+		-- The grace period is presentation/settlement time only. No new plate or
+		-- mouth action is accepted after the authored round deadline.
+		if os.clock() >= deadline then st.acceptInput = false end
+		-- Reset, respawn and subject loss are terminal. Checking in the server
+		-- loop closes the gap even when the player sends no further remote.
+		for userId, ps in st.state do
+			if not (ps.finished or ps.eliminated) then
+				local subject = st.subjects[userId]
+				local plr = Players:GetPlayerByUserId(userId)
+				if not subject
+					or not plr
+					or plr.Character ~= subject.char
+					or not subject.char.Parent
+					or not subject.hum.Parent
+					or subject.hum.Health <= 0
+				then
+					eliminate(st, userId, "subject lost")
+				end
+			end
 		end
-		if not anyLeft then break end
+		local anyLeft = false
+		local anyFinishing = false
+		for _, ps in st.state do
+			if ps.finishing and not ps.eliminated then anyFinishing = true end
+			if not (ps.finished or ps.eliminated) then
+				anyLeft = true
+			end
+		end
+		if not anyLeft and (st.pendingExecutions or 0) == 0 then break end
+		if os.clock() >= deadline
+			and (st.pendingExecutions or 0) == 0
+			and not anyFinishing
+		then
+			break
+		end
 	end
+	st.acceptInput = false
+	if st.observerThread then
+		pcall(task.cancel, st.observerThread)
+		st.observerThread = nil
+	end
+	announce(room, { kind = "cpend" })
+	st.endAnnounced = true
 
 	local finished, eliminated = 0, 0
 	for _, ps in st.state do
@@ -605,15 +867,6 @@ function CanteenProtocol.runRound(room, roundIndex)
 	end
 	print(("[CP] round over, elapsed=%.1f finished=%d caught=%d")
 		:format(os.clock() - st.startedAt, finished, eliminated))
-
-	st.active = false
-	st.acceptInput = false
-	current = nil
-	-- The observer loop only checks `active` between waits, so it can outlive
-	-- this line by up to one 0.05 s tick. Cancelling it outright avoids a stray
-	-- phase broadcast landing after the round card is already gone.
-	task.cancel(observerThread)
-	announce(room, { kind = "cpend" })
 
 	local elapsed = os.clock() - st.startedAt
 	for userId, ps in st.state do
@@ -630,27 +883,28 @@ function CanteenProtocol.runRound(room, roundIndex)
 		scores[userId] = key
 	end
 
-	task.wait(1.6)
-
-	for _, r in ipairs(restore) do
-		if r.root.Parent then
-			r.root.Anchored = r.anchored
-		end
-		if r.hum.Parent then
-			r.hum.WalkSpeed = r.walk
-			r.hum.JumpPower = r.jump
-		end
-	end
-	st.props.destroy()
-	BloodFX.clear(st.roundToken, audience)
-	for _, s in livingOf(room) do
-		s.char:SetAttribute("XBotMoves", "")
-	end
-	for _, mm in room.members do
-		tellOne(mm.userId, { kind = "role", role = "none" })
-	end
+	sleepWhileActive(st, 1.6)
 
 	return scores
+end
+
+function CanteenProtocol.runRound(room, roundIndex)
+	local emptyScores = {}
+	for _, mm in room.members do emptyScores[mm.userId] = 0 end
+	if not waitForArena(room) then return emptyScores end
+
+	local owner = room.sessionId
+	local guard = { cleanup = function() end }
+	local ok, result = xpcall(function()
+		return runRoundInner(room, roundIndex, guard)
+	end, debug.traceback)
+	pcall(guard.cleanup)
+	if arenaOwnerSessionId == owner then
+		arenaBusy = false
+		arenaOwnerSessionId = nil
+	end
+	if not ok then error(result, 0) end
+	return result
 end
 
 return CanteenProtocol

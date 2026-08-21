@@ -170,13 +170,60 @@ local TRIAL_TEXT = {
 			"Finish first  ranks highest",
 		},
 	},
+	-- MP-05 D15: the neutral fallback. It used to be `birdhunt`, which showed
+	-- the SNIPER controls for any id without a row. New trials never need a row
+	-- here: their text ships in TrialClients/<id>.luau as `controlsText`.
+	default = {
+		sec1 = "PLAYERS:", sec2 = "RULE:",
+		Desktop = { Row1 = "Move", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = true,
+			noteRows = { Row1b = true, Row2 = true, Row3 = true } },
+		Mobile = { Row1 = "Stick  Move", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = false },
+		Console = { Row1 = "LS  Move", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = false },
+		scoring = {},
+	},
 }
+
+-- MP-05 D15: a TrialClients/<id> module may export
+--   controlsText = { sec1?, sec2?, lines = {Row1, Row1b, Row2, Row3} | Desktop/Mobile/Console = {...4 lines...}, scoring? }
+-- This turns that into the TRIAL_TEXT row shape above. Cached per id; the
+-- require is pcall'd so a broken module falls back to TRIAL_TEXT.default.
+local trialClientsFolder = script.Parent:FindFirstChild("TrialClients")
+local controlsTextCache = {}
+local function fromControlsText(ct)
+	local function rows(list)
+		list = list or ct.lines or {}
+		return {
+			Row1 = list[1] or "", Row1b = list[2] or "", Row2 = list[3] or "", Row3 = list[4] or "",
+			icons = ct.icons == true,
+		}
+	end
+	return {
+		sec1 = ct.sec1 or "PLAYERS:", sec2 = ct.sec2 or "RULE:",
+		Desktop = rows(ct.Desktop), Mobile = rows(ct.Mobile), Console = rows(ct.Console),
+		scoring = ct.scoring or {},
+	}
+end
+local function moduleControlsText(trialId)
+	if type(trialId) ~= "string" or trialId == "" then return nil end
+	if controlsTextCache[trialId] ~= nil then return controlsTextCache[trialId] or nil end
+	local ms = trialClientsFolder and trialClientsFolder:FindFirstChild(trialId)
+	local result = false
+	if ms then
+		local ok, mod = pcall(require, ms)
+		if ok and type(mod) == "table" and type(mod.controlsText) == "table" then
+			result = fromControlsText(mod.controlsText)
+		end
+	end
+	controlsTextCache[trialId] = result
+	return result or nil
+end
 
 local function applyControlsText()
 	local info = machine:FindFirstChild("Info")
 	local cw = info and info:FindFirstChild("ControlsWindow")
 	if not cw then return end
-	local trial = TRIAL_TEXT[machine:GetAttribute("TrialId")] or TRIAL_TEXT.birdhunt
+	local trialId = machine:GetAttribute("TrialId")
+	local trial = moduleControlsText(trialId) or TRIAL_TEXT[trialId] or TRIAL_TEXT.default
 	local t = trial[currentPlatform] or trial.Desktop
 	for _, rowName in ipairs({ "Row1", "Row1b", "Row2", "Row3" }) do
 		local row = cw:FindFirstChild(rowName)

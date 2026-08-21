@@ -49,6 +49,19 @@ local expected = {
 	{ "minefield", 2, 4 }, { "minefield", 3, 3 }, { "minefield", 4, 3 },
 	{ "birdhunt", 2, 4 },  { "birdhunt", 3, 3 },  { "birdhunt", 4, 4 },
 	{ "canteen", 2, 3 },   { "canteen", 3, 2 },   { "canteen", 4, 2 },
+	-- MP-05 section A rows, one per new trial.
+	{ "carve", 2, 3 },      { "carve", 3, 3 },      { "carve", 4, 2 },
+	{ "armory", 2, 3 },     { "armory", 3, 2 },     { "armory", 4, 2 },
+	{ "upstream", 2, 3 },   { "upstream", 3, 3 },   { "upstream", 4, 2 },
+	{ "floorcheck", 2, 3 }, { "floorcheck", 3, 3 }, { "floorcheck", 4, 2 },
+	{ "clearance", 2, 2 },  { "clearance", 3, 2 },  { "clearance", 4, 2 },
+	{ "carrier", 2, 2 },    { "carrier", 3, 3 },    { "carrier", 4, 2 },
+	{ "breather", 2, 3 },   { "breather", 3, 3 },   { "breather", 4, 3 },
+	{ "sweep", 2, 3 },      { "sweep", 3, 2 },      { "sweep", 4, 2 },
+	{ "crawler", 2, 3 },    { "crawler", 3, 2 },    { "crawler", 4, 2 },
+	{ "ricochet", 2, 3 },   { "ricochet", 3, 3 },   { "ricochet", 4, 2 },
+	{ "stacker", 2, 3 },    { "stacker", 3, 3 },    { "stacker", 4, 3 },
+	{ "sorting", 2, 3 },    { "sorting", 3, 2 },    { "sorting", 4, 2 },
 }
 for _, row in ipairs(expected) do
 	local got = Pacing.roundsFor(row[1], row[2])
@@ -65,18 +78,45 @@ check(Pacing.RoundSeconds.minefield == 55 and Pacing.RoundSeconds.birdhunt == 90
 	and Pacing.RoundSeconds.canteen == 45, "round limits 55 / 90 / 45 s")
 check(Pacing.TrialPointPool == 1700, "point pool is 1700")
 
+-- MP-05 D8: one RoundSeconds number per new trial, section A values.
+local expectedSeconds = {
+	carve = 45, armory = 50, upstream = 40, floorcheck = 35, clearance = 50, carrier = 45,
+	breather = 30, sweep = 45, crawler = 40, ricochet = 45, stacker = 20, sorting = 40,
+}
+local secondsOk, secondsBad = true, {}
+for id, secs in pairs(expectedSeconds) do
+	if Pacing.RoundSeconds[id] ~= secs then
+		secondsOk = false
+		secondsBad[#secondsBad + 1] = id .. "=" .. tostring(Pacing.RoundSeconds[id])
+	end
+end
+check(secondsOk, "MP-05 RoundSeconds match section A", table.concat(secondsBad, ","))
+
+-- Every id in Playlist.Ids has BOTH a rounds row and a RoundSeconds value.
+local rowsOk, rowsBad = true, {}
+for _, id in ipairs(Playlist.Ids) do
+	local r2, r3, r4 = Pacing.roundsFor(id, 2), Pacing.roundsFor(id, 3), Pacing.roundsFor(id, 4)
+	if not (r2 and r3 and r4 and Pacing.RoundSeconds[id]) then
+		rowsOk = false
+		rowsBad[#rowsBad + 1] = id
+	end
+end
+check(rowsOk, "every playlist id has a rounds row and a round limit", table.concat(rowsBad, ","))
+
 -- 2. PLAYLIST ----------------------------------------------------------------
 
-print("\nPLAYLIST -- deterministic shuffle over three ids")
+print("\nPLAYLIST -- deterministic shuffle over every id")
 
 local function key(order) return table.concat(order, ",") end
+
+check(#Playlist.Ids == 15, "playlist knows 15 ids", string.format("got %d", #Playlist.Ids))
 
 -- Every id exactly once, never a repeat, for a wide sweep of seeds.
 local malformed = 0
 for seed = 1, 2000 do
 	local order = Playlist.order(seed)
 	local seen = {}
-	if #order ~= 3 then malformed = malformed + 1 end
+	if #order ~= #Playlist.Ids then malformed = malformed + 1 end
 	for _, id in ipairs(order) do
 		if seen[id] then malformed = malformed + 1 end
 		seen[id] = true
@@ -88,9 +128,11 @@ end
 check(malformed == 0, "2000 seeds: every order is a permutation, no repeats",
 	string.format("%d malformed", malformed))
 
--- All six permutations are reachable. The plan asks for six seeds giving six
--- distinct orders; searching for them proves reachability rather than asserting
--- a hand-picked list that could pass on a broken shuffle.
+-- Distinct orders are reachable. With fifteen ids the permutation space is far
+-- larger than 2000 seeds can cover, so the property is "at least six distinct
+-- orders within 2000 seeds" (the original three-id proof asked for all six);
+-- searching for them proves the shuffle actually varies with the seed rather
+-- than asserting a hand-picked list that could pass on a broken shuffle.
 local found, distinct = {}, 0
 local witness = {}
 for seed = 1, 2000 do
@@ -98,12 +140,26 @@ for seed = 1, 2000 do
 	if not found[k] then
 		found[k] = seed
 		distinct = distinct + 1
-		witness[#witness + 1] = string.format("seed %d -> %s", seed, k)
+		if #witness < 6 then witness[#witness + 1] = string.format("seed %d -> %s", seed, k) end
 	end
-	if distinct == 6 then break end
 end
-check(distinct == 6, "all 6 permutations reachable", string.format("got %d", distinct))
+check(distinct >= 6, "at least 6 distinct orders within 2000 seeds", string.format("got %d", distinct))
 for _, w in ipairs(witness) do print("          " .. w) end
+
+-- The three shipped ids still reach every relative order among themselves.
+local rel, relCount = {}, 0
+for seed = 1, 2000 do
+	local sub = {}
+	for _, id in ipairs(Playlist.order(seed)) do
+		if id == "minefield" or id == "birdhunt" or id == "canteen" then sub[#sub + 1] = id end
+	end
+	local k = key(sub)
+	if not rel[k] then
+		rel[k] = true
+		relCount = relCount + 1
+	end
+end
+check(relCount == 6, "the shipped three reach all 6 relative orders", string.format("got %d", relCount))
 
 -- Determinism: the same seed must give the same order every time.
 local stable = true
@@ -114,6 +170,109 @@ check(stable, "same seed always yields the same order")
 
 check(Playlist.isKnown("canteen") and not Playlist.isKnown("tablemanners"),
 	"isKnown accepts canteen and rejects the old id")
+check(Playlist.isKnown("carve") and Playlist.isKnown("sorting") and not Playlist.isKnown("chisel"),
+	"isKnown accepts the new ids and rejects an unlisted one")
+
+-- MP-05 D7: the session slice. Playlist.session keeps the first N ENABLED ids
+-- of an order, in order; N = 0/nil keeps all of them.
+do
+	local order = Playlist.order(77)
+	local enabled = {}
+	for _, id in ipairs(Playlist.Ids) do enabled[id] = true end
+	local all = Playlist.session(order, enabled, 0)
+	check(#all == #order and key(all) == key(order), "session(0) keeps the whole order")
+	check(#Playlist.session(order, enabled, nil) == #order, "session(nil) keeps the whole order")
+	local five = Playlist.session(order, enabled, 5)
+	local prefixOk = #five == 5
+	for i = 1, 5 do
+		if five[i] ~= order[i] then prefixOk = false end
+	end
+	check(prefixOk, "session(5) is the first five of the order")
+	-- Only the enabled ids count towards N and disabled ones never appear.
+	local three = { minefield = true, birdhunt = true, canteen = true }
+	local sess = Playlist.session(order, three, 5)
+	local onlyEnabled = #sess == 3
+	for _, id in ipairs(sess) do
+		if not three[id] then onlyEnabled = false end
+	end
+	check(onlyEnabled, "session drops disabled ids and stops at what is enabled")
+	local relOrder = {}
+	for _, id in ipairs(order) do
+		if three[id] then relOrder[#relOrder + 1] = id end
+	end
+	check(key(sess) == key(relOrder), "session preserves the shuffled relative order")
+	local two = Playlist.session(order, three, 2)
+	check(#two == 2 and two[1] == relOrder[1] and two[2] == relOrder[2],
+		"session(2) over three enabled ids is their first two")
+end
+
+-- REQ-IP-01: the reference game's minigame names must not appear in shipped
+-- source. The forbidden list is stored REVERSED here so this test file itself
+-- does not contain the names. Each phrase is checked in every spelling a
+-- shipped id, display name, comment or UI string could carry: Title Case,
+-- UPPER CASE, CamelCase, lowercase-joined, snake_case, UPPER_SNAKE and the
+-- plain lowercase words -- except that the plain lowercase form is skipped for
+-- a phrase beginning with "the ", which is ordinary English prose. Checked
+-- against Playlist.Ids and against every file default.project.json maps.
+do
+	local reversed = {
+		"teltnuag lesihc", "yrotcaf mraerif", "yaw gnorw", "gnitoof elbats",
+		"drazah lennut", "boj edisni", "kaerb ekoms", "smroftalp sirbed",
+		"rekaerb enips", "dnuober lahtel", "deifitrec tfilkrof", "retlif eht",
+		"ytrap enihcam",
+	}
+	local forbidden = {}
+	local function titleCase(phrase)
+		return (string.gsub(phrase, "(%a)([%w]*)", function(a, b) return string.upper(a) .. b end))
+	end
+	for _, r in ipairs(reversed) do
+		local phrase = string.reverse(r)
+		local title = titleCase(phrase)
+		forbidden[#forbidden + 1] = title
+		forbidden[#forbidden + 1] = string.upper(phrase)
+		forbidden[#forbidden + 1] = (string.gsub(title, " ", ""))
+		forbidden[#forbidden + 1] = (string.gsub(phrase, " ", ""))
+		forbidden[#forbidden + 1] = (string.gsub(phrase, " ", "_"))
+		forbidden[#forbidden + 1] = string.upper((string.gsub(phrase, " ", "_")))
+		if string.sub(phrase, 1, 4) ~= "the " then
+			forbidden[#forbidden + 1] = phrase
+		end
+	end
+	local function offending(text)
+		for _, f in ipairs(forbidden) do
+			if string.find(text, f, 1, true) then return f end
+		end
+		return nil
+	end
+	local idsClean = true
+	for _, id in ipairs(Playlist.Ids) do
+		if offending(id) then idsClean = false end
+	end
+	check(idsClean, "REQ-IP-01: no forbidden token in Playlist.Ids")
+
+	local project = io.open("default.project.json", "r")
+	local mapped, dirty, unreadable = 0, {}, {}
+	if project then
+		local json = project:read("*a")
+		project:close()
+		for path in string.gmatch(json, '"%$path"%s*:%s*"([^"]+)"') do
+			mapped = mapped + 1
+			local fh = io.open(path, "r")
+			if fh then
+				local body = fh:read("*a")
+				fh:close()
+				local hit = offending(body)
+				if hit then dirty[#dirty + 1] = path .. " (" .. hit .. ")" end
+			else
+				unreadable[#unreadable + 1] = path
+			end
+		end
+	end
+	check(project ~= nil and mapped >= 40, "default.project.json maps every shipped file",
+		string.format("mapped %d", mapped))
+	check(#unreadable == 0, "every mapped path exists", table.concat(unreadable, ", "))
+	check(#dirty == 0, "REQ-IP-01: no forbidden token in any shipped file", table.concat(dirty, ", "))
+end
 
 -- 3. SCORING -----------------------------------------------------------------
 

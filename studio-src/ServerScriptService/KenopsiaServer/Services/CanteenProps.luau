@@ -22,7 +22,11 @@
 -- and the eat window arrive through `opts`, because two copies of a rule drift
 -- apart and the drift is invisible until a player is scored on the wrong one.
 
+local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
+
+local CanteenBoss = require(script.Parent.CanteenBoss)
+local CanteenDiner = require(script.Parent.CanteenDiner)
 
 local CanteenProps = {}
 
@@ -60,6 +64,7 @@ local function decorate(part)
 	-- make the minigame quietly unlosable.
 	part.CanQuery = false
 	part.CanTouch = false
+	part.CastShadow = false
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
 	return part
@@ -105,7 +110,7 @@ local function makePea(tpl)
 	p.Name = "Pea"
 	p.Shape = Enum.PartType.Ball
 	p.Size = Vector3.new(PEA_SIZE, PEA_SIZE, PEA_SIZE)
-	p.Material = Enum.Material.Glass
+	p.Material = Enum.Material.SmoothPlastic
 	p.Color = Color3.fromRGB(96, 118, 58)
 	return decorate(p)
 end
@@ -124,7 +129,7 @@ local function makeFork(tpl)
 	local grip = Instance.new("Part")
 	grip.Name = "Grip"
 	grip.Size = Vector3.new(0.16, 0.16, 2.2)
-	grip.Material = Enum.Material.Metal
+	grip.Material = Enum.Material.SmoothPlastic
 	grip.Color = Color3.fromRGB(150, 152, 155)
 	decorate(grip)
 	grip.Parent = model
@@ -133,7 +138,7 @@ local function makeFork(tpl)
 		local tine = Instance.new("Part")
 		tine.Name = "Tine" .. i
 		tine.Size = Vector3.new(0.07, 0.07, 0.75)
-		tine.Material = Enum.Material.Metal
+		tine.Material = Enum.Material.SmoothPlastic
 		tine.Color = Color3.fromRGB(168, 170, 172)
 		decorate(tine)
 		tine.Parent = model
@@ -234,6 +239,25 @@ end
 -- opts: { peas = <count>, forkCapacity = <n>, eatWindow = <seconds> }
 local PROPS_FOLDER = "CP_Props"
 
+-- WHERE IS THE CHAIR? Not where the marker is. `Seats.P1..4` and `BossSeat`
+-- stand at the default R15 avatar's hip height, which in the shipped canteen is
+-- 2.6 studs above the actual seat pad -- the furniture is oversized and the
+-- markers were never re-authored for it. So ask the world instead of the marker:
+-- drop a ray and take whatever solid is under the seat. Falls back to the
+-- marker's own height, which is exactly the old (hovering) behaviour, so an
+-- arena with no chair under a marker still runs.
+local function seatSurfaceY(marker, ignore, ceilingY)
+	local rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Exclude
+	rp.FilterDescendantsInstances = ignore
+	local hit = workspace:Raycast(marker.Position + Vector3.new(0, 6, 0), Vector3.new(0, -30, 0), rp)
+	if not hit then return nil end
+	-- A surface at or above the mouth is not a chair -- it is something standing
+	-- on the chair. Refusing it keeps a stray prop from launching the diner.
+	if ceilingY and hit.Position.Y >= ceilingY then return nil end
+	return hit.Position.Y
+end
+
 function CanteenProps.build(arena, opts)
 	-- Idempotent, like the arena builder. MachineFlow runs runRound inside a
 	-- pcall, so a round that throws never reaches destroy() and would leave its
@@ -246,9 +270,49 @@ function CanteenProps.build(arena, opts)
 	local folder = Instance.new("Folder")
 	folder.Name = PROPS_FOLDER
 
+	-- ONE SCALE FOR THE WHOLE TABLE, derived from the arena rather than typed in.
+	-- Seat 1's chair and its MouthTarget are two anchors on the same body: the
+	-- pelvis belongs on the pad, the mouth belongs where the fork flies to. That
+	-- fixes the figure exactly, and it re-derives itself if the user rebuilds the
+	-- room at another size. Everyone at the table -- diners and the Observer --
+	-- shares it, because a warden at a different scale reads as a different room.
+	--
+	-- The ray must ignore every PLAYER BODY as well as the markers and our own
+	-- props. CanteenProtocol parks each character on its seat moments after this
+	-- runs, and any player already standing there measures as "chair" -- caught
+	-- live: seat P1 returned Y 15.68 off the avatar's own head instead of 9.71
+	-- off the chair, which would have seated the diner six studs in the air and,
+	-- because seat 1 also sets the table's scale, shrunk everyone at it.
+	local ignore = { arena.rig, workspace:FindFirstChild(PROPS_FOLDER) }
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr.Character then table.insert(ignore, plr.Character) end
+	end
+
+	local seatY = {}
+	for i = 1, #arena.seats do
+		seatY[i] = seatSurfaceY(arena.seats[i], ignore, arena.mouths[i].Position.Y)
+	end
+	local bossSeatY = seatSurfaceY(arena.BossSeat, ignore, arena.BossSeat.Position.Y + 6)
+
+	-- Scale off the first seat that actually found a chair, not blindly off seat
+	-- one: one unmeasurable seat must not resize the whole table.
+	local scaleSeat
+	for i = 1, #seatY do
+		if seatY[i] then
+			scaleSeat = i
+			break
+		end
+	end
+	local worldScale = (scaleSeat and CanteenDiner.scaleFor(seatY[scaleSeat], arena.mouths[scaleSeat].Position.Y)) or 1
+	print(("[CP] table scale %.3f (seat %s: chair %.2f -> mouth %.2f)"):format(
+		worldScale, scaleSeat and ("P" .. scaleSeat) or "none",
+		scaleSeat and seatY[scaleSeat] or -1,
+		scaleSeat and arena.mouths[scaleSeat].Position.Y or -1))
+
 	local self = {
 		folder = folder,
 		seats = {},
+		diners = {},
 		peaCount = opts.peas,
 		forkCapacity = opts.forkCapacity,
 		eatWindow = opts.eatWindow,
@@ -258,7 +322,7 @@ function CanteenProps.build(arena, opts)
 	for i = 1, #arena.plates do
 		local plateCF = arena.plates[i].CFrame
 		local seat = { peas = {}, forkLoad = {}, restCF = arena.forks[i].CFrame,
-			mouthCF = arena.mouths[i].CFrame, busy = false }
+			mouthCF = arena.mouths[i].CFrame, busy = false, eatGen = 0 }
 
 		for k = 1, self.peaCount do
 			local pea = makePea(tpl)
@@ -334,7 +398,41 @@ function CanteenProps.build(arena, opts)
 
 	folder.Parent = workspace
 
+	-- The mechanical Observer remains the invisible server authority. When an
+	-- authored boss template is available, it becomes the readable visual tell
+	-- while raycasts and phase timing continue to use the validated marker rig.
+	self.boss = CanteenBoss.spawn(arena.BossSeat, folder, { scale = worldScale, seatY = bossSeatY })
+	if self.boss then
+		setVisible(observer, false)
+		for _, d in observer:GetDescendants() do
+			if d:IsA("Light") then d.Enabled = false end
+		end
+	end
+
 	-- METHODS ---------------------------------------------------------------
+
+	-- The visible body at an occupied seat. Called by CanteenProtocol for each
+	-- seated member only, so empty chairs stay empty. Returns the actor or nil
+	-- (no template = no body; the mechanic does not care).
+	function self.seatDiner(seatIndex)
+		if not self.alive or self.diners[seatIndex] then return self.diners[seatIndex] end
+		local marker = arena.seats[seatIndex]
+		local diner = marker and CanteenDiner.spawn(marker, folder, seatIndex, {
+			scale = worldScale,
+			seatY = seatY[seatIndex],
+		}) or nil
+		self.diners[seatIndex] = diner
+		return diner
+	end
+
+	function self.diner(seatIndex)
+		return self.diners[seatIndex]
+	end
+
+	function self.dinerDie(seatIndex)
+		local diner = self.diners[seatIndex]
+		if diner then diner:die() end
+	end
 
 	function self.setPeas(seatIndex, remaining)
 		local seat = self.seats[seatIndex]
@@ -347,13 +445,14 @@ function CanteenProps.build(arena, opts)
 	function self.setFork(seatIndex, load)
 		local seat = self.seats[seatIndex]
 		if not seat then return end
+		seat.pendingForkLoad = math.max(0, math.floor(tonumber(load) or 0))
 		-- While a mouthful is in flight the animation owns the riders. The
 		-- server sets ps.fork = 0 the instant MOUTH is accepted, so without
 		-- this guard the state push would hide the load before it had left the
 		-- plate and the fork would travel to the mouth visibly EMPTY.
 		if seat.busy then return end
 		for k, rider in ipairs(seat.forkLoad) do
-			setVisible(rider, k <= load)
+			setVisible(rider, k <= seat.pendingForkLoad)
 		end
 		self.poseLoad(seatIndex, pivotOf(seat.fork))
 	end
@@ -373,8 +472,18 @@ function CanteenProps.build(arena, opts)
 	-- decoration timed independently of the rule.
 	function self.eat(seatIndex, load)
 		local seat = self.seats[seatIndex]
-		if not seat or seat.busy then return end
+		if not seat then return end
+		-- NEVER drop an accepted bite. The server has already consumed the load
+		-- by the time this runs; if the previous fork is still returning (a
+		-- scheduler hitch can stretch its 0.45 s past the 0.5 s mouth interval),
+		-- the old flight is superseded by generation and this one starts from
+		-- wherever the fork is now. An early return here would be exactly the
+		-- "invisible mouthful" -- eaten on the server, never seen at the table.
+		seat.eatGen += 1
+		local gen = seat.eatGen
 		seat.busy = true
+		local diner = self.diners[seatIndex]
+		if diner then diner:eat(self.eatWindow) end
 		-- Show exactly what is being carried. `load` is passed in rather than
 		-- read back from the fork, because by the time this runs the server has
 		-- already zeroed it.
@@ -383,35 +492,49 @@ function CanteenProps.build(arena, opts)
 		end
 		task.spawn(function()
 			local half = self.eatWindow / 2
-			local legs = { { seat.restCF, seat.mouthCF }, { seat.mouthCF, seat.restCF } }
-			for legIndex, leg in ipairs(legs) do
-				local from, to = leg[1], leg[2]
-				local t0 = os.clock()
-				while self.alive do
-					local a = (os.clock() - t0) / half
-					if a >= 1 then break end
-					local cf = from:Lerp(to, a)
-					poseFork(seat.fork, cf)
-					self.poseLoad(seatIndex, cf)
-					task.wait()
-				end
-				if not self.alive then break end
-				poseFork(seat.fork, to)
-				self.poseLoad(seatIndex, to)
-				-- The load is swallowed at the far end of the outbound leg, so
-				-- the fork comes back empty.
-				if legIndex == 1 then
-					for _, rider in ipairs(seat.forkLoad) do
-						setVisible(rider, false)
+			local startedAt = os.clock()
+			local fromCF = pivotOf(seat.fork)
+			local swallowed = false
+			-- One absolute timeline prevents a scheduler hitch in the outbound
+			-- leg from adding a second full half-window on the return.
+			while self.alive and seat.eatGen == gen do
+				local elapsed = os.clock() - startedAt
+				if elapsed >= self.eatWindow then break end
+				local cf
+				if elapsed < half then
+					cf = fromCF:Lerp(seat.mouthCF, elapsed / half)
+				else
+					if not swallowed then
+						swallowed = true
+						for _, rider in ipairs(seat.forkLoad) do setVisible(rider, false) end
 					end
+					cf = seat.mouthCF:Lerp(seat.restCF, (elapsed - half) / half)
 				end
+				poseFork(seat.fork, cf)
+				self.poseLoad(seatIndex, cf)
+				task.wait()
+			end
+			-- Superseded: the newer flight owns the fork and the busy flag now.
+			if seat.eatGen ~= gen then return end
+			if self.alive then
+				for _, rider in ipairs(seat.forkLoad) do setVisible(rider, false) end
+				poseFork(seat.fork, seat.restCF)
+				self.poseLoad(seatIndex, seat.restCF)
 			end
 			seat.busy = false
+			-- PLATE remains legal while the previous fork is returning. Reapply
+			-- the latest authoritative load now so that accepted food never stays
+			-- visually absent after the animation releases its riders.
+			if self.alive then self.setFork(seatIndex, seat.pendingForkLoad or 0) end
 		end)
 	end
 
 	function self.observerTo(phase, duration)
 		if not self.alive then return end
+		if self.boss then
+			self.boss:setPhase(phase, duration)
+			return
+		end
 		local down = (phase == "lowering" or phase == "watching")
 
 		-- NEWSPAPER, if the authored model brought one. The figure then stays
@@ -456,8 +579,25 @@ function CanteenProps.build(arena, opts)
 		end)
 	end
 
+	-- Serialised by CanteenBoss. The first callback is the authoritative shot;
+	-- the completion callback lets CanteenProtocol keep the round alive until
+	-- the visible execution has finished. With no authored boss the gameplay
+	-- still completes immediately instead of becoming dependent on an asset.
+	function self.execute(onFire, onDone)
+		if self.boss then
+			self.boss:execute(onFire, onDone)
+		else
+			onFire()
+			onDone()
+		end
+	end
+
 	function self.destroy()
+		if not self.alive then return end
 		self.alive = false
+		if self.boss then self.boss:destroy() end
+		for _, diner in self.diners do diner:destroy() end
+		table.clear(self.diners)
 		folder:Destroy()
 	end
 

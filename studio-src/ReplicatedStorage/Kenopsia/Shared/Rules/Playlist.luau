@@ -1,5 +1,5 @@
 --!nonstrict
--- PLAYLIST (Gate 1) -- the order the three trials are played in.
+-- PLAYLIST (Gate 1) -- the order the trials are played in.
 --
 -- PURE, and portable to Lua 5.1: see the header of Pacing.luau for the rule and
 -- why it exists.
@@ -20,11 +20,18 @@
 local Playlist = {}
 
 -- The order ids are drawn from. This is the ONLY place the set is written down.
--- `canteen` is listed because the ORDER is defined over all three from Gate 1;
+-- `canteen` is listed because the ORDER is defined over all ids from Gate 1;
 -- whether a trial is actually schedulable is a separate gate
 -- (GameConfig.Playlist.TrialIds plus `ready` in the MachineFlow registry), which
 -- is why listing it here cannot leak an unfinished trial into a session.
-Playlist.Ids = { "minefield", "birdhunt", "canteen" }
+--
+-- MP-05: the twelve new ids follow the shipped three. Same rule: the ORDER is
+-- defined over the whole set; schedulability is the two gates above.
+Playlist.Ids = {
+	"minefield", "birdhunt", "canteen",
+	"carve", "armory", "upstream", "floorcheck", "clearance", "carrier",
+	"breather", "sweep", "crawler", "ricochet", "stacker", "sorting",
+}
 
 -- A 32-bit linear congruential generator -- Numerical Recipes constants.
 -- Chosen for being small enough to state in full and identical under both
@@ -54,6 +61,22 @@ function Playlist.order(seed)
 	for i = #out, 2, -1 do
 		local j = nextInt(i)
 		out[i], out[j] = out[j], out[i]
+	end
+	return out
+end
+
+-- D7: the slice one session actually plays. Walks `order` and keeps the first
+-- `perSession` ids for which enabled[id] is truthy; perSession nil or 0 keeps
+-- them all. Pure, so tests/rules.lua can prove the slice property; MachineFlow's
+-- playableOrder maps the ids back to registry entries.
+function Playlist.session(order, enabled, perSession)
+	local out = {}
+	local limit = tonumber(perSession) or 0
+	for _, id in ipairs(order) do
+		if enabled[id] then
+			out[#out + 1] = id
+			if limit > 0 and #out >= limit then break end
+		end
 	end
 	return out
 end
