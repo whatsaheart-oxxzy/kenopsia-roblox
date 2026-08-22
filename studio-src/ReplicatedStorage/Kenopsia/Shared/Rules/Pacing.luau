@@ -55,7 +55,9 @@ local ROUNDS = {
 -- sessions run 3 and 4-player sessions run 4, so this is NOT `playerCount` and
 -- NOT `5 * playerCount` -- both of those were shipped before and are named in
 -- the plan as errors not to repeat.
-local LEGS = { [2] = 4, [3] = 3, [4] = 4 }
+-- 22.08.2026 (MASTERPLAN P0.3): 3 legs x 60 s. Four 90-s legs made BIRD HUNTING
+-- 422 s of a 771-s session -- more than half the evening for one minigame.
+local LEGS = { [2] = 3, [3] = 3, [4] = 3 }
 
 function Pacing.roundsFor(trialId, playerCount)
 	if trialId == "birdhunt" then
@@ -75,7 +77,7 @@ end
 -- the Bird value replaces ROUND_TIME 150.
 Pacing.RoundSeconds = {
 	minefield = 55,
-	birdhunt  = 90,
+	birdhunt  = 60,
 	canteen   = 45,
 	-- MP-05 section A / D8: ONE number per trial, whatever the player count.
 	-- TrialKit's R:setDeadline reads this; no trial derives its length from

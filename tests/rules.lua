@@ -47,7 +47,7 @@ print("\nPACING -- rounds and legs per player count")
 
 local expected = {
 	{ "minefield", 2, 4 }, { "minefield", 3, 3 }, { "minefield", 4, 3 },
-	{ "birdhunt", 2, 4 },  { "birdhunt", 3, 3 },  { "birdhunt", 4, 4 },
+	{ "birdhunt", 2, 3 },  { "birdhunt", 3, 3 },  { "birdhunt", 4, 3 },  -- 22.08.2026: 3 legs x 60 s (MASTERPLAN P0.3)
 	{ "canteen", 2, 3 },   { "canteen", 3, 2 },   { "canteen", 4, 2 },
 	-- MP-05 section A rows, one per new trial.
 	{ "carve", 2, 3 },      { "carve", 3, 3 },      { "carve", 4, 2 },
@@ -74,8 +74,8 @@ end
 check(Pacing.roundsFor("minefield", 1) == Pacing.roundsFor("minefield", 2),
 	"solo uses the 2-player row")
 
-check(Pacing.RoundSeconds.minefield == 55 and Pacing.RoundSeconds.birdhunt == 90
-	and Pacing.RoundSeconds.canteen == 45, "round limits 55 / 90 / 45 s")
+check(Pacing.RoundSeconds.minefield == 55 and Pacing.RoundSeconds.birdhunt == 60
+	and Pacing.RoundSeconds.canteen == 45, "round limits 55 / 60 / 45 s")
 check(Pacing.TrialPointPool == 1700, "point pool is 1700")
 
 -- MP-05 D8: one RoundSeconds number per new trial, section A values.
