@@ -40,3 +40,27 @@ RenderStepped handler writes — that is why the snap lives in the monolith's wr
 * `MF_Compactor` is 44 × 37 × 75 studs; the runner cam eye sits 24 studs up and 9 behind the runner, so the cowl/mast may brush the camera in the last second before a kill. Judge in a 2-player run.
 * Sniper viewmodel: bolt animation parts (`BoltKnob`, `BoltStub`) do not exist on the mesh — the bolt cycle is silently skipped; add two marker parts if the cycle should return.
 * `if_same_then_else` selene errors in KenopsiaClient are pre-existing (lines ~705/708/981).
+
+## Canteen re-layout (22.08.2026, after the P3.1 captures)
+
+The diners were internally consistent (scale 1.67 from the chair surface, fork on the plate)
+but the furniture set was built for ~30-stud giants: chairs 16, table 13.3, walls 32 studs.
+The figures sat with their chins at the table edge - "the characters are really small".
+
+Done in one ChangeHistory recording (Ctrl+Z reverts it):
+* whole `workspace.CanteenProtocol` scaled 0.47 about the floor-top centre (75 children,
+  lamps, props, markers, cameras);
+* table re-scaled separately so its top sits exactly under the Stab clip's fork point:
+  top = seat surface + 2.28 x 1.72 - 0.25 = 8.77; chairs moved to the table's long edges
+  (gap 1.2), boss chair to the head;
+* every marker re-derived from the chair surface (5.10): MouthTarget +4.73 (-> diner scale
+  1.72, 15 studs), PlateAnchor seat + 3.12 fwd / 0.6 right / +3.92, PlayerCamera 7.6 back /
+  9.4 up, ExecutionMuzzle +20.9, ForkAnchor, Observer 3.3 above the table top; plates moved
+  onto the anchors;
+* code: `PEA_SIZE` 0.18, `PLATE_SPREAD` 0.6, `OBSERVER_HIDE_RISE` 4.0, procedural Observer
+  halved (CanteenProps).
+
+Live: diner scale 1.72, pelvis 5.10, mouth 9.83 (1.06 above the table top), boss 1.72,
+80 pea instances; ObserverCamera capture shows the boss reading at the head of the table
+and a diner at table height with the fork raised - proportions read as a canteen now.
+Open: the hover pose holds the fist at head height (authored); judge with the user.

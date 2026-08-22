@@ -30,19 +30,20 @@ local CanteenDiner = require(script.Parent.CanteenDiner)
 
 local CanteenProps = {}
 
-local PEA_SIZE = 0.34
--- Peas sit inside this radius on the plate. The plate cylinder is 6.1 across,
--- so 2.1 leaves a visible rim rather than food spilling over the edge.
-local PLATE_SPREAD = 1.3 -- 22.08.2026: plates are 3.6 studs now, under the fork's stab point
+local PEA_SIZE = 0.18
+-- Peas sit inside this radius on the plate. The plates are 1.7 studs across
+-- since the canteen re-layout (set scaled 0.47, 22.08.2026), so 0.6 leaves a
+-- visible rim rather than food spilling over the edge.
+local PLATE_SPREAD = 0.6
 -- Sunflower spacing. Successive peas land 137.5 degrees apart, which fills a
 -- disc evenly without the rings and spokes a naive polar grid produces.
 local GOLDEN_ANGLE = 2.399963229728653
 
 local FORK_TINE_COUNT = 3
 -- How far above its rest pose the Observer waits while hidden. Ceiling is at
--- ~32.6 and the Observer marker sits at ~19.3, so 9 studs keeps it clear of the
--- table and still under the ceiling.
-local OBSERVER_HIDE_RISE = 9.0
+-- ~16.1 and the Observer marker sits ~3.3 above the table top (re-layout
+-- 22.08.2026), so 4 studs keeps it clear of the table and under the ceiling.
+local OBSERVER_HIDE_RISE = 4.0
 
 -- How far the newspaper tips forward when the Observer looks up from it.
 -- 74 degrees was measured in Blender as the swing that clears the lens (paper
@@ -160,7 +161,7 @@ local function makeObserver(tpl)
 	model.Name = "Observer"
 	local head = Instance.new("Part")
 	head.Name = "Lens"
-	head.Size = Vector3.new(3.4, 3.4, 1.6)
+	head.Size = Vector3.new(1.7, 1.7, 0.8) -- re-layout 22.08.2026: the set is 0.47x, the Observer with it
 	head.Material = Enum.Material.DiamondPlate
 	head.Color = Color3.fromRGB(30, 29, 28)
 	decorate(head)
@@ -170,7 +171,7 @@ local function makeObserver(tpl)
 	local eye = Instance.new("Part")
 	eye.Name = "Eye"
 	eye.Shape = Enum.PartType.Ball
-	eye.Size = Vector3.new(1.5, 1.5, 1.5)
+	eye.Size = Vector3.new(0.75, 0.75, 0.75)
 	eye.Material = Enum.Material.Neon
 	eye.Color = Color3.fromRGB(150, 20, 16)
 	decorate(eye)
@@ -179,14 +180,14 @@ local function makeObserver(tpl)
 	local light = Instance.new("SpotLight")
 	light.Angle = 70
 	light.Brightness = 2.5
-	light.Range = 34
+	light.Range = 17
 	light.Color = Color3.fromRGB(255, 90, 70)
 	light.Face = Enum.NormalId.Front
 	light.Parent = eye
 
 	local stalk = Instance.new("Part")
 	stalk.Name = "Stalk"
-	stalk.Size = Vector3.new(0.5, 14, 0.5)
+	stalk.Size = Vector3.new(0.25, 7, 0.25)
 	stalk.Material = Enum.Material.Metal
 	stalk.Color = Color3.fromRGB(42, 40, 38)
 	decorate(stalk)
@@ -224,13 +225,13 @@ local function poseObserver(model, cf, authored)
 	if authored then return end
 
 	local eye = model:FindFirstChild("Eye")
-	if eye then eye.CFrame = cf * CFrame.new(0, 0, -0.7) end
+	if eye then eye.CFrame = cf * CFrame.new(0, 0, -0.35) end
 	local stalk = model:FindFirstChild("Stalk")
 	if stalk then
 		-- WORLD up, not the lens's local up. The Observer looks straight down
 		-- at the table, so its local +Y is horizontal -- a locally-offset stalk
 		-- would jut out sideways instead of running up to the ceiling.
-		stalk.CFrame = CFrame.new(cf.Position + Vector3.new(0, 7.6, 0))
+		stalk.CFrame = CFrame.new(cf.Position + Vector3.new(0, 3.8, 0))
 	end
 end
 
