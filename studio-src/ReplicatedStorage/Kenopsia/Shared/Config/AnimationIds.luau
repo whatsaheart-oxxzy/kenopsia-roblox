@@ -15,35 +15,40 @@ local RunService = game:GetService("RunService")
 local AnimationIds = {}
 
 AnimationIds.Player = {          -- rig: PS1Player (20 bones), loops in place, 30 fps
-	Idle   = 125600962447767, -- 2.00 s, priority Idle
-	Walk   = 123033497454830, -- 1.00 s, Movement, natural 4.5 st/s at scale 1
-	Run    = 95031726336950, -- 0.67 s, Movement, natural 10.95 st/s
-	Crouch = 125766316179596, -- 2.00 s, Movement (used for "sneak")
-	Push   = 70937503697406, -- 1.33 s, Action, natural 3.15 st/s
-	Death  = 114200780379540, -- Table Manners execution, Action
-	-- 0.47 s, Action. AUTHORED, NOT YET PUBLISHED: the clip exists as
-	-- Documents\Retro\PS1Player\export\anim\Anim_Eat.fbx and has to be imported
-	-- in the Animation Editor and published by hand like every other id here.
-	-- It keys six bones -- right arm chain plus a 3/4/5-degree torso, neck and
+	-- 22.08.2026: every clip re-published under the GROUP (see OWNERSHIP below).
+	Idle   = 136021051849380, -- 2.00 s, priority Idle
+	Walk   = 139242749568316, -- 1.00 s, Movement, natural 4.5 st/s at scale 1
+	Run    = 122100342132694, -- 0.67 s, Movement, natural 10.95 st/s
+	Crouch = 124433445029981, -- 2.00 s, Movement (used for "sneak")
+	Push   = 83985770937060, -- 1.33 s, Action, natural 3.15 st/s
+	Death  = 120865302102282, -- Table Manners execution, Action
+	-- 0.20 s, Action, repeatable: the fork punches down into the plate and
+	-- lifts with beans on the tines (Documents\Retro\PS1Player, 42_anim_table.py).
+	Stab   = 124637290464825,
+	-- 0.40 s, Action, one-shot: fork to mouth and back; the beans vanish at the
+	-- bite. Authored as Anim_Eat.fbx (same pipeline). It keys six bones -- right arm chain plus a 3/4/5-degree torso, neck and
 	-- head dip -- and holds every other bone, the legs above all, at exactly
 	-- its rest value, so the seated pose CanteenDiner.sit() writes into
 	-- Bone.CFrame survives the bite. That is the whole reason a bespoke clip
 	-- was needed instead of the obvious stand-in: Push moves the legs.
-	Eat    = 0,
+	Eat    = 132791710012729,
 }
 AnimationIds.PlayerSpeeds = { Walk = 4.5, Run = 10.95, Push = 3.15 } -- for AdjustSpeed
 AnimationIds.Boss = {            -- rig: CanteenBoss (19 bones)
-	-- Reading reuses LookUp: CanteenBoss holds its first reading pose at speed 0.
-	Reading = 78730370216852, Idle = 95540888860028, LookUp = 78730370216852,
-	LookDown = 76111131902834, Shoot = 87302586462797, Death = 0,
+	-- 22.08.2026: re-published under the group; Reading is its own looping clip
+	-- (LookDown lands on the paper, CanteenBoss hands over to Reading from there).
+	Reading = 93007201218927, Idle = 130938007759833, LookUp = 94677474801733,
+	LookDown = 119985932443999, Shoot = 86667177937697, Death = 0,
 }
 AnimationIds.Textures = {
 	PlayerNeutral = 136734973177857, PlayerBlink = 0, PlayerHappy = 0, PlayerHurt = 0,
 	BossNeutral   = 130641113899237, BossAngry = 0,
 }
 
--- OWNERSHIP. Every id above was published by user 4840146924 (iLoveKilIs),
--- but place 110672791536316 belongs to GROUP 832614570. Roblox refuses to
+-- OWNERSHIP. The first batch of ids was published by user 4840146924
+-- (iLoveKilIs) while place 110672791536316 belongs to GROUP 832614570, and
+-- sharing access never took effect; on 22.08.2026 every clip was re-published
+-- so the group place can play it. The rule is still the same: Roblox refuses to
 -- play an animation the experience has no permission for -- LoadAnimation
 -- succeeds, the track plays, Length stays 0 and the rig never moves; the
 -- Output shows "The experience doesn't have access permission to use asset
@@ -67,7 +72,7 @@ AnimationIds.StudioSequences = {
 		-- Anim_Eat.fbx is imported on its own, so its save is its own holder --
 		-- name the Animation Editor save "Anim_Eat" and the sequence inside it
 		-- "Eat" and the diner animates in Studio before anything is published.
-		Eat = { "Anim_Eat", "Eat" },
+		Eat = { "Anim_Eat", "eat" }, Stab = { "Anim_Stab", "stab beans" },
 	},
 	Boss = {
 		Idle = { "Anim_Idle", "Idle", 100 }, LookUp = { "Anim_LookUp", "LookingUp" },

@@ -422,6 +422,16 @@ function CanteenProps.build(arena, opts)
 			seatY = seatY[seatIndex],
 		}) or nil
 		self.diners[seatIndex] = diner
+		-- 22.08.2026: a diner that brings its own fork (PS1Player_Fork) retires
+		-- the flying prop fork and its riders at that seat; the Stab/Eat clips
+		-- carry the cutlery from here on.
+		local seat = self.seats[seatIndex]
+		if diner and diner.hasFork and seat then
+			seat.dinerFork = true
+			seat.shownLoad = 0
+			setVisible(seat.fork, false)
+			for _, rider in ipairs(seat.forkLoad) do setVisible(rider, false) end
+		end
 		return diner
 	end
 
@@ -446,6 +456,17 @@ function CanteenProps.build(arena, opts)
 		local seat = self.seats[seatIndex]
 		if not seat then return end
 		seat.pendingForkLoad = math.max(0, math.floor(tonumber(load) or 0))
+		if seat.dinerFork then
+			local diner = self.diners[seatIndex]
+			if diner then
+				-- A load that grew is a PLATE the server accepted: stab once per
+				-- acceptance, never per state push.
+				if seat.pendingForkLoad > (seat.shownLoad or 0) then diner:stab() end
+				diner:setBeans(seat.pendingForkLoad > 0)
+			end
+			seat.shownLoad = seat.pendingForkLoad
+			return
+		end
 		-- While a mouthful is in flight the animation owns the riders. The
 		-- server sets ps.fork = 0 the instant MOUTH is accepted, so without
 		-- this guard the state push would hide the load before it had left the
@@ -484,6 +505,14 @@ function CanteenProps.build(arena, opts)
 		seat.busy = true
 		local diner = self.diners[seatIndex]
 		if diner then diner:eat(self.eatWindow) end
+		if seat.dinerFork then
+			-- The clip carries the fork and drops the beans at the bite; nothing
+			-- to fly. The server's fork=0 push arrives through setFork and is
+			-- parked by the diner until the bite has landed.
+			seat.busy = false
+			seat.shownLoad = 0
+			return
+		end
 		-- Show exactly what is being carried. `load` is passed in rather than
 		-- read back from the fork, because by the time this runs the server has
 		-- already zeroed it.

@@ -81,13 +81,20 @@ end
 
 local function holdReading(self)
 	setPistolVisible(self, false)
-	local track = playTrack(self, "LookUp", false, Enum.AnimationPriority.Idle)
-	if track then
-		-- The user has no separate reading clip. Frame zero of LookUp is the
-		-- authored paper-reading pose, so hold it without manufacturing another
-		-- animation asset or loading the same clip twice.
-		track.TimePosition = READING_FRAME_TIME
-		track:AdjustSpeed(0)
+	-- 22.08.2026: Reading is its own published loop now. If LookDown is still
+	-- finishing (raising ran out a frame before the server said "hidden"), let
+	-- it land on the paper first; its Stopped handler (see spawn) hands over to
+	-- Reading, so the paper never snaps.
+	local lookDown = self.tracks.LookDown
+	if lookDown and lookDown.IsPlaying and self.phase == "hidden" then return end
+	local track = playTrack(self, "Reading", true, Enum.AnimationPriority.Idle)
+	if not track then
+		-- No reading clip: frame zero of LookUp is the authored paper pose.
+		track = playTrack(self, "LookUp", false, Enum.AnimationPriority.Idle)
+		if track then
+			track.TimePosition = READING_FRAME_TIME
+			track:AdjustSpeed(0)
+		end
 	end
 end
 
@@ -250,6 +257,7 @@ function CanteenBoss.spawn(marker, parent, opts)
 		pistol = pistol,
 		phase = "hidden",
 		tracks = {
+			Reading = AnimationIds.load(animator, "Boss", "Reading"),
 			LookUp = AnimationIds.load(animator, "Boss", "LookUp"),
 			LookDown = AnimationIds.load(animator, "Boss", "LookDown"),
 			Idle = AnimationIds.load(animator, "Boss", "Idle"),
@@ -269,6 +277,16 @@ function CanteenBoss.spawn(marker, parent, opts)
 		table.insert(self.connections, shoot:GetMarkerReachedSignal("Fire"):Connect(function()
 			local shot = self.currentShot
 			if shot then fireOnce(self, shot) end
+		end))
+	end
+
+	local lookDown = self.tracks.LookDown
+	if lookDown then
+		-- LookDown ends on the paper; Reading takes over from exactly there.
+		table.insert(self.connections, lookDown.Stopped:Connect(function()
+			if self.alive and not self.executing and (self.phase == "hidden" or self.phase == "raising") then
+				holdReading(self)
+			end
 		end))
 	end
 

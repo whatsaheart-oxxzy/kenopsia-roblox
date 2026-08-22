@@ -35,7 +35,10 @@ local SCALE_LIMITS = { min = 0.4, max = 3.0 }
 local function findTemplate()
 	local assets = ServerStorage:FindFirstChild("KenopsiaAssets")
 	local rigs = assets and assets:FindFirstChild("Rigs")
-	return rigs and rigs:FindFirstChild("PS1Player")
+	-- 22.08.2026: PS1Player_Fork carries the fork and its beans skinned to the
+	-- right hand, so the cutlery follows every clip for free; the bare rig is
+	-- the fallback for places that have not imported it.
+	return rigs and (rigs:FindFirstChild("PS1Player_Fork") or rigs:FindFirstChild("PS1Player"))
 end
 
 -- Rig proportions in ITS OWN units, measured off the template rather than
@@ -208,11 +211,45 @@ function CanteenDiner.spawn(marker, parent, seatIndex, opts)
 			-- length of every bite. The fork's own travel already reads as the
 			-- bite, so the honest placeholder is no motion at all.
 			Eat = AnimationIds.load(animator, "Player", "Eat"),
+			Stab = AnimationIds.load(animator, "Player", "Stab"),
 			Death = AnimationIds.load(animator, "Player", "Death"),
 		},
 		scale = scale,
+		-- The fork rig's own cutlery (nil on the bare PS1Player template).
+		fork = model:FindFirstChild("Fork", true),
+		beans = model:FindFirstChild("Beans_Fork", true),
+		eating = false,
+		beansAfter = nil,
 	}, { __index = CanteenDiner })
+	self.hasFork = self.fork ~= nil and self.fork:IsA("BasePart")
+	if self.beans and self.beans:IsA("BasePart") then self.beans.Transparency = 1 end
 	return self
+end
+
+-- Beans on the tines. While a bite is in flight the clip owns the beans (they
+-- vanish at the mouth), so a state push that arrives mid-bite is parked and
+-- applied when the bite lands -- otherwise the server zeroing the fork the
+-- instant MOUTH is accepted would empty the fork before it reaches the face.
+function CanteenDiner.setBeans(self, visible)
+	local beans = self.beans
+	if not (beans and beans:IsA("BasePart")) then return end
+	if self.eating then
+		self.beansAfter = visible
+		return
+	end
+	beans.Transparency = visible and 0 or 1
+end
+
+-- PLATE: the fork punches into the plate and comes up loaded. Repeatable at
+-- the server's MIN_PLATE_INTERVAL; a second stab restarts the clip.
+function CanteenDiner.stab(self)
+	if not self.alive or self.dead then return end
+	local track = self.tracks.Stab
+	if not track then return end
+	if track.IsPlaying then track:Stop(0) end
+	track.Looped = false
+	track.Priority = Enum.AnimationPriority.Action
+	track:Play(0.03, 1, 1)
 end
 
 -- Head position for blood; falls back to the root.
@@ -233,14 +270,29 @@ function CanteenDiner.eat(self, duration)
 	local gen = self.generation
 	local window = math.max(0.1, tonumber(duration) or 0.45)
 	if track.IsPlaying then track:Stop(0) end
+	local stab = self.tracks.Stab
+	if stab and stab.IsPlaying then stab:Stop(0.03) end
 	track.Looped = false
-	track.Priority = Enum.AnimationPriority.Action
-	-- Length is 0 until the clip has streamed in; assume the authored 1.33 s
-	-- Push in that case so the first bite is not played at speed 0.
-	local length = track.Length > 0 and track.Length or 1.33
+	track.Priority = Enum.AnimationPriority.Action2
+	-- Length is 0 until the clip has streamed in; assume the authored 0.40 s
+	-- bite in that case so the first one is not played at speed 0.
+	local length = track.Length > 0 and track.Length or 0.4
 	track:Play(0.05, 1, length / window)
+	-- The beans ride to the mouth and vanish at the bite (frame 5 of 12).
+	self.eating = true
+	self.beansAfter = nil
+	task.delay(window * (5 / 12), function()
+		if self.generation == gen and self.beans and self.beans:IsA("BasePart") then self.beans.Transparency = 1 end
+	end)
 	task.delay(window, function()
-		if self.generation == gen and track.IsPlaying then track:Stop(0.1) end
+		if self.generation ~= gen then return end
+		if track.IsPlaying then track:Stop(0.1) end
+		self.eating = false
+		if self.beansAfter ~= nil then
+			local after = self.beansAfter
+			self.beansAfter = nil
+			self:setBeans(after)
+		end
 	end)
 end
 
