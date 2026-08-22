@@ -123,7 +123,7 @@ Legend — effort S/M/L; ✋ = needs a human click (user).
 **P0.3 Pacing + audio quick wins (S).** `Pacing.RoundSeconds.birdhunt` 90→60, `LEGS` 4/3/4→3/3/3; `Pacing.Timing.LobbyReveal=6.4` replaces the literal; canteen music = reuse `minefield` id as `Music.Trials.canteen`; restore `Music.Loop` (id in `audio-inventory.csv`); re-create `SFX.AccessGranted` (upload `access_granted_smx_1.ogg` ✋ licence) or repoint to `Confirm`; normalise `birdhunt` 0.24→0.40.
 *Gate:* session at 4 p ≤ 10 min computed from Pacing; every `sfx()` name resolves (add a boot-time warn for unknown names).
 
-**P0.4 Place hygiene (S).** Delete Baseplate (all arenas have floors), `gear_mx_1`, `saw_blade`, `bench`; move `SniperRifle_PSX` to `ServerStorage.KenopsiaAssets`; delete 4 duplicate lamps (F-16), 4 duplicate plates (F-17), sunken props (F-18), the three Mixamo archives (F-19). Decide chat (recommendation: **disable default channels**, Machine has no chat; keep bubble chat off) — `TextChatService.CreateDefaultTextChannels=false`. `StreamingEnabled`: **keep false for now** (runner cameras broke under streaming, F-22); instead parent inactive arenas out of Workspace at trial switch (P1.6).
+**P0.4 Place hygiene (S).** Delete Baseplate (all arenas have floors), `gear_mx_1`, `saw_blade`, `bench`; move `SniperRifle_PSX` to `ServerStorage.KenopsiaAssets`; delete 4 duplicate lamps (F-16), 4 duplicate plates (F-17), sunken props (F-18), the three Mixamo archives (F-19). Chat decision (user, 22.08.): keep the default chat in the lobby/Machine screens, hide it while a trial runs (`ChatWindowConfiguration.Enabled = false` on `KenopsiaActiveTrial ~= ""`, restore on clear). `StreamingEnabled`: **keep false for now** (runner cameras broke under streaming, F-22); instead parent inactive arenas out of Workspace at trial switch (P1.6).
 *Gate:* Workspace instance count < 1 700; a full session plays.
 
 **P0.5 Docs truth pass (S).** `docs/place/README.md` + `07-FINDINGS.md`: add "2026-08-22: framework IS live, 62/62 parity; F-03 fixed; F-04 pushed, smoke per P0.1". MP-04 §0: SUPERSEDED banner (D1/D4/D6/D8 live in MP-05). MP-06 §0: tests/<id>.lua are *new* work. PLAN.md P2: delete the "oder streichen" clause. Regenerate `audio-inventory.csv` from the place. Add `measured on` lines.
@@ -292,7 +292,7 @@ Milestones M2–M9 = phases P0–P7 at https://github.com/whatsaheart-oxxzy/keno
 
 ## 8. Open decisions (recommendation in bold; none blocks P0–P2)
 
-1. Default chat: **disable** default channels (Machine has no chat) vs restyle.
+1. Default chat: **DECIDED 22.08. (user): chat stays ON in the Machine screens/lobby and is OFF while a trial runs** (toggle `TextChatService.ChatWindowConfiguration.Enabled` on `KenopsiaActiveTrial`). Restyle later as part of P2.
 2. Music: **base loop + intensity layers** (3–4 uploads) vs 15 tracks.
 3. Test place: **Kenopsia_DEV as the always-on test copy** (save-as from MainGame before each phase) vs testing in MainGame.
 4. `SIMULATION FILTER` default: **ON**, with the toggle seeded from ReducedMotion.
