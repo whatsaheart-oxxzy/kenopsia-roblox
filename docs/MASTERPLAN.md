@@ -216,6 +216,63 @@ Licence evidence first (Echoes, System Status Alerts, Special Ambiences, Super R
 - An issue is closed only by a commit that references it **and** a `docs/QA/*.md` live check where the gate says so.
 - `PLAN.md` stays as the decision log; this file owns the order.
 
+
+### Issue map (created 2026-08-22)
+
+Milestones M2–M9 = phases P0–P7 at https://github.com/whatsaheart-oxxzy/kenopsia-roblox/milestones. Labels: `phase:P#`, `area:*`, `device:*`, `needs-user`, `blocker`. No Projects board (token lacks the `project` scope).
+
+| # | Milestone | Issue |
+|---:|---|---|
+| [#1](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/1) | M2 P0 Truth and quick wins | P0.1 Framework smoke test in a DEV copy (never run so far) |
+| [#2](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/2) | M2 P0 Truth and quick wins | P0.2a Share access for the 11 published animation ids (group place) |
+| [#3](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/3) | M2 P0 Truth and quick wins | P0.2b Import Eat, Stab, Reading, Boss Death; fix priorities/loops; publish; paste ids |
+| [#4](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/4) | M2 P0 Truth and quick wins | P0.2c Import the fork rig and CP_Observer as templates |
+| [#5](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/5) | M2 P0 Truth and quick wins | P0.3 Pacing + audio quick wins |
+| [#6](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/6) | M2 P0 Truth and quick wins | P0.4 Place hygiene and the chat decision |
+| [#7](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/7) | M2 P0 Truth and quick wins | P0.5 Docs truth pass |
+| [#8](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/8) | M3 P1 Session spine and Machine feel | P1.1 Honest roulette + depleting 15-tile grid |
+| [#9](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/9) | M3 P1 Session spine and Machine feel | P1.2 Standings card after every round |
+| [#10](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/10) | M3 P1 Session spine and Machine feel | P1.3 FINAL AUDIT x2, verdict stamp, podium |
+| [#11](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/11) | M3 P1 Session spine and Machine feel | P1.4 Machine comment pool + role card beat |
+| [#12](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/12) | M3 P1 Session spine and Machine feel | P1.5 FeelConfig + time-based typewriter + one 3-2-1 |
+| [#13](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/13) | M3 P1 Session spine and Machine feel | P1.6 Robustness: round timeout, unknown-kind guard, anti-monotony playlist, parked arenas |
+| [#14](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/14) | M3 P1 Session spine and Machine feel | P1.7 Rematch with carried readiness + late-joiner wait/audience |
+| [#15](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/15) | M4 P2 Alive retro UI, every device | P2.1 Split the GUI, viewport scale, constraints, geometry fixes |
+| [#16](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/16) | M4 P2 Alive retro UI, every device | P2.2 Overlay and idle life + boot ledger |
+| [#17](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/17) | M4 P2 Alive retro UI, every device | P2.3 Accessibility seeds + settings rows |
+| [#18](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/18) | M4 P2 Alive retro UI, every device | P2.4 Platform detection, canonical touch pads, console focus |
+| [#19](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/19) | M4 P2 Alive retro UI, every device | P2.5 Briefing per role, in-round recall, INVITE slots, seven icons |
+| [#20](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/20) | M4 P2 Alive retro UI, every device | P2.6 Device QA sheet + phone profiling |
+| [#21](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/21) | M5 P3 PS1 look in minigames only | P3.1 SimulationGrade: PS1 look only while a trial runs |
+| [#22](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/22) | M5 P3 PS1 look in minigames only | P3.2 Texel rules: SurfaceGui monoliths, ArenaPalette |
+| [#23](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/23) | M5 P3 PS1 look in minigames only | P3.3 PS1 rig as StarterCharacter behind a flag |
+| [#24](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/24) | M6 P4 Trials | P4.0 Canteen completion: fork, stab/eat, plates, observer, faces, bespoke death |
+| [#25](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/25) | M6 P4 Trials | P4.1 trial `sorting` - SORTING FLOOR |
+| [#26](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/26) | M6 P4 Trials | P4.2 trial `upstream` - UPSTREAM |
+| [#27](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/27) | M6 P4 Trials | P4.3 trial `stacker` - PALLET DUTY |
+| [#28](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/28) | M6 P4 Trials | P4.4 trial `carrier` - CARRIER |
+| [#29](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/29) | M6 P4 Trials | P4.5 trial `armory` - ARMS ISSUE |
+| [#30](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/30) | M6 P4 Trials | P4.6 trial `carve` - CUT TO SPEC |
+| [#31](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/31) | M6 P4 Trials | P4.7 trial `sweep` - CLEAR THE DECK |
+| [#32](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/32) | M6 P4 Trials | P4.8 trial `crawler` - CRAWLER |
+| [#33](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/33) | M6 P4 Trials | P4.9 trial `clearance` - CLEARANCE |
+| [#34](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/34) | M6 P4 Trials | P4.10 trial `floorcheck` - FLOOR CHECK |
+| [#35](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/35) | M6 P4 Trials | P4.11 trial `ricochet` - RICOCHET |
+| [#36](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/36) | M6 P4 Trials | P4.12 trial `breather` - BREATHER |
+| [#37](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/37) | M6 P4 Trials | P4.13 Activate PerSession=5 and run the full-session QA |
+| [#38](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/38) | M7 P5 Retention and growth | P5.1 Profile DataStore (sessions, wins, best band per trial, streak, first-seen) |
+| [#39](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/39) | M7 P5 Retention and growth | P5.2 Badges (5 free per day) |
+| [#40](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/40) | M7 P5 Retention and growth | P5.3 Invite prompt with LaunchData + Party API grouping |
+| [#41](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/41) | M7 P5 Retention and growth | P5.4 Paid private servers at a fixed price + host toggles |
+| [#42](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/42) | M7 P5 Retention and growth | P5.5 Captures prompts on four beats |
+| [#43](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/43) | M7 P5 Retention and growth | P5.6 Notifications opt-in, weekly NIGHT SHIFT event, weekly subject wall |
+| [#44](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/44) | M7 P5 Retention and growth | P5.7 Never wait: PRACTICE SHIFT (ghost runs) + mid-match join at the next trial |
+| [#45](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/45) | M7 P5 Retention and growth | P5.8 Icon/thumbnail experiments + Standout Games nomination |
+| [#46](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/46) | M8 P6 Audio | P6.1 Licence evidence for Echoes, System Status Alerts, Special Ambiences, Super Retro OST |
+| [#47](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/47) | M8 P6 Audio | P6.2 Ambience beds, base loop + intensity layers, UI sound kit, inventory regen |
+| [#48](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/48) | M9 P7 Later modes | P7 Modes for later updates: design doc |
+| [#49](https://github.com/whatsaheart-oxxzy/kenopsia-roblox/issues/49) | M2 P0 Truth and quick wins | Open decisions (user) - answer before the phase that needs them |
+
 ## 6. Execution protocol for Fable 5 (ultracode)
 
 1. One **Workflow per phase**; inside it `pipeline()` per work package: implement → offline gates → adversarial review (refute-first, 2 of 3 must pass) → live check in Studio → QA doc → commit. Agents own disjoint files (MP-05 D13); shared files (`MachineFlow`, `KenopsiaClient`, `Pacing`, `Playlist`, `GameConfig`, `TrialKit`, `TrialClientKit`, `MachineLayout`) are edited by **one** agent per phase, sequentially.
