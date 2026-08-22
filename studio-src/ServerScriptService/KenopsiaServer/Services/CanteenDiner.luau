@@ -105,6 +105,17 @@ local KNEE_FOLD = -math.pi / 2 -- shins back down, vertical
 local ARM_DROP = math.rad(60) -- A-pose arms in against the ribs
 local ELBOW_BEND = math.rad(25) -- forearms slightly forward
 
+-- 22.08.2026: the RIGHT arm rests in the fork HOVER pose instead -- fist above
+-- the plate, tines down (Documents\Retro\PS1Player\scripts\hover_bind.json).
+-- Stab and Eat are exported as DELTAS against exactly this pose, so any other
+-- rest pose would punch the fork from somewhere else. Axes are in the rig
+-- root's space, applied in order after the legs.
+local HOVER = {
+	{ "RightUpperArm", Vector3.new(0.54693, 0.54207, 0.63798), 110.48 },
+	{ "RightLowerArm", Vector3.new(-0.14428, 0.5395, 0.82954), 47.102 },
+	{ "RightHand", Vector3.new(-0.01165, 0.07766, 0.99691), 135.547 },
+}
+
 local function sit(model, root)
 	local right = root.CFrame.RightVector
 	local forward = root.CFrame.LookVector
@@ -118,11 +129,20 @@ local function sit(model, root)
 		-- the elbow bends about the same axis the knees use. The Left side takes
 		-- the NEGATIVE angle: the mirrored sign lifts the arms above the shoulders
 		-- instead, which measured as a scarecrow with both hands 6 studs out.
-		local drop = (side == "Left") and -ARM_DROP or ARM_DROP
-		local upperArm = model:FindFirstChild(side .. "UpperArm", true)
-		local lowerArm = model:FindFirstChild(side .. "LowerArm", true)
-		if upperArm and upperArm:IsA("Bone") then rotateBoneWorld(upperArm, forward, drop) end
-		if lowerArm and lowerArm:IsA("Bone") then rotateBoneWorld(lowerArm, right, ELBOW_BEND) end
+		if side == "Right" then
+			for _, op in HOVER do
+				local bone = model:FindFirstChild(op[1], true)
+				if bone and bone:IsA("Bone") then
+					rotateBoneWorld(bone, root.CFrame:VectorToWorldSpace(op[2]), math.rad(op[3]))
+				end
+			end
+		else
+			local drop = -ARM_DROP
+			local upperArm = model:FindFirstChild(side .. "UpperArm", true)
+			local lowerArm = model:FindFirstChild(side .. "LowerArm", true)
+			if upperArm and upperArm:IsA("Bone") then rotateBoneWorld(upperArm, forward, drop) end
+			if lowerArm and lowerArm:IsA("Bone") then rotateBoneWorld(lowerArm, right, ELBOW_BEND) end
+		end
 	end
 end
 

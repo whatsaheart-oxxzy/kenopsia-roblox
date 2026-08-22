@@ -33,7 +33,7 @@ local CanteenProps = {}
 local PEA_SIZE = 0.34
 -- Peas sit inside this radius on the plate. The plate cylinder is 6.1 across,
 -- so 2.1 leaves a visible rim rather than food spilling over the edge.
-local PLATE_SPREAD = 2.1
+local PLATE_SPREAD = 1.3 -- 22.08.2026: plates are 3.6 studs now, under the fork's stab point
 -- Sunflower spacing. Successive peas land 137.5 degrees apart, which fills a
 -- disc evenly without the rings and spokes a naive polar grid produces.
 local GOLDEN_ANGLE = 2.399963229728653

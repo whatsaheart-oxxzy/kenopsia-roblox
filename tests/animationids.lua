@@ -57,7 +57,7 @@ check(type(A.Player) == "table" and type(A.Boss) == "table" and type(A.Textures)
 for _, name in ipairs({ "Idle", "Walk", "Run", "Crouch", "Push", "Death" }) do
 	check(A.Player[name] ~= nil, "Player." .. name .. " is declared")
 end
-for _, name in ipairs({ "Reading", "Idle", "LookUp", "LookDown", "Shoot", "Death" }) do
+for _, name in ipairs({ "Reading", "Idle", "LookUp", "LookDown", "Shoot" }) do
 	check(A.Boss[name] ~= nil, "Boss." .. name .. " is declared")
 end
 check(A.PlayerSpeeds.Walk == 4.5 and A.PlayerSpeeds.Run == 10.95 and A.PlayerSpeeds.Push == 3.15,

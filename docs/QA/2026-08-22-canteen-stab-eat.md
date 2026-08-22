@@ -35,3 +35,12 @@ Boss: Reading loop is its own track now; LookDown's `Stopped` hands over to Read
 ## Gotcha
 
 Clicks sent before `go` or while the fork is full are dropped by design (client gate / capacity 4) — the first click batch looked like a lost input path and was not.
+
+## Addendum (same day): hover pose, seats at the table, plates under the fork
+
+- `CanteenDiner.sit()` now rests the RIGHT arm in the fork HOVER pose from `scripts/hover_bind.json` (three world axis-angle ops in root space). Live check of the JSON recipe: wrist − pelvis = (−0.564, 6.799, 2.348) vs expected (−0.564, 6.799, 2.348), error 0.00.
+- Skinned-mesh gotcha: `Fork.Position` / `Beans_Fork.Position` never move (bind pose); the fork tip is `RightHand.TransformedWorldCFrame` + 1.17 × scale along the hand bone's Y axis. Measured stab tip (frame 2/6) in seat space: (0.50, 1.21, −3.04) studs; at rest the tip is ~1.2 studs higher.
+- The chairs stood 6.2 studs from the table edge (`Canteen_table_large_3`, Z −15.04…3.64), so the stab landed in the air. Moved, per seat, by dz = +5.74 (P1/P2) / −5.58 (P3/P4): the chair model under the seat (`Canteen_chair_wooden_1`, four distinct models with one name), the `Seats`, `MouthTargets`, `PlayerCameras`, `ExecutionMuzzles`, `ForkAnchors` markers. `PlateAnchors` → seat + stab offset at Y 13.52; visible `Plate` parts moved there and shrunk to 3.6 studs; the four duplicate plates deleted (F-17). `PLATE_SPREAD` 2.1 → 1.3.
+- `validateArena` passes (`[CP] go`), the diner sits at the table edge, the fork lands on the plate; HUD after plate/mouth/plate: PLATE 08, EATEN 04/16.
+- `Boss.Death` removed from AnimationIds and the test: the boss never dies — Death is the PLAYER's execution clip.
+- Undo path: one ChangeHistory recording "Canteen: seats to the table, plates under the fork (22.08.)" + one "drop duplicate plates".

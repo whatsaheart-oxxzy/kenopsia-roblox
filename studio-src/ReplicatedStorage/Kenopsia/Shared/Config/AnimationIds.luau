@@ -37,8 +37,9 @@ AnimationIds.PlayerSpeeds = { Walk = 4.5, Run = 10.95, Push = 3.15 } -- for Adju
 AnimationIds.Boss = {            -- rig: CanteenBoss (19 bones)
 	-- 22.08.2026: re-published under the group; Reading is its own looping clip
 	-- (LookDown lands on the paper, CanteenBoss hands over to Reading from there).
+	-- The boss never dies: the execution clip is the PLAYER's Death above.
 	Reading = 93007201218927, Idle = 130938007759833, LookUp = 94677474801733,
-	LookDown = 119985932443999, Shoot = 86667177937697, Death = 0,
+	LookDown = 119985932443999, Shoot = 86667177937697,
 }
 AnimationIds.Textures = {
 	PlayerNeutral = 136734973177857, PlayerBlink = 0, PlayerHappy = 0, PlayerHurt = 0,
@@ -77,7 +78,7 @@ AnimationIds.StudioSequences = {
 	Boss = {
 		Idle = { "Anim_Idle", "Idle", 100 }, LookUp = { "Anim_LookUp", "LookingUp" },
 		Reading = { "Anim_LookUp", "LookingUp" }, LookDown = { "Anim_LookDown", "LookDown" },
-		Shoot = { "Anim_Shoot", "Shoot" }, Death = { "Anim_Death", "Death of Player" },
+		Shoot = { "Anim_Shoot", "Shoot" },
 	},
 }
 
