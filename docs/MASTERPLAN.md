@@ -22,7 +22,7 @@
 | StarterPlayer | `CharacterUseJumpPower=true`, `JumpPower=0`, `AutoJumpEnabled=false` → **F-03 already fixed** | research 03 |
 | Lighting | Sky only. No ColorCorrection/Bloom/Atmosphere. Fog 60→480, EnvironmentDiffuse/Specular 0 | research 03 |
 | Streaming | `StreamingEnabled=false`, 967 arena parts, arenas ~2 300 studs apart in Z | research 03 |
-| Chat | Roblox default chat fully on | research 03 |
+| Chat | Roblox default chat fully on in menu not while minigames | research 03 |
 | Animations | 11 ids published by user 4840146924, place owned by group 832614570 → Length 0 until access is shared; `warmup()` falls back to `RBX_ANIMSAVES` in Studio only. `Player.Eat=0`, `Boss.Death=0`, 4 face textures 0. **Anim_Eat.fbx + Anim_Stab.fbx exported 22.08. 14:44, not imported; no `Anim_Eat` holder; no `Stab` key; no Fork part anywhere in the place.** All RBX_ANIMSAVES sequences are Priority=Action, Loop=true | research 03, 07 |
 | Audio | 34 Sounds. Music: `birdhunt` (0.24), `minefield` (0.45) only. `Ambience` empty. `Music.Loop` gone → lobby music dead code. `sfx("AccessGranted")` silent no-op. 942 local source files; licence PDFs only for PSX Tech, ROT, Rust & Blood | research 07 |
 | Persistence / social | 0 DataStore, Badge, GamePass, leaderstats, invites, private servers, captures, notifications | research 02, 05 |
