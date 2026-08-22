@@ -225,7 +225,7 @@ local TRIALS = {
 		icon = "Magnifier",
 		subtitle = "GOOD LEFT. BAD RIGHT. NO EXCEPTIONS._",
 		tagline = "MISFILE AND YOU FOLLOW IT.",
-		ready = false,
+		ready = true, -- P4.1 live 23.08.2026
 		showInterRoundScore = false,
 		module = SortingFloor,
 	},
