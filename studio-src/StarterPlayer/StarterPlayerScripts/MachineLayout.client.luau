@@ -338,6 +338,19 @@ local function apply()
 			local c = info:FindFirstChild(n)
 			if c then c.Position = UDim2.new(0, col, c.Position.Y.Scale, c.Position.Y.Offset) end
 		end
+		-- ... and the CONTROLS window must end before the Roster starts (on a 4:3
+		-- tablet its authored 45.5 % ran into the roster's checkboxes).
+		local cw, roster = info:FindFirstChild("ControlsWindow"), info:FindFirstChild("Roster")
+		if cw and roster then
+			local authoredW = cw:GetAttribute("AuthoredWidthScale")
+			if not authoredW then
+				authoredW = cw.Size.X.Scale
+				cw:SetAttribute("AuthoredWidthScale", authoredW)
+			end
+			local rosterX = roster.Position.X.Scale * localW + roster.Position.X.Offset
+			local w = math.min(authoredW * localW, rosterX - col - 16)
+			cw.Size = UDim2.new(0, math.max(200, w), cw.Size.Y.Scale, cw.Size.Y.Offset)
+		end
 	end
 	applyControlsText()
 	applyButtonHints()
