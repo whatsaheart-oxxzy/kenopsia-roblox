@@ -234,7 +234,16 @@ local trialWalkSpeed = 0    -- WalkSpeed while moveState == "trial"
 
 -- SESSION SETTINGS + UI AUDIO -----------------------------------------------
 
-local uiSettings = { UiSound = true, Music = true, ReduceFlicker = false }
+-- P2.3: Reduce Motion in the OS pre-selects REDUCE FLICKER; every setting is
+-- mirrored onto the local Player as an attribute (KenopsiaUiSound, ...,
+-- KenopsiaSimFilter, KenopsiaCRT) so UiFx / SimulationGrade can read it.
+local uiSettings = { UiSound = true, Music = true, ReduceFlicker = GuiService.ReducedMotionEnabled == true,
+	SimFilter = true, Crt = true }
+local SETTING_ATTR = { Crt = "KenopsiaCRT" }
+local function publishSetting(key)
+	player:SetAttribute(SETTING_ATTR[key] or ("Kenopsia" .. key), uiSettings[key])
+end
+for key in uiSettings do publishSetting(key) end
 
 -- Click/Submit draw a random variant from their pool so repeated presses
 -- don't sound like a sample loop
@@ -297,87 +306,8 @@ end
 player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(updateTrialMusic)
 task.defer(updateTrialMusic)
 
--- DEAD-ZONE-LICHT: schwarzes Void + kaltes blaues Flutlicht, nur waehrend der
--- Runde und nur auf diesem Client; danach wird alles exakt zurueckgestellt
-local LightingSvc = game:GetService("Lighting")
-local savedLight = nil
-local dzColor = nil
-local dzLampFolder = nil
-
-local function enterDZLight()
-	if savedLight then return end
-	savedLight = {
-		Ambient = LightingSvc.Ambient,
-		OutdoorAmbient = LightingSvc.OutdoorAmbient,
-		FogColor = LightingSvc.FogColor,
-		FogStart = LightingSvc.FogStart,
-		FogEnd = LightingSvc.FogEnd,
-		Brightness = LightingSvc.Brightness,
-		ClockTime = LightingSvc.ClockTime,
-	}
-	LightingSvc.Ambient = Color3.fromRGB(10, 12, 18)
-	LightingSvc.OutdoorAmbient = Color3.fromRGB(2, 3, 6)
-	LightingSvc.FogColor = Color3.fromRGB(0, 0, 0)
-	LightingSvc.FogStart = 45
-	LightingSvc.FogEnd = 150
-	LightingSvc.Brightness = 1
-	LightingSvc.ClockTime = 0
-	dzColor = Instance.new("ColorCorrectionEffect")
-	dzColor.Saturation = -0.35
-	dzColor.Contrast = 0.08
-	dzColor.TintColor = Color3.fromRGB(205, 218, 255)
-	dzColor.Parent = LightingSvc
-	-- Flutlicht-Raster ueber dem Feld (nur lokal, kostet den Server nichts)
-	dzLampFolder = Instance.new("Folder")
-	dzLampFolder.Name = "DZ_Lights_Local"
-	dzLampFolder.Parent = workspace
-	local dz = workspace:FindFirstChild("Dead Zone")
-	local ground = dz and dz:FindFirstChild("Minefield Ground")
-	if ground then
-		local size = ground.Size
-		local cf = ground.CFrame
-		local nx = math.clamp(math.floor(size.X / 16), 2, 5)
-		local nz = math.clamp(math.floor(size.Z / 16), 2, 7)
-		for ix = 1, nx do
-			for iz = 1, nz do
-				local ox = -size.X / 2 + size.X * ((ix - 0.5) / nx)
-				local oz = -size.Z / 2 + size.Z * ((iz - 0.5) / nz)
-				local holder = Instance.new("Part")
-				holder.Anchored = true
-				holder.CanCollide = false
-				holder.CanQuery = false
-				holder.CanTouch = false
-				holder.Transparency = 1
-				holder.Size = Vector3.new(0.2, 0.2, 0.2)
-				holder.CFrame = cf * CFrame.new(ox, 14, oz)
-				local spot = Instance.new("SpotLight")
-				spot.Face = Enum.NormalId.Bottom
-				spot.Angle = 80
-				spot.Range = 26
-				spot.Brightness = 2.4
-				spot.Color = Color3.fromRGB(170, 205, 255)
-				spot.Shadows = false
-				spot.Parent = holder
-				holder.Parent = dzLampFolder
-			end
-		end
-	end
-end
-
-local function exitDZLight()
-	if not savedLight then return end
-	for k, val in pairs(savedLight) do LightingSvc[k] = val end
-	savedLight = nil
-	if dzColor then dzColor:Destroy() dzColor = nil end
-	if dzLampFolder then dzLampFolder:Destroy() dzLampFolder = nil end
-end
-
-local function updateDZLight()
-	local active = player:GetAttribute("KenopsiaActiveTrial") or ""
-	if active == "minefield" then enterDZLight() else exitDZLight() end
-end
-player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(updateDZLight)
-task.defer(updateDZLight)
+-- DEAD-ZONE-LICHT (Lighting + lamp raster) moved to SimulationGrade.client.luau
+-- on 22.08.2026 (P3.1): every trial's look, snapshot and restore, lives there.
 
 local controlsModule
 task.spawn(function()
@@ -502,6 +432,15 @@ local function restoreCamera()
 	if hum then camera.CameraSubject = hum end
 end
 
+-- P3.1: SimulationGrade publishes the PS1 position step (steps per stud, 0 =
+-- off) as KenopsiaCamQuant. RenderStepped runs AFTER every BindToRenderStep
+-- priority, so the grade's own binding cannot reach a camera this writer sets;
+-- the snap has to happen here, after the branches. Position only, never rotation.
+local camQuant = tonumber(player:GetAttribute("KenopsiaCamQuant")) or 0
+player:GetAttributeChangedSignal("KenopsiaCamQuant"):Connect(function()
+	camQuant = tonumber(player:GetAttribute("KenopsiaCamQuant")) or 0
+end)
+
 RunService.RenderStepped:Connect(function(dt)
 	if spectateCF then
 		camera.CameraType = Enum.CameraType.Scriptable
@@ -542,6 +481,15 @@ RunService.RenderStepped:Connect(function(dt)
 			if hum then hum.AutoRotate = false end
 			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, runnerCamDir == 1 and math.pi or 0, 0)
 		end
+	end
+	if camQuant > 0 and camera.CameraType == Enum.CameraType.Scriptable then
+		local cf = camera.CFrame
+		local pos = cf.Position
+		local q = Vector3.new(
+			math.floor(pos.X * camQuant + 0.5) / camQuant,
+			math.floor(pos.Y * camQuant + 0.5) / camQuant,
+			math.floor(pos.Z * camQuant + 0.5) / camQuant)
+		if q ~= pos then camera.CFrame = cf.Rotation + q end
 	end
 end)
 
@@ -2304,6 +2252,8 @@ if settingsPanel then
 		{ frame = settingsPanel:FindFirstChild("Row_UISOUND"), key = "UiSound" },
 		{ frame = settingsPanel:FindFirstChild("Row_MUSIC"), key = "Music" },
 		{ frame = settingsPanel:FindFirstChild("Row_REDUCEFLICKER"), key = "ReduceFlicker" },
+		{ frame = settingsPanel:FindFirstChild("Row_SIMFILTER"), key = "SimFilter" },
+		{ frame = settingsPanel:FindFirstChild("Row_CRT"), key = "Crt" },
 	}
 	local function render()
 		for _, r in rows do
@@ -2317,6 +2267,7 @@ if settingsPanel then
 		if r.frame then
 			r.frame.Hit.Activated:Connect(function()
 				uiSettings[r.key] = not uiSettings[r.key]
+				publishSetting(r.key)
 				sfx("Click")
 				render()
 				if r.key == "Music" then setLobbyMusic(lobbyMusicOn) end

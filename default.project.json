@@ -102,6 +102,7 @@
         "KenopsiaClient": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau" },
         "MachineLayout":  { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/MachineLayout.client.luau" },
         "UiFx":           { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/UiFx.client.luau" },
+        "SimulationGrade": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/SimulationGrade.client.luau" },
         "GoreClient":     { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/GoreClient.client.luau" },
         "TrialClientKit": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/TrialClientKit.luau" },
         "TrialClients": {
