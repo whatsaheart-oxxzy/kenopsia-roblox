@@ -92,8 +92,12 @@ local currentPlatform = detectPlatform()
 -- attribute) and is raised so it renders at >= MIN_TEXT_PX; on desktop and
 -- console the floor is never reached, so nothing changes there.
 local MIN_TEXT_PX = 10
+-- Console is read from 8-10 feet: Roblox's console guidelines want body text
+-- around 22 px and up, so the floor is higher there.
+local MIN_TEXT_PX_CONSOLE = 22
 local function applyTextFloor(root, s)
-	local floor = math.ceil(MIN_TEXT_PX / math.max(s, 0.01))
+	local minPx = currentPlatform == "Console" and MIN_TEXT_PX_CONSOLE or MIN_TEXT_PX
+	local floor = math.ceil(minPx / math.max(s, 0.01))
 	for _, d in ipairs(root:GetDescendants()) do
 		if (d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox")) and not d.TextScaled then
 			local authored = d:GetAttribute("AuthoredTextSize")
@@ -285,6 +289,41 @@ machine:GetAttributeChangedSignal("TrialId"):Connect(applyControlsText)
 
 local focusScreen -- defined below; apply() retries focus through it
 
+-- console: the gamepad focus ring is the machine's own phosphor frame, not
+-- Roblox's default blue rectangle (P2.1, 22.08.2026). PlayerGui's
+-- SelectionImageObject applies to every selectable element.
+local function applyFocusRing()
+	local ring = playerGui:FindFirstChild("KenopsiaFocusRing")
+	if currentPlatform ~= "Console" then
+		if playerGui.SelectionImageObject == ring then playerGui.SelectionImageObject = nil end
+		return
+	end
+	if not ring then
+		ring = Instance.new("Frame")
+		ring.Name = "KenopsiaFocusRing"
+		ring.BackgroundTransparency = 1
+		ring.BorderSizePixel = 0
+		ring.Size = UDim2.new(1, 12, 1, 12)
+		ring.Position = UDim2.new(0, -6, 0, -6)
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.fromRGB(120, 255, 170)
+		stroke.Thickness = 3
+		stroke.Parent = ring
+		-- the four corner ticks the roulette tiles already use
+		for _, c in ipairs({ { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } }) do
+			local tick = Instance.new("Frame")
+			tick.BackgroundColor3 = Color3.fromRGB(120, 255, 170)
+			tick.BorderSizePixel = 0
+			tick.AnchorPoint = Vector2.new(c[1], c[2])
+			tick.Position = UDim2.new(c[1], 0, c[2], 0)
+			tick.Size = UDim2.new(0, 14, 0, 6)
+			tick.Parent = ring
+		end
+		ring.Parent = playerGui
+	end
+	playerGui.SelectionImageObject = ring
+end
+
 -- console: an A-button glyph rides the screen's primary control
 local function applyButtonHints()
 	local show = currentPlatform == "Console"
@@ -354,6 +393,7 @@ local function apply()
 	end
 	applyControlsText()
 	applyButtonHints()
+	applyFocusRing()
 	machine:SetAttribute("Platform", currentPlatform)
 	machine:SetAttribute("LayoutScale", s)
 	-- the boot viewport can be a placeholder size; once layout settles,
