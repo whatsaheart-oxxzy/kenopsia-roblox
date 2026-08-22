@@ -27,6 +27,14 @@ return {
 		CodeLength = 6,
 	},
 
+	-- P3.3 (22.08.2026): the PS1 rig is the player character in every trial.
+	-- UsePS1Rig = false brings Roblox avatars back without touching the place;
+	-- Scale is applied per spawn by CharacterService (8.72 rig studs x 0.69 = 6.0).
+	Character = {
+		UsePS1Rig = true,
+		Scale = 0.69,
+	},
+
 	Playlist = {
 		-- Candidate trials. A trial is scheduled only if it appears here AND
 		-- its registry entry in MachineFlow declares ready = true. Both gates

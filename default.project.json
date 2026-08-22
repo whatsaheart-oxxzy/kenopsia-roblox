@@ -78,6 +78,7 @@
           "CanteenDiner":    { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CanteenDiner.luau" },
           "BloodFX":       { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/BloodFX.luau" },
           "TrialKit":      { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/TrialKit.luau" },
+          "CharacterService": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CharacterService.luau" },
           "CutToSpec": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/CutToSpec.luau" },
           "ArmsIssue": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/ArmsIssue.luau" },
           "Upstream": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Upstream.luau" },
@@ -124,7 +125,8 @@
 
       "StarterCharacterScripts": {
         "$className": "StarterCharacterScripts",
-        "Health": { "$path": "studio-src/StarterPlayer/StarterCharacterScripts/Health.server.luau" }
+        "Health": { "$path": "studio-src/StarterPlayer/StarterCharacterScripts/Health.server.luau" },
+        "PS1Animate": { "$path": "studio-src/StarterPlayer/StarterCharacterScripts/PS1Animate.client.luau" }
       }
 
     }

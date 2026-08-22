@@ -823,13 +823,22 @@ touchControls.Btn_PUNCH.Activated:Connect(function()
 		XBotPush:FireServer()
 	end
 end)
-touchControls.Btn_CROUCH.Activated:Connect(function()
+local function toggleCrouch()
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	if not (char and hum) then return end
 	if not crouchToggled and not charSneakAllowed() then return end
 	if not crouchToggled and hum.WalkSpeed <= 0 then return end
 	setCrouchTouch(not crouchToggled)
+end
+touchControls.Btn_CROUCH.Activated:Connect(toggleCrouch)
+-- P3.3: the same toggle on keyboard (C / Left Ctrl) and gamepad (B); the server
+-- gates it on the trial's sneak permission, the rig plays the Crouch clip.
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.C or input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.ButtonB then
+		toggleCrouch()
+	end
 end)
 
 -- FELDSCANNER (Dead Zone): hold to emit repeating sonar pulses.
