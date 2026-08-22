@@ -1679,21 +1679,32 @@ local function showSelection(p, token)
 			task.wait(0.2)
 		end
 
-		-- crosshair snaps straight to the mark
+		-- crosshair snaps straight to the mark. The tile centre is an ABSOLUTE
+		-- screen point, but CrossH/CrossV live inside Selection, which
+		-- MachineLayout scales (0.81 on desktop, less on phones): a raw absolute
+		-- offset lands scale-times too high and too far left. Convert into the
+		-- screen's own pixel space first. (P2.1, 22.08.2026)
 		local center = chosenTile.AbsolutePosition + chosenTile.AbsoluteSize / 2
-		selection.CrossH.Position = UDim2.new(0, 0, 0, -6)
-		selection.CrossV.Position = UDim2.new(0, -6, 0, 0)
-		selection.CrossH.Visible = true
-		selection.CrossV.Visible = true
-		TweenService:Create(selection.CrossH, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			Position = UDim2.new(0, 0, 0, center.Y + 16),
+		local layoutScale = selection:FindFirstChild("KenopsiaScale")
+		layoutScale = layoutScale and layoutScale.Scale or 1
+		local localX = (center.X - selection.AbsolutePosition.X) / layoutScale
+		local localY = (center.Y - selection.AbsolutePosition.Y) / layoutScale
+		local crossH, crossV = selection.CrossH, selection.CrossV
+		local hThick = crossH.AbsoluteSize.Y / layoutScale
+		local vThick = crossV.AbsoluteSize.X / layoutScale
+		crossH.Position = UDim2.new(0, 0, 0, -hThick)
+		crossV.Position = UDim2.new(0, -vThick, 0, 0)
+		crossH.Visible = true
+		crossV.Visible = true
+		TweenService:Create(crossH, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Position = UDim2.new(0, 0, 0, localY - hThick / 2),
 		}):Play()
-		TweenService:Create(selection.CrossV, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			Position = UDim2.new(0, center.X, 0, 0),
+		TweenService:Create(crossV, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Position = UDim2.new(0, localX - vThick / 2, 0, 0),
 		}):Play()
 		task.wait(0.45)
 		if session ~= token then return end
-		selection.BootText.Position = UDim2.new(0, center.X + 90, 0, center.Y)
+		selection.BootText.Position = UDim2.new(0, localX + 90, 0, localY)
 		typewrite(selection.BootText, "Simulation bootst:", 22, token)
 	end)
 end

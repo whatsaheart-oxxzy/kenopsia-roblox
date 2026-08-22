@@ -26,19 +26,27 @@ local CENTERED = { "SettingsPanel", "CountText", "HipCross", "HitMark" }
 
 local function detectPlatform()
 	local forced = machine:GetAttribute("ForcePlatform")
-	if forced == "Mobile" or forced == "Console" or forced == "Desktop" then
+	if forced == "Mobile" or forced == "Tablet" or forced == "Console" or forced == "Desktop" then
 		return forced
 	end
+	-- P2.1 (22.08.2026): compose the signal instead of trusting one API.
+	-- Gamepad-only input is a console whatever the viewport; touch without a
+	-- pointer is a phone or a tablet, told apart by the short axis and the
+	-- aspect (an iPad is 4:3 and ~800 pt tall, a phone is 19.5:9 and < 500).
 	if GuiService:IsTenFootInterface() then return "Console" end
 	local touch = UserInputService.TouchEnabled
 	local pointer = UserInputService.MouseEnabled or UserInputService.KeyboardEnabled
-	if touch and not pointer then return "Mobile" end
-	-- Studio device emulation keeps the mouse alive; a small touch viewport
-	-- is a phone regardless
-	if touch then
-		local cam = workspace.CurrentCamera
-		local vp = cam and cam.ViewportSize or Vector2.new(1920, 1080)
-		if math.min(vp.X, vp.Y) < 500 then return "Mobile" end
+	local gamepad = UserInputService.GamepadEnabled
+	if gamepad and not touch and not pointer then return "Console" end
+	local cam = workspace.CurrentCamera
+	local vp = cam and cam.ViewportSize or Vector2.new(1920, 1080)
+	local short = math.min(vp.X, vp.Y)
+	local aspect = math.max(vp.X, vp.Y) / math.max(1, short)
+	if touch and (not pointer or short < 900) then
+		-- Studio device emulation keeps the mouse alive; the viewport decides.
+		if short < 500 then return "Mobile" end
+		if aspect < 1.6 then return "Tablet" end
+		return short < 700 and "Mobile" or "Tablet"
 	end
 	return "Desktop"
 end
@@ -48,7 +56,11 @@ local function platformScale(platform)
 	local vh = (cam and cam.ViewportSize.Y or REF_HEIGHT)
 	local s = vh / REF_HEIGHT
 	if platform == "Mobile" then
-		return math.clamp(s, 0.42, 0.85)
+		-- 0.42 made a 128-px tile 54 px and a 26x6 bracket sub-pixel; 0.55 is
+		-- the floor at which the roulette and the READY button stay tappable.
+		return math.clamp(s, 0.55, 0.85)
+	elseif platform == "Tablet" then
+		return math.clamp(s, 0.7, 1.0)
 	elseif platform == "Console" then
 		return math.clamp(s * 1.1, 1, 1.4)
 	end
@@ -224,7 +236,7 @@ local function applyControlsText()
 	if not cw then return end
 	local trialId = machine:GetAttribute("TrialId")
 	local trial = moduleControlsText(trialId) or TRIAL_TEXT[trialId] or TRIAL_TEXT.default
-	local t = trial[currentPlatform] or trial.Desktop
+	local t = trial[currentPlatform] or (currentPlatform == "Tablet" and trial.Mobile) or trial.Desktop
 	for _, rowName in ipairs({ "Row1", "Row1b", "Row2", "Row3" }) do
 		local row = cw:FindFirstChild(rowName)
 		local label = row and row:FindFirstChild("Text")
