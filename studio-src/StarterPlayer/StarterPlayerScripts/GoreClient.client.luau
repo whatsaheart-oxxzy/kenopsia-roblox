@@ -16,8 +16,13 @@ local DEEP = Color3.fromRGB(50, 4, 4)
 local DARK = Color3.fromRGB(80, 0, 0)
 local DRIED = Color3.fromRGB(36, 3, 3)
 local GRAVITY = Vector3.new(0, -75, 0)
-local MAX_DROPLETS = 140
-local MAX_SPLATS = 90
+-- perf (22.08.2026): touch devices without a keyboard (phones, tablets) get a
+-- third of the droplets and splats; the burst still reads, the raycasts per
+-- frame do not pile up.
+local UIS = game:GetService("UserInputService")
+local TOUCH_ONLY = UIS.TouchEnabled and not UIS.KeyboardEnabled
+local MAX_DROPLETS = TOUCH_ONLY and 48 or 140
+local MAX_SPLATS = TOUCH_ONLY and 40 or 90
 local MAX_POOLS = 30
 local POOL_LIFE = 18
 

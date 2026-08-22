@@ -55,6 +55,25 @@ local HUD_ZINDEX = 58     -- below Announce 60 / Fader 70: death cards and fades
 local PAD_ZINDEX = 68     -- same as TouchControls, above Scope.Mask 65
 local DEFAULT_SEND_COOLDOWN = 0.1
 
+-- perf (22.08.2026): the trial HUD and touch pad live in their OWN ScreenGui.
+-- Roblox re-rasterises a ScreenGui whenever any descendant changes, and the
+-- Machine has 520 of them; a timer label rewritten every frame inside it would
+-- redraw the whole console. Same insets and order as the Machine, one above.
+local hudGuiInstance = nil
+local function hudGui(deps)
+	if hudGuiInstance and hudGuiInstance.Parent then return hudGuiInstance end
+	local g = Instance.new("ScreenGui")
+	g.Name = "KenopsiaTrialHud"
+	g.IgnoreGuiInset = true
+	g.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
+	g.DisplayOrder = (deps.machine and deps.machine.DisplayOrder or 50) + 1
+	g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	g.ResetOnSpawn = false
+	g.Parent = (deps.machine and deps.machine.Parent) or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+	hudGuiInstance = g
+	return g
+end
+
 -- The kinds the router lets a module OBSERVE while the legacy handler still runs.
 local OBSERVED = { count = true, go = true, announce = true, hide = true, gorefx = true, role = true }
 
@@ -194,7 +213,7 @@ local function newKit(trialId, deps, router)
 		hud.BackgroundTransparency = 1
 		hud.Size = UDim2.new(1, 0, 1, 0)
 		hud.ZIndex = HUD_ZINDEX
-		hud.Parent = deps.machine
+		hud.Parent = hudGui(deps)
 		return hud
 	end
 
@@ -206,7 +225,7 @@ local function newKit(trialId, deps, router)
 		pad.Size = UDim2.new(1, 0, 1, 0)
 		pad.ZIndex = PAD_ZINDEX
 		pad.Visible = deps.touchAllowed()
-		pad.Parent = deps.machine
+		pad.Parent = hudGui(deps)
 		return pad
 	end
 

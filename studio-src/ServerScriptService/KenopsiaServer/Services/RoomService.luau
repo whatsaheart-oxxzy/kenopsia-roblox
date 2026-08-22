@@ -405,6 +405,12 @@ function RoomService.roomOf(player)
 	return nil
 end
 
+-- perf (22.08.2026): lets the boot watchdog skip seat() -- and its full
+-- RoomState broadcast -- for everyone who already holds a seat.
+function RoomService.isMember(player)
+	return memberIndex(player.UserId) ~= nil
+end
+
 function RoomService.getRoom(id)
 	if id == ROOM_ID then return room end
 	return nil

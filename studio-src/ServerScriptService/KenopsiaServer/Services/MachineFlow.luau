@@ -840,7 +840,9 @@ function MachineFlow.start(RoomService)
 					if not plr:GetAttribute("KenopsiaJoinedAt") then
 						plr:SetAttribute("KenopsiaJoinedAt", os.clock())
 					end
-					if os.clock() - plr:GetAttribute("KenopsiaJoinedAt") > 7 then
+					-- perf (22.08.2026): seat() broadcasts the whole RoomState; members are
+					-- left alone, only the unseated and the bench (promotion) go through it.
+					if os.clock() - plr:GetAttribute("KenopsiaJoinedAt") > 7 and not RoomServiceRef.isMember(plr) then
 						RoomServiceRef.autoSeat(plr)
 					end
 					local room = RoomServiceRef.roomOf(plr)

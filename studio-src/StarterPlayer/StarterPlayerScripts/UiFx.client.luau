@@ -16,7 +16,10 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local SCANLINE = "rbxassetid://73471354146575" -- 8x8 tile: 4 clear rows, 4 rows black at 30 %
+-- 64x64 tile with the same 8-px period (4 clear rows, 4 rows black at 30 %):
+-- Roblox draws ScaleType.Tile as one quad per tile, so the 8-px tile was
+-- ~40k quads on a phone screen; this one is 64x fewer (perf, 22.08.2026).
+local SCANLINE = "rbxassetid://75481537065425"
 local PHOSPHOR = Color3.fromHex("78FFAA")
 
 local gui = Instance.new("ScreenGui")
@@ -34,7 +37,7 @@ scan.BackgroundTransparency = 1
 scan.Image = SCANLINE
 scan.ImageTransparency = 0.35
 scan.ScaleType = Enum.ScaleType.Tile
-scan.TileSize = UDim2.fromOffset(8, 8)
+scan.TileSize = UDim2.fromOffset(64, 64)
 scan.ResampleMode = Enum.ResamplerMode.Pixelated
 scan.Size = UDim2.fromScale(1, 1)
 scan.ZIndex = 2

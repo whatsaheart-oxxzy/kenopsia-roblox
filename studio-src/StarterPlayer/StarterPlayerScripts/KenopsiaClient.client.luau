@@ -476,10 +476,17 @@ RunService.RenderStepped:Connect(function(dt)
 					root.Position + Vector3.new(0, 20, -17 * runnerCamDir),
 					root.Position + Vector3.new(0, 3, 30 * runnerCamDir))
 			end
-			-- Shiftlock only: der Charakter blickt immer in Bahnrichtung
+			-- Shiftlock only: der Charakter blickt immer in Bahnrichtung. perf
+			-- (22.08.2026): the yaw is rewritten only when physics actually turned
+			-- the root, and AutoRotate only when it came back on -- no property
+			-- write per frame in the steady state.
 			local hum = char:FindFirstChildOfClass("Humanoid")
-			if hum then hum.AutoRotate = false end
-			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, runnerCamDir == 1 and math.pi or 0, 0)
+			if hum and hum.AutoRotate then hum.AutoRotate = false end
+			local look = root.CFrame.LookVector
+			local wantZ = runnerCamDir == 1 and 1 or -1
+			if math.abs(look.Z - wantZ) > 0.02 or math.abs(look.X) > 0.02 then
+				root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, runnerCamDir == 1 and math.pi or 0, 0)
+			end
 		end
 	end
 	if camQuant > 0 and camera.CameraType == Enum.CameraType.Scriptable then
