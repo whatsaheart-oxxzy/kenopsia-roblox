@@ -44,3 +44,11 @@ Clicks sent before `go` or while the fork is full are dropped by design (client 
 - `validateArena` passes (`[CP] go`), the diner sits at the table edge, the fork lands on the plate; HUD after plate/mouth/plate: PLATE 08, EATEN 04/16.
 - `Boss.Death` removed from AnimationIds and the test: the boss never dies — Death is the PLAYER's execution clip.
 - Undo path: one ChangeHistory recording "Canteen: seats to the table, plates under the fork (22.08.)" + one "drop duplicate plates".
+
+## Addendum 2: faces
+
+- Uploaded via the Studio MCP `upload_image` (served from localhost): PlayerBlink 134298997425493, PlayerHappy 71841991124832, PlayerHurt 100549970137009, BossAngry 88815675234840. `AnimationIds.texture(name)` returns the uri or nil.
+- `CanteenDiner`: blink every 3–5 s for 0.1 s on `Player_Head` only (measured live: neutral → Blink at 4.70 s → neutral at 4.83 s); `express("Hurt")` on `die()`, `express("Happy")` via `CanteenProps.dinerHappy` when the plate is finished (CanteenProtocol `ps.finished`). Expressions stop the blink loop.
+- `CanteenBoss`: `setAngry(true)` on lowering/watching, `false` on raising/hidden.
+- Not verified live: Hurt (the test swallow landed on the round deadline, `caught=0`) and Happy (needs a finished plate) — both are one-line hooks on paths that already run.
+- `CP_Observer` import dropped from #4: the procedural Observer is hidden whenever the boss template exists, so the asset would never be seen.

@@ -543,6 +543,7 @@ local function handleAction(player, action)
 			ps.finishing = false
 			ps.finished = true
 			ps.finishedAt = os.clock() - st.startedAt
+			if st.props and st.props.dinerHappy and ps.seat then pcall(st.props.dinerHappy, ps.seat) end
 			tellOne(player.UserId, { kind = "cpdone", at = ps.finishedAt })
 		end)
 	end

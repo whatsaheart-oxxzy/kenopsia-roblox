@@ -243,7 +243,40 @@ function CanteenDiner.spawn(marker, parent, seatIndex, opts)
 	}, { __index = CanteenDiner })
 	self.hasFork = self.fork ~= nil and self.fork:IsA("BasePart")
 	if self.beans and self.beans:IsA("BasePart") then self.beans.Transparency = 1 end
+	self.head = model:FindFirstChild("Player_Head", true)
+	self.neutralFace = (self.head and self.head:IsA("MeshPart")) and self.head.TextureID or nil
+	self:startBlinking()
 	return self
+end
+
+-- FACES. One 1024 atlas per expression, swapped on the head part only: the
+-- body and bag map elsewhere on the same atlas and never change.
+function CanteenDiner.face(self, name)
+	local head = self.head
+	if not (head and head:IsA("MeshPart")) then return end
+	local uri = name and AnimationIds.texture("Player" .. name) or nil
+	head.TextureID = uri or self.neutralFace or head.TextureID
+end
+
+-- A blink every 3-5 s for 0.1 s: the only motion a still diner is allowed.
+function CanteenDiner.startBlinking(self)
+	if not AnimationIds.texture("PlayerBlink") then return end
+	task.spawn(function()
+		while self.alive and not self.dead and not self.expression do
+			task.wait(3 + math.random() * 2)
+			if not (self.alive and not self.dead and not self.expression) then break end
+			self:face("Blink")
+			task.wait(0.1)
+			if self.alive and not self.dead and not self.expression then self:face(nil) end
+		end
+	end)
+end
+
+-- Hurt / Happy stick and end the blinking.
+function CanteenDiner.express(self, name)
+	if not self.alive then return end
+	self.expression = name
+	self:face(name)
 end
 
 -- Beans on the tines. While a bite is in flight the clip owns the beans (they
@@ -341,6 +374,7 @@ function CanteenDiner.die(self)
 	if not self.alive or self.dead then return end
 	self.dead = true
 	self.generation += 1
+	self:express("Hurt")
 	local death = self.tracks.Death
 	stopAll(self, death, 0.05)
 	if not death then return end

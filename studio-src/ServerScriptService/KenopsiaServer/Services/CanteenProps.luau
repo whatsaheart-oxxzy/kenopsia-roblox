@@ -444,6 +444,12 @@ function CanteenProps.build(arena, opts)
 		if diner then diner:die() end
 	end
 
+	-- An empty plate, survived: the one smile at this table.
+	function self.dinerHappy(seatIndex)
+		local diner = self.diners[seatIndex]
+		if diner then diner:express("Happy") end
+	end
+
 	function self.setPeas(seatIndex, remaining)
 		local seat = self.seats[seatIndex]
 		if not seat then return end

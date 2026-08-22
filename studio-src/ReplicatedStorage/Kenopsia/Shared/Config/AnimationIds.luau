@@ -42,9 +42,18 @@ AnimationIds.Boss = {            -- rig: CanteenBoss (19 bones)
 	LookDown = 119985932443999, Shoot = 86667177937697,
 }
 AnimationIds.Textures = {
-	PlayerNeutral = 136734973177857, PlayerBlink = 0, PlayerHappy = 0, PlayerHurt = 0,
-	BossNeutral   = 130641113899237, BossAngry = 0,
+	-- 22.08.2026: the four expression atlases uploaded (1024, nearest-upscaled).
+	PlayerNeutral = 136734973177857, PlayerBlink = 134298997425493,
+	PlayerHappy = 71841991124832, PlayerHurt = 100549970137009,
+	BossNeutral   = 130641113899237, BossAngry = 88815675234840,
 }
+
+-- "rbxassetid://<id>" for a published texture, nil while the slot is 0.
+function AnimationIds.texture(name)
+	local id = AnimationIds.Textures[name]
+	if type(id) ~= "number" or id <= 0 then return nil end
+	return "rbxassetid://" .. tostring(id)
+end
 
 -- OWNERSHIP. The first batch of ids was published by user 4840146924
 -- (iLoveKilIs) while place 110672791536316 belongs to GROUP 832614570, and

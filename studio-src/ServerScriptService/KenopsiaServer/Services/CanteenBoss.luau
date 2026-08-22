@@ -60,6 +60,14 @@ local function setPistolVisible(self, visible)
 	end
 end
 
+-- The glare: the angry atlas goes on the head while the eyes are up.
+local function setAngry(self, angry)
+	local head = self.model and self.model:FindFirstChild("Boss_Head", true)
+	if not (head and head:IsA("MeshPart")) then return end
+	local uri = angry and AnimationIds.texture("BossAngry") or nil
+	head.TextureID = uri or self.neutralFace or head.TextureID
+end
+
 local function stopTracks(self, except)
 	for _, track in self.tracks do
 		if track ~= except and track.IsPlaying then
@@ -103,6 +111,7 @@ local function applyPhase(self)
 	local phase = self.phase
 	if phase == "lowering" then
 		setPistolVisible(self, false)
+		setAngry(self, true)
 		-- Frame 11 is the authored EyesUp/decision pose. Only that tell segment
 		-- must land at the end of lowering; frames 11-44 are a glare hold that
 		-- the watching Idle replaces.
@@ -112,13 +121,16 @@ local function applyPhase(self)
 			(LOOK_UP_TELL_FRAME / FRAME_RATE) / duration)
 	elseif phase == "watching" then
 		setPistolVisible(self, false)
+		setAngry(self, true)
 		playTrack(self, "Idle", true, Enum.AnimationPriority.Idle)
 	elseif phase == "raising" then
 		setPistolVisible(self, false)
+		setAngry(self, false)
 		local duration = math.max(0.05, tonumber(self.phaseDuration) or (LOOK_DOWN_FRAMES / FRAME_RATE))
 		playTrack(self, "LookDown", false, Enum.AnimationPriority.Movement,
 			(LOOK_DOWN_FRAMES / FRAME_RATE) / duration)
 	else
+		setAngry(self, false)
 		holdReading(self)
 	end
 end
@@ -227,6 +239,7 @@ function CanteenBoss.spawn(marker, parent, opts)
 	if newspaper and newspaper:IsA("MeshPart") then newspaper.DoubleSided = true end
 	local pistol = model:FindFirstChild("Boss_Pistol", true)
 	if pistol and pistol:IsA("BasePart") then pistol.Transparency = 1 end
+	local bossHead = model:FindFirstChild("Boss_Head", true)
 
 	-- Seat him on the chair the user actually built. PivotTo(marker.CFrame) put
 	-- his FEET on a marker that stands at hip height, which left him standing in
@@ -255,6 +268,7 @@ function CanteenBoss.spawn(marker, parent, opts)
 		alive = true,
 		model = model,
 		pistol = pistol,
+		neutralFace = (bossHead and bossHead:IsA("MeshPart")) and bossHead.TextureID or nil,
 		phase = "hidden",
 		tracks = {
 			Reading = AnimationIds.load(animator, "Boss", "Reading"),
