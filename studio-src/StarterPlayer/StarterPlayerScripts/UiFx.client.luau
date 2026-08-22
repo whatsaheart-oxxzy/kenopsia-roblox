@@ -35,7 +35,7 @@ local scan = Instance.new("ImageLabel")
 scan.Name = "Scanlines"
 scan.BackgroundTransparency = 1
 scan.Image = SCANLINE
-scan.ImageTransparency = 0.35
+scan.ImageTransparency = 0.55 -- 23.08.2026: user call, lighter lines
 scan.ScaleType = Enum.ScaleType.Tile
 scan.TileSize = UDim2.fromOffset(64, 64)
 scan.ResampleMode = Enum.ResamplerMode.Pixelated
@@ -119,7 +119,7 @@ local function applyToggle()
 	-- phones read through a lighter glass: the lines must not eat the 10-px text
 	local machine = playerGui:FindFirstChild("KenopsiaMachine")
 	local platform = machine and machine:GetAttribute("Platform")
-	scan.ImageTransparency = (platform == "Mobile") and 0.55 or 0.35
+	scan.ImageTransparency = (platform == "Mobile") and 0.7 or 0.55
 end
 applyToggle()
 player:GetAttributeChangedSignal("KenopsiaCRT"):Connect(applyToggle)

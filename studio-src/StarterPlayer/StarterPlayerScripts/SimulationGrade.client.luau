@@ -41,8 +41,8 @@ local PRESETS = {
 	-- local lights are not rendered at all (low quality level / weak phones),
 	-- so the ambient carries the floor and the raster only adds the pools.
 	minefield = {
-		Ambient = Color3.fromRGB(34, 40, 56),
-		OutdoorAmbient = Color3.fromRGB(14, 18, 28),
+		Ambient = Color3.fromRGB(24, 28, 40), -- 23.08.2026: user call, darker
+		OutdoorAmbient = Color3.fromRGB(10, 13, 20),
 		Brightness = 1,
 		ClockTime = 0,
 		fog = { 45, 150, Color3.fromRGB(0, 0, 0) },
@@ -150,7 +150,7 @@ local function buildLamps(kind)
 			holder.CFrame = cf * CFrame.new(ox, 14, oz)
 			local spot = Instance.new("PointLight")
 			spot.Range = 40
-			spot.Brightness = 2.6
+			spot.Brightness = 1.6 -- 23.08.2026: user call, darker pools
 			spot.Color = Color3.fromRGB(170, 205, 255)
 			spot.Shadows = false
 			spot.Parent = holder

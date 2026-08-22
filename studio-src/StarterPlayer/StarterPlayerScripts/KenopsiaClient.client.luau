@@ -467,10 +467,11 @@ RunService.RenderStepped:Connect(function(dt)
 		if root then
 			camera.CameraType = Enum.CameraType.Scriptable
 			if runnerCamStyle == "top" then
-				-- fast senkrechte, weich nachziehende Draufsicht wie im Original
-				local eye = root.Position + Vector3.new(0, 24, -9 * runnerCamDir)
+				-- 23.08.2026 (user call): closer and leaning back -- 16 up, 14 behind,
+				-- looking 45 degrees down at a point two studs ahead of the runner.
+				local eye = root.Position + Vector3.new(0, 16, -14 * runnerCamDir)
 				smoothCamPos = smoothCamPos and smoothCamPos:Lerp(eye, math.min(dt * 6, 1)) or eye
-				camera.CFrame = CFrame.lookAt(smoothCamPos, smoothCamPos + Vector3.new(0, -24, 15 * runnerCamDir))
+				camera.CFrame = CFrame.lookAt(smoothCamPos, smoothCamPos + Vector3.new(0, -16, 16 * runnerCamDir))
 			else
 				camera.CFrame = CFrame.lookAt(
 					root.Position + Vector3.new(0, 20, -17 * runnerCamDir),
