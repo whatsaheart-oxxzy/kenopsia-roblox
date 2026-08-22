@@ -1,6 +1,8 @@
 # PLAN — Kenopsia auf Party-Spiel-Niveau
 
 > Zielort: `C:\Users\Asus\Claude\Kenopsia_Roblox Project\PLAN.md`
+>
+> **22.08.2026:** Die Reihenfolge der Arbeit steht jetzt in [`docs/MASTERPLAN.md`](docs/MASTERPLAN.md) (Belege: `docs/research/2026-08-22-sweep/`). Dieses Dokument bleibt das Entscheidungs-Log (E1, E2, §5-Protokoll). Gemessen am 22.08.: Framework, Stubs und die MP-Fassungen von `MachineFlow`/`KenopsiaClient` liegen **im Place** (62/62 Skripte byte-identisch) — P0-A ist damit gepusht, aber nie rauchgetestet (MASTERPLAN P0.1).
 
 Arbeitsdokument. Stand **21.08.2026**, erstellt aus einer Live-Auslesung des Places
 `110672791536316` (Roblox-Studio-MCP) gegen dieses Repo. Kein Plandokument wurde als
@@ -228,7 +230,8 @@ Kleine Eingriffe in vorhandenen Code, zusammen der spürbarste Sprung:
 ### P2 — Die restlichen Trials
 
 `armory`, `crawler`, `carve`, `breather`, `sweep` — jetzt Fließbandarbeit gegen einen
-bewährten Vertrag. `floorcheck`, `clearance`, `ricochet` nach E2 ans Ende oder streichen.
+bewährten Vertrag. `floorcheck`, `clearance`, `ricochet` werden nach E2 **gebaut** (ans Ende der
+Reihe); die Regel gegen aufeinanderfolgende Survival-Trials in `Playlist.order` ersetzt jedes Streichen.
 
 Bei mehr als fünf fertigen Trials: `PerSession = 5` aktivieren. 15 Trials mit 5 pro
 Session ergeben **3 003 Zusammenstellungen** statt heute 6 Reihenfolgen — gleicher Loop,
