@@ -3,7 +3,6 @@
 -- the Machine the moment the first lobby screen arrives.
 local ReplicatedFirst = game:GetService("ReplicatedFirst")
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ContentProvider = game:GetService("ContentProvider")
 local SoundService = game:GetService("SoundService")
 
@@ -66,7 +65,39 @@ count.Parent = bg
 gui.Parent = playerGui
 
 local done = false
+
+-- P2.2 boot ledger (22.08.2026): the unavoidable load time as a POST readout
+-- in the machine's voice. Lines land every 120-200 ms, one stalls on purpose,
+-- and the dots loop takes over while the lobby packet is still in flight. It
+-- never outlasts the real load: `done` cuts it the moment the bridge drops.
+local LEDGER = { "POST", "PHOSPHOR", "SUBJECT LINK", "PROTOCOL TABLE", "AUDIO BUS", "SIMULATION POOL" }
+local ledger = {}
+for i in ipairs(LEDGER) do
+	local l = Instance.new("TextLabel")
+	l.Name = "Ledger" .. i
+	l.Text = ""
+	l.Font = Enum.Font.Code
+	l.TextSize = 14
+	l.TextColor3 = DIM
+	l.BackgroundTransparency = 1
+	l.Position = UDim2.new(0.5, -220, 0.42, 58 + i * 18)
+	l.Size = UDim2.new(0, 440, 0, 18)
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.Parent = bg
+	ledger[i] = l
+end
+
 task.spawn(function()
+	for i, name in ipairs(LEDGER) do
+		if done then return end
+		local l = ledger[i]
+		local pad = string.rep(".", math.max(1, 20 - #name))
+		l.Text = name .. " " .. pad .. " "
+		task.wait(i == 4 and 0.7 or (0.12 + math.random() * 0.08))
+		if done then return end
+		l.Text = name .. " " .. pad .. " OK"
+		l.TextColor3 = IDLE
+	end
 	local dots = 0
 	while not done do
 		dots = (dots % 3) + 1
