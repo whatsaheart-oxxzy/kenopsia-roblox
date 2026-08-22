@@ -58,7 +58,7 @@ local function platformScale(platform)
 	if platform == "Mobile" then
 		-- 0.42 made a 128-px tile 54 px and a 26x6 bracket sub-pixel; 0.55 is
 		-- the floor at which the roulette and the READY button stay tappable.
-		return math.clamp(s, 0.55, 0.85)
+		return math.clamp(s, 0.62, 0.85)
 	elseif platform == "Tablet" then
 		return math.clamp(s, 0.7, 1.0)
 	elseif platform == "Console" then
@@ -85,6 +85,26 @@ local function scaleObject(obj, s, fullscreen)
 end
 
 local currentPlatform = detectPlatform()
+
+-- P2.1 text floor (22.08.2026). Pixel offsets shrink with the platform scale,
+-- so a 13-px label at 0.55 rendered 7 px on a phone (16 labels on the Info
+-- screen alone). Every label keeps its authored size (remembered once in an
+-- attribute) and is raised so it renders at >= MIN_TEXT_PX; on desktop and
+-- console the floor is never reached, so nothing changes there.
+local MIN_TEXT_PX = 10
+local function applyTextFloor(root, s)
+	local floor = math.ceil(MIN_TEXT_PX / math.max(s, 0.01))
+	for _, d in ipairs(root:GetDescendants()) do
+		if (d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox")) and not d.TextScaled then
+			local authored = d:GetAttribute("AuthoredTextSize")
+			if not authored then
+				authored = d.TextSize
+				d:SetAttribute("AuthoredTextSize", authored)
+			end
+			d.TextSize = math.max(authored, floor)
+		end
+	end
+end
 
 -- the CONTROLS window speaks each platform's input language AND the language
 -- of the trial the roulette picked (New Minigame, New Moves)
@@ -294,11 +314,30 @@ local function apply()
 	local s = platformScale(currentPlatform)
 	for _, name in ipairs(FULLSCREEN) do
 		local obj = machine:FindFirstChild(name)
-		if obj then scaleObject(obj, s, true) end
+		if obj then
+			scaleObject(obj, s, true)
+			applyTextFloor(obj, s)
+		end
 	end
 	for _, name in ipairs(CENTERED) do
 		local obj = machine:FindFirstChild(name)
-		if obj then scaleObject(obj, s, false) end
+		if obj then
+			scaleObject(obj, s, false)
+			applyTextFloor(obj, s)
+		end
+	end
+	-- P2.1: the Info text column is authored at x = 0.13 of the screen, which on
+	-- a phone lands under the SelIcon brackets (15 + 147 px). Keep the column
+	-- at least 12 px right of the icon, in the screen's own (pre-scale) pixels.
+	local info = machine:FindFirstChild("Info")
+	if info then
+		local cam = workspace.CurrentCamera
+		local localW = (cam and cam.ViewportSize.X or 1920) / s
+		local col = math.max(0.13 * localW, 15 + 147 + 12)
+		for _, n in ipairs({ "TopTicker", "NextLabel", "ControlsWindow" }) do
+			local c = info:FindFirstChild(n)
+			if c then c.Position = UDim2.new(0, col, c.Position.Y.Scale, c.Position.Y.Offset) end
+		end
 	end
 	applyControlsText()
 	applyButtonHints()
