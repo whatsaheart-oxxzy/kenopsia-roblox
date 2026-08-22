@@ -197,6 +197,11 @@ end)
 setLookSpeed(lookSpeedLevel)
 
 local session = 0
+-- P1.6: kinds the funnel renders. Anything else is logged once and IGNORED,
+-- because bumping `session` for an unknown kind cancels every typewriter and
+-- odometer mid-word (this happened once with kind = "select").
+local KNOWN_KINDS = { selection = true, info = true, status = true, round = true, score = true, announce = true, hide = true }
+local unknownKinds = {}
 local myReady = false
 local maxPlayers = 4
 -- C3: true while this client is on the bench (present in RoomState.spectators,
@@ -2209,6 +2214,13 @@ MachineState.OnClientEvent:Connect(function(p)
 					youLabel.TextStrokeTransparency = 0.25
 				end)
 			end)
+		end
+		return
+	end
+	if not KNOWN_KINDS[p.kind] then
+		if not unknownKinds[p.kind] then
+			unknownKinds[p.kind] = true
+			warn("[Kenopsia] unhandled MachineState kind: " .. tostring(p.kind))
 		end
 		return
 	end

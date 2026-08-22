@@ -338,7 +338,7 @@ local function runSelection(room)
 	room.pendingSeed = seed
 	local enabledById = {}
 	for _, t in pool do enabledById[t.id] = t end
-	local firstId = Playlist.session(Playlist.order(seed), enabledById, Config.Playlist.PerSession)[1]
+	local firstId = Playlist.arrange(Playlist.session(Playlist.order(seed), enabledById, Config.Playlist.PerSession))[1]
 	local trial = enabledById[firstId] or pool[math.random(#pool)]
 	room.trialId = trial.id
 
@@ -402,6 +402,16 @@ local function preFlow(room)
 	})
 	room.preSent = room.preSent or {}
 	for _, m in room.members do room.preSent[m.userId] = true end
+
+	-- P1.7 rematch: carry the last verdict's readiness forward, after a grace
+	-- in which anyone can walk away (or un-ready once the flag is on).
+	local rematch = room.rematch
+	room.rematch = nil
+	if rematch and os.clock() < rematch.until_ then
+		task.wait(Config.Match.RematchGrace or 6)
+		if room.phase ~= "Waiting" or room.token ~= waitingToken then return end
+		RoomServiceRef.carryReady(rematch.userIds)
+	end
 end
 
 -- MATCH ----------------------------------------------------------------------
@@ -442,10 +452,34 @@ local function playableOrder(seed)
 		enabled[t.id] = t
 	end
 	local out = {}
-	for _, id in Playlist.session(Playlist.order(seed), enabled, Config.Playlist.PerSession) do
+	for _, id in Playlist.arrange(Playlist.session(Playlist.order(seed), enabled, Config.Playlist.PerSession)) do
 		table.insert(out, enabled[id])
 	end
 	return out
+end
+
+-- P1.6 round watchdog. MachineFlow never bounded a round; a trial that hung
+-- hung the whole match. The round runs on its own thread and is cancelled at
+-- RoundSeconds + overhead + grace; the trial then ends early with the totals
+-- it has and the session goes on.
+local ROUND_OVERHEAD = 15
+local ROUND_GRACE = 20
+local function runRoundGuarded(trial, ...)
+	local args = table.pack(...)
+	local budget = (Pacing.RoundSeconds[trial.id] or 90) + ROUND_OVERHEAD + ROUND_GRACE
+	local done, ok, result = false, true, nil
+	local thread = task.spawn(function()
+		ok, result = pcall(trial.module.runRound, table.unpack(args, 1, args.n))
+		done = true
+	end)
+	local deadline = os.clock() + budget
+	while not done and os.clock() < deadline do task.wait(0.1) end
+	if not done then
+		pcall(task.cancel, thread)
+		warn(("[MachineFlow] %s round exceeded %.0f s - cut by the watchdog"):format(trial.id, budget))
+		return false, "timeout"
+	end
+	return ok, result
 end
 
 local function runMatch(room)
@@ -482,6 +516,7 @@ local function runMatch(room)
 		-- callback behind still holding a live context.
 		if session then session:cancel() end
 		room.preSent = nil
+		room.waitTold = nil
 		tellRoom(room, { kind = "hide" })
 	end
 
@@ -589,6 +624,7 @@ local function runMatch(room)
 			end
 			local trialTotals = {}
 			local prevRank = {}
+			local timedOut = false
 
 			for roundIndex = 1, rounds do
 				if ctx.cancelled() then return end
@@ -616,13 +652,17 @@ local function runMatch(room)
 						legIndex = roundIndex, legCount = rounds,
 					})
 					local hunter = room.members[(roundIndex - 1) % #room.members + 1]
-					local legOk, legScores = pcall(trial.module.runRound,
+					local legOk, legScores = runRoundGuarded(trial,
 						room, roundIndex, hunter.userId, roundIndex, rounds)
-					if not legOk then error(legScores, 0) end
+					if not legOk then
+						if legScores == "timeout" then timedOut = true else error(legScores, 0) end
+					end
 					scores = type(legScores) == "table" and legScores or {}
 				else
-					local rOk, rScores = pcall(trial.module.runRound, room, roundIndex)
-					if not rOk then error(rScores, 0) end
+					local rOk, rScores = runRoundGuarded(trial, room, roundIndex)
+					if not rOk then
+						if rScores == "timeout" then timedOut = true else error(rScores, 0) end
+					end
 					scores = type(rScores) == "table" and rScores or {}
 				end
 
@@ -631,6 +671,7 @@ local function runMatch(room)
 				for uid, value in scores do
 					trialTotals[uid] = (trialTotals[uid] or 0) + value
 				end
+				if timedOut then break end
 				if roundIndex < rounds then
 					-- P1.2: who is winning, after every round - not once per trial.
 					tell(ctx, { kind = "status", lines = standingsLines(ctx, trialTotals, roundIndex, rounds, prevRank) })
@@ -716,6 +757,12 @@ local function runMatch(room)
 		table.sort(final, function(a, b) return a.score > b.score end)
 		tell(ctx, { kind = "score", board = final, final = true })
 
+		-- P1.7 rematch: the verdict's subjects come back pre-readied (preFlow
+		-- applies it after the next lobby reveal, with a grace to walk away).
+		local rematchIds = {}
+		for _, uid in ctx.participantUserIds do rematchIds[uid] = true end
+		room.rematch = { userIds = rematchIds, until_ = os.clock() + 60 }
+
 		-- The board is out and the attributes are written. Nothing after this
 		-- point may downgrade the result: the hold below is presentation only.
 		scoresCommitted = true
@@ -797,6 +844,24 @@ function MachineFlow.start(RoomService)
 						RoomServiceRef.autoSeat(plr)
 					end
 					local room = RoomServiceRef.roomOf(plr)
+					-- P1.7: a bench seat is not a blank world. Tell the late joiner
+					-- what is running and that the next cycle takes them (F-09).
+					if room and room.phase == "Playing" and room.spectators[plr.UserId] then
+						local stamp = tostring(room.activeTrialId) .. ":" .. tostring(room.trialIndex)
+						room.waitTold = room.waitTold or {}
+						if room.waitTold[plr.UserId] ~= stamp then
+							room.waitTold[plr.UserId] = stamp
+							local t = trialById(room.activeTrialId)
+							Remote:FireClient(plr, { kind = "status", lines = {
+								"A CYCLE IS IN PROGRESS.",
+								t and ("TRIAL %d OF %d: %s"):format(room.trialIndex or 0, room.trialCount or 0, t.displayName)
+									or "SUBJECTS UNDER TEST.",
+								" ",
+								"YOU ARE ON THE BENCH.",
+								"THE NEXT CYCLE TAKES YOU.",
+							} })
+						end
+					end
 					if room and room.preShown and room.phase == "Waiting" then
 						room.preSent = room.preSent or {}
 						if not room.preSent[plr.UserId] then

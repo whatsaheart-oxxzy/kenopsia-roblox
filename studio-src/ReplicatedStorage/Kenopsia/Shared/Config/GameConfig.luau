@@ -72,5 +72,8 @@ return {
 		FinalBoardHold = 12,
 		-- Countdown from Waiting -> Playing once everyone is ready.
 		StartCountdown = 3,
+		-- P1.7: seconds after the post-verdict lobby reveal before the last
+		-- session's subjects are re-armed as ready (time to walk away).
+		RematchGrace = 6,
 	},
 }

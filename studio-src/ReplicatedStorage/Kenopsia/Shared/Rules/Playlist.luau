@@ -81,6 +81,67 @@ function Playlist.session(order, enabled, perSession)
 	return out
 end
 
+-- P1.6 anti-monotony (22.08.2026). Survival-form trials (no FINISH state,
+-- top-down, last one standing) read as the same game when they run back to
+-- back; the calm ones (breather, stacker) are tempo breaks and never open or
+-- close a session. Pure and deterministic, so the seed still decides.
+Playlist.Form = {
+	minefield = "survival", birdhunt = "finish", canteen = "finish",
+	carve = "finish", armory = "finish", upstream = "finish", floorcheck = "survival",
+	clearance = "survival", carrier = "score", breather = "score", sweep = "survival",
+	crawler = "survival", ricochet = "survival", stacker = "score", sorting = "survival",
+}
+Playlist.Breaks = { breather = true, stacker = true }
+
+-- Repair pass over a session slice: never three survival trials in a row,
+-- never a tempo break first or last. An offending slot is swapped with the
+-- nearest later id that fixes it; otherwise the seed-given order is kept.
+function Playlist.arrange(ids)
+	local n = #ids
+	local out = {}
+	for i = 1, n do out[i] = ids[i] end
+	if n < 3 then return out end
+	local function form(id) return Playlist.Form[id] or "finish" end
+	local function valid(seq)
+		if Playlist.Breaks[seq[1]] or Playlist.Breaks[seq[n]] then return false end
+		for i = 3, n do
+			if form(seq[i]) == "survival" and form(seq[i - 1]) == "survival"
+				and form(seq[i - 2]) == "survival" then
+				return false
+			end
+		end
+		return true
+	end
+	if valid(out) then return out end
+	if n > 7 then return out end -- 8+ per session is not a configuration we play
+	-- Exhaustive over the permutations (<= 5040): take the valid one that moves
+	-- the fewest slots away from the seed order; ties fall to the first one
+	-- enumerated, which is the lexicographically smallest index sequence, so
+	-- the result is a pure function of the seed. A slice with no valid order
+	-- (five survival ids) is returned as dealt.
+	local best, bestMoved = nil, n + 1
+	local idx, used = {}, {}
+	local function rec(depth, moved)
+		if moved >= bestMoved then return end
+		if depth > n then
+			local seq = {}
+			for i = 1, n do seq[i] = ids[idx[i]] end
+			if valid(seq) then best, bestMoved = seq, moved end
+			return
+		end
+		for k = 1, n do
+			if not used[k] then
+				used[k] = true
+				idx[depth] = k
+				rec(depth + 1, moved + ((k ~= depth) and 1 or 0))
+				used[k] = false
+			end
+		end
+	end
+	rec(1, 0)
+	return best or out
+end
+
 -- True when `id` names a trial the playlist knows about. Used to reject a
 -- trialId arriving from a client before it is looked up anywhere.
 function Playlist.isKnown(id)

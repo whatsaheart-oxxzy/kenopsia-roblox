@@ -362,6 +362,24 @@ local function setReady(player, ready)
 	maybeAutoStart()
 end
 
+-- P1.7 rematch (22.08.2026): re-arm readiness for the members named in `userIds`
+-- (the last verdict's subjects) once the lobby is showing again. Anyone who
+-- left is simply not a member any more; anyone who stays can still un-ready.
+function RoomService.carryReady(userIds)
+	if room.phase ~= "Waiting" then return end
+	local armed = 0
+	for _, m in room.members do
+		if userIds[m.userId] then
+			m.ready = true
+			armed += 1
+		end
+	end
+	if armed == 0 then return end
+	print(("[RoomService] rematch: %d subject(s) re-armed"):format(armed))
+	broadcast()
+	maybeAutoStart()
+end
+
 -- seating -------------------------------------------------------------------
 -- The only way in. During a match you land on the bench.
 local function seat(player)
