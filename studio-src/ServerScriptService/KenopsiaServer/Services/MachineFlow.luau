@@ -331,7 +331,15 @@ local function runSelection(room)
 		warn("[MachineFlow] no ready trials - cannot select")
 		return nil
 	end
-	local trial = pool[math.random(#pool)]
+	-- 22.08.2026 (P1.1): the lobby reveal IS the first trial of the session it
+	-- precedes. The seed is minted here and runMatch consumes it, so the
+	-- roulette can no longer contradict what starts ten seconds later.
+	local seed = math.random(1, 2147483647)
+	room.pendingSeed = seed
+	local enabledById = {}
+	for _, t in pool do enabledById[t.id] = t end
+	local firstId = Playlist.session(Playlist.order(seed), enabledById, Config.Playlist.PerSession)[1]
+	local trial = enabledById[firstId] or pool[math.random(#pool)]
 	room.trialId = trial.id
 
 	local others = {}
@@ -406,6 +414,28 @@ end
 -- survivors. That is why the loop below needs no knowledge of how many trials
 -- exist: three survive both gates today, up to PerSession once the MP-05
 -- trials flip ready.
+-- P1.2 standings card: rank by this trial's running raw key, with a rise/fall
+-- mark against the previous round. Rendered by the client's Status screen, so
+-- no new packet kind is needed. Machine voice: uppercase, no punctuation games.
+local function standingsLines(ctx, totals, roundIndex, rounds, prevRank)
+	local entries = {}
+	for _, uid in ctx.participantUserIds do
+		table.insert(entries, { userId = uid, raw = totals[uid] or 0 })
+	end
+	local ranking = Scoring.rankRound(entries, function(a, b) return a.raw > b.raw end)
+	local lines = { ("STANDINGS - ROUND %d/%d"):format(roundIndex, rounds) }
+	for _, r in ipairs(ranking) do
+		local uid = r.entry.userId
+		local plr = Players:GetPlayerByUserId(uid)
+		local name = string.upper(plr and plr.DisplayName or tostring(uid)):sub(1, 14)
+		local was = prevRank[uid]
+		local mark = (was == nil or was == r.place) and "" or (r.place < was and "  UP" or "  DOWN")
+		prevRank[uid] = r.place
+		table.insert(lines, ("%d. %s%s"):format(r.place, name, mark))
+	end
+	return lines
+end
+
 local function playableOrder(seed)
 	local enabled = {}
 	for _, t in enabledTrials() do
@@ -457,7 +487,8 @@ local function runMatch(room)
 
 	local ok, err = xpcall(function()
 		-- The server mints the seed. It is never taken from a client.
-		local seed = math.random(1, 2147483647)
+		local seed = room.pendingSeed or math.random(1, 2147483647)
+		room.pendingSeed = nil
 		local order = playableOrder(seed)
 		if #order == 0 then
 			warn("[MachineFlow] no ready trial at match start")
@@ -503,6 +534,9 @@ local function runMatch(room)
 			local trialCtx = session:newTrial(trial.id, trialIndex, #order)
 			activeTrial = trial
 			ctx.effectScope = ("%s:%s"):format(ctx.sessionId, trial.id)
+			-- P1.3: the last trial of a multi-trial session is the FINAL AUDIT and
+			-- pays double, so the session is open until its last minute.
+			local isFinal = trialIndex == #order and #order > 1
 
 			-- SELECTING. Reveals which game is next. There is NO return to the
 			-- lobby between trials: the room stays in Playing and only the stage
@@ -535,7 +569,7 @@ local function runMatch(room)
 				trial.displayName,
 				trial.tagline,
 				" ",
-				("Minigame %d of %d."):format(trialIndex, #order),
+				isFinal and "FINAL AUDIT. DOUBLE WEIGHT." or ("Minigame %d of %d."):format(trialIndex, #order),
 				"Bootstrapping simulation ...",
 			} })
 			if not hold(ctx, Pacing.Timing.ControlCard) then return end
@@ -554,6 +588,7 @@ local function runMatch(room)
 				rounds = 1
 			end
 			local trialTotals = {}
+			local prevRank = {}
 
 			for roundIndex = 1, rounds do
 				if ctx.cancelled() then return end
@@ -565,7 +600,7 @@ local function runMatch(room)
 				})
 
 				tell(ctx, { kind = "round", n = roundIndex, total = rounds,
-					verbs = trial.tagline })
+					verbs = isFinal and ("FINAL AUDIT. " .. trial.tagline) or trial.tagline })
 				if not hold(ctx, Pacing.Timing.RoundCard) then return end
 				tell(ctx, { kind = "hide" })
 				setActiveTrial(ctx, trial.id)
@@ -596,6 +631,11 @@ local function runMatch(room)
 				for uid, value in scores do
 					trialTotals[uid] = (trialTotals[uid] or 0) + value
 				end
+				if roundIndex < rounds then
+					-- P1.2: who is winning, after every round - not once per trial.
+					tell(ctx, { kind = "status", lines = standingsLines(ctx, trialTotals, roundIndex, rounds, prevRank) })
+					if not hold(ctx, Pacing.Timing.Standings or 2.5) then return end
+				end
 				if not hold(ctx, Pacing.Timing.RoundSettle) then return end
 			end
 
@@ -610,7 +650,7 @@ local function runMatch(room)
 			local ranking = Scoring.rankRound(entries, function(a, b)
 				return a.raw > b.raw
 			end)
-			Scoring.distribute(ranking)
+			Scoring.distribute(ranking, isFinal and 2 or 1)
 
 			local board = {}
 			for _, r in ipairs(ranking) do

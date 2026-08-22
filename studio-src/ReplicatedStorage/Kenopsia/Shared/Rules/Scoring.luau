@@ -90,9 +90,12 @@ end
 -- whole points to the largest fractional remainders. Remainder ties break by
 -- rank, so the allocation is fully determined by the ranking and never by table
 -- order or by chance.
-function Scoring.distribute(ranking)
+function Scoring.distribute(ranking, weight)
 	local n = #ranking
 	if n == 0 then return ranking end
+	-- P1.3: the FINAL AUDIT passes weight 2 and pays a double pool; everything
+	-- else is the plain pool, so the column still sums exactly.
+	local pool = Scoring.Pool * (tonumber(weight) or 1)
 
 	local weights = Scoring.borda(n)
 
@@ -114,7 +117,7 @@ function Scoring.distribute(ranking)
 	local assigned = 0
 	local remainder = {}
 	for i = 1, n do
-		local exact = Scoring.Pool * share[i] / total
+		local exact = pool * share[i] / total
 		local whole = math.floor(exact)
 		ranking[i].points = whole
 		assigned = assigned + whole
@@ -126,7 +129,7 @@ function Scoring.distribute(ranking)
 		return a.index < b.index -- earlier rank wins the spare point
 	end)
 
-	local leftover = Scoring.Pool - assigned
+	local leftover = pool - assigned
 	for k = 1, leftover do
 		local target = remainder[k]
 		if not target then break end

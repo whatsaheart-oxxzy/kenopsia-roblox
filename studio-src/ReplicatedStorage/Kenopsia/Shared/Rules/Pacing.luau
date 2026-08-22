@@ -115,6 +115,7 @@ Pacing.Timing = {
 	Title        = 1.2,  -- in-trial title card (plan value, no typewriter)
 	RoundCard    = 3.0,  -- "Round n/m" plus its verb line
 	RoundSettle  = 1.5,  -- beat after a round ends, before the next card
+	Standings    = 2.5,  -- P1.2: standings card between rounds (typed, 5 lines)
 	CountdownFrom = 3,   -- 3-2-1, one per second
 	FadeMax      = 0.6,  -- upper bound on any transition fade
 	InterimScore = 4.5,  -- score card after each completed minigame (plan: 3.0)

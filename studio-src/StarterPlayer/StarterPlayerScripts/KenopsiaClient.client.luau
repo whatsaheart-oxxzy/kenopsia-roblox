@@ -1766,6 +1766,27 @@ end
 local function showScore(p, token)
 	hideAll()
 	scoreScreen.Visible = true
+	-- P1.3 (22.08.2026): the final board is a VERDICT, not another number.
+	local myVerdict = nil
+	for _, e in p.board or {} do
+		if e.userId == player.UserId then myVerdict = e.verdict end
+	end
+	local conclusion = scoreScreen:FindFirstChild("ConclusionLabel")
+	local scoreName = scoreScreen:FindFirstChild("ScoreName")
+	if p.final and myVerdict then
+		if conclusion then conclusion.Text = "FINAL AUDIT CONCLUDED" end
+		if scoreName then
+			scoreName.Text = "SUBJECT STATUS\n" .. myVerdict
+			scoreName.TextColor3 = myVerdict == "VIABLE" and PHOSPHOR or Color3.fromRGB(255, 24, 24)
+		end
+		sfx(myVerdict == "VIABLE" and "Confirm" or "Reject")
+	else
+		if conclusion then conclusion.Text = "SIMULATION CONCLUSION" end
+		if scoreName then
+			scoreName.Text = "OPERATOR\nPERFORMANCE SCORE"
+			scoreName.TextColor3 = PHOSPHOR
+		end
+	end
 
 	local ticker = scoreScreen.Ticker.Text
 	task.spawn(function()
