@@ -262,11 +262,12 @@ local trialWalkSpeed = 0    -- WalkSpeed while moveState == "trial"
 
 -- SESSION SETTINGS + UI AUDIO -----------------------------------------------
 
--- P2.3: Reduce Motion in the OS pre-selects REDUCE FLICKER; every setting is
--- mirrored onto the local Player as an attribute (KenopsiaUiSound, ...,
--- KenopsiaSimFilter, KenopsiaCRT) so UiFx / SimulationGrade can read it.
+-- P2.3: Reduce Motion in the OS pre-selects REDUCE FLICKER and REDUCE SHAKE;
+-- every setting is mirrored onto the local Player as an attribute
+-- (KenopsiaUiSound, ..., KenopsiaSimFilter, KenopsiaCRT, KenopsiaReduceShake)
+-- so UiFx / SimulationGrade can read it.
 local uiSettings = { UiSound = true, Music = true, ReduceFlicker = GuiService.ReducedMotionEnabled == true,
-	SimFilter = true, Crt = true }
+	SimFilter = true, Crt = true, ReduceShake = GuiService.ReducedMotionEnabled == true }
 local function publishSetting(key)
 	player:SetAttribute(K.SETTING_ATTR[key] or ("Kenopsia" .. key), uiSettings[key])
 end
@@ -292,6 +293,9 @@ local function sfx(name)
 	end
 	s = s or folder:FindFirstChild(name)
 	if s and s.SoundId ~= "" then
+		-- P2.2: every UI cue rides the KenopsiaUI SoundGroup (built by UiFx at
+		-- boot; looked up here so the order the two scripts start in is moot).
+		if s.SoundGroup == nil then s.SoundGroup = SoundService:FindFirstChild("KenopsiaUI") end
 		SoundService:PlayLocalSound(s)
 	elseif not sfxWarned[name] then
 		sfxWarned[name] = true
@@ -375,6 +379,10 @@ local function hideAll()
 	briefing.Visible = false
 	scoreScreen.Visible = false
 	announceScreen.Visible = false
+	-- P2.2: every screen swap starts here, and the swap itself stays a hard
+	-- cut. UiFx watches this counter and re-paints whatever is on screen next
+	-- through the Bayer dither steps (Feel.Dither) on the overlay layer.
+	machine:SetAttribute("DitherSeq", (machine:GetAttribute("DitherSeq") or 0) + 1)
 end
 
 -- P1.5 TYPEWRITER: time-based MaxVisibleGraphemes. The whole text is set once
@@ -395,6 +403,7 @@ do
 		if not src or src.SoundId == "" then return end
 		local s = src:Clone()
 		s.PlaybackSpeed = Feel.blipSpeed(math.random())
+		s.SoundGroup = SoundService:FindFirstChild("KenopsiaUI")
 		s.Parent = SoundService
 		s.Ended:Once(function() s:Destroy() end)
 		s:Play()
@@ -2104,7 +2113,8 @@ RunService.RenderStepped:Connect(function(dt)
 	if trauma <= 0 then return end
 	local S = Feel.Shake
 	trauma = math.max(0, trauma - dt * S.Decay) -- volle Ladung schuettelt ~3 Sekunden
-	local mag = trauma * trauma
+	-- P2.3: the SHAKE settings row scales the amplitude, never to zero.
+	local mag = trauma * trauma * (uiSettings.ReduceShake and S.ReduceFactor or 1)
 	local t = os.clock() * S.NoiseHz
 	local nx = math.noise(shakeSeed, t)
 	local ny = math.noise(shakeSeed + 17, t)
@@ -2527,6 +2537,9 @@ if settingsPanel then
 		{ frame = settingsPanel:FindFirstChild("Row_REDUCEFLICKER"), key = "ReduceFlicker" },
 		{ frame = settingsPanel:FindFirstChild("Row_SIMFILTER"), key = "SimFilter" },
 		{ frame = settingsPanel:FindFirstChild("Row_CRT"), key = "Crt" },
+		-- P2.3: a clone of Row_CRT at y 356 (panel grown to 492 px); a place
+		-- without the row is harmless -- every loop below guards on r.frame.
+		{ frame = settingsPanel:FindFirstChild("Row_SHAKE"), key = "ReduceShake" },
 	}
 	local function render()
 		for _, r in rows do
@@ -2536,6 +2549,18 @@ if settingsPanel then
 		end
 	end
 	render()
+	-- P2.3: follow the OS Reduce Motion switch at runtime. Seeds only when it
+	-- turns ON; a player's own OFF choice is never overridden.
+	pcall(function()
+		GuiService:GetPropertyChangedSignal("ReducedMotionEnabled"):Connect(function()
+			if not GuiService.ReducedMotionEnabled then return end
+			for _, key in { "ReduceFlicker", "ReduceShake" } do
+				uiSettings[key] = true
+				publishSetting(key)
+			end
+			render()
+		end)
+	end)
 	for _, r in rows do
 		if r.frame then
 			r.frame.Hit.Activated:Connect(function()

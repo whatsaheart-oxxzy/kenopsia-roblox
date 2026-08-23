@@ -178,6 +178,71 @@ print("Overlay")
 check(Feel.Overlay.BlipMin == 8 and Feel.Overlay.BlipMax == 20, "interference blip every 8-20 s")
 check(Feel.Overlay.BandIdle + Feel.Overlay.BandSweep == 10, "refresh band period 10 s")
 
+-- P2.2 / P2.3 (23.08.2026): overlay life + accessibility rows
+print("Dither transition")
+check(Feel.Dither.Steps == 4, "four ordered-dither steps", tostring(Feel.Dither.Steps))
+check(Feel.Dither.ReducedSteps == 2, "ReduceFlicker falls back to a 2-step cut", tostring(Feel.Dither.ReducedSteps))
+check(type(Feel.Dither.Tiles) == "table" and #Feel.Dither.Tiles == Feel.Dither.Steps, "one Bayer tile per step")
+do
+	local allIds = true
+	for i, t in ipairs(Feel.Dither.Tiles) do
+		if type(t) ~= "string" or not string.match(t, "^rbxassetid://%d+$") then allIds = false end
+		for j = 1, i - 1 do
+			if Feel.Dither.Tiles[j] == t then allIds = false end
+		end
+	end
+	check(allIds, "every tile is a distinct rbxassetid")
+end
+check(Feel.Dither.TilePx == 4 or Feel.Dither.TilePx == 8, "tile drawn at 4 or 8 px", tostring(Feel.Dither.TilePx))
+check(near(Feel.stepSeconds(), 1 / 12), "dither steps on the 12 fps grid", tostring(Feel.stepSeconds()))
+check(near(Feel.ditherSeconds(false), Feel.Dither.Steps / Feel.Step.Fps), "full transition = Steps / Fps",
+	tostring(Feel.ditherSeconds(false)))
+check(Feel.ditherSeconds(false) <= Feel.MaxMotion, "full dither transition <= 600 ms", tostring(Feel.ditherSeconds(false)))
+check(Feel.ditherSeconds(true) < Feel.ditherSeconds(false), "reduced cut is shorter than the dither")
+check(Feel.ditherSeconds(false) <= Pacing.Timing.FadeMax, "dither under Pacing.Timing.FadeMax")
+
+print("Phosphor glow")
+check(Feel.Glow.StrokeTransparency > 0.5 and Feel.Glow.StrokeTransparency < 0.7, "stroke transparency ~0.6",
+	tostring(Feel.Glow.StrokeTransparency))
+check(Feel.Glow.StrokeThickness == 1, "stroke thickness 1 px")
+check(Feel.Glow.EchoTransparency > Feel.Glow.StrokeTransparency and Feel.Glow.EchoTransparency < 1,
+	"echo label dimmer than the stroke", tostring(Feel.Glow.EchoTransparency))
+check(Feel.Glow.EchoOffsetPx == 1, "echo offset 1 px")
+-- PreferredTransparency multiplies: at the default (1) the values ship as-is,
+-- at 0 (player wants no see-through) both land at 0 -- never negative.
+for _, pt in ipairs({ 0, 0.5, 1 }) do
+	local s, e = Feel.Glow.StrokeTransparency * pt, Feel.Glow.EchoTransparency * pt
+	check(s >= 0 and s <= Feel.Glow.StrokeTransparency and e >= 0 and e <= Feel.Glow.EchoTransparency,
+		"glow x PreferredTransparency " .. pt .. " stays in [0, authored]")
+end
+
+print("Idle oscillators")
+check(Feel.Idle.BracketPeriodMin == 4 and Feel.Idle.BracketPeriodMax == 6, "bracket breathes 4-6 s")
+check(Feel.Idle.BracketBreathPx > 0 and Feel.Idle.BracketBreathPx < Feel.Idle.BracketPadPx,
+	"breath amplitude inside the bracket padding")
+check(Feel.Idle.UptimeHz == 1, "uptime counter 1 Hz")
+-- four clocks, none sharing a period: band 10 s, blip 8-20 s (random), bracket 4-6 s (random), uptime 1 s
+do
+	local bandP = Feel.Overlay.BandIdle + Feel.Overlay.BandSweep
+	check(bandP ~= 1 / Feel.Idle.UptimeHz and Feel.Idle.BracketPeriodMax < Feel.Overlay.BlipMin
+		and Feel.Idle.BracketPeriodMax < bandP, "bracket, blip, band and uptime periods are decorrelated")
+end
+check(1 / Feel.Idle.UptimeHz >= Feel.stepSeconds(), "uptime tick is representable on the step grid")
+
+print("CRT hum")
+check(Feel.Hum.DuckDb == -6, "duck -6 dB", tostring(Feel.Hum.DuckDb))
+check(near(Feel.Hum.DuckSeconds, 0.2), "duck over 0.2 s", tostring(Feel.Hum.DuckSeconds))
+check(near(Feel.dbGain(-6), 0.501, 0.002), "-6 dB is a gain of ~0.5", tostring(Feel.dbGain(-6)))
+check(near(Feel.dbGain(0), 1), "0 dB is unity")
+check(Feel.Hum.Volume > 0 and Feel.Hum.Volume <= 0.35, "hum is a bed, not a track", tostring(Feel.Hum.Volume))
+check(Feel.Hum.Volume * Feel.dbGain(Feel.Hum.DuckDb) < Feel.Hum.Volume, "ducked volume is lower")
+check(type(Feel.Hum.SoundName) == "string" and #Feel.Hum.SoundName > 0, "hum has a lookup name")
+check(type(Feel.Hum.PlaceholderId) == "number" and Feel.Hum.PlaceholderId >= 0, "placeholder id is a number (0 = silent)")
+
+print("Shake reduce")
+check(near(Feel.Shake.ReduceFactor, 0.35), "ReduceShake = 0.35x amplitude", tostring(Feel.Shake.ReduceFactor))
+check(Feel.Shake.ReduceFactor > 0 and Feel.Shake.ReduceFactor < 1, "reduced shake is never zero and never full")
+
 print("No duplicated Pacing.Timing values")
 for k in pairs(Pacing.Timing) do
 	check(Feel[k] == nil, "Feel has no top-level " .. k)

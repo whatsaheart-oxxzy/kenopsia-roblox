@@ -88,6 +88,10 @@ Feel.Shake = {
 	Translate = 1.15,  -- studs at full trauma
 	Tilt = 0.2,        -- radians (pitch / yaw) at full trauma
 	Roll = 0.26,       -- radians at full trauma
+	-- P2.3: the SHAKE settings row (ReduceShake, seeded from
+	-- GuiService.ReducedMotionEnabled) multiplies every amplitude by this.
+	-- Never zero: a hit must still read as a hit.
+	ReduceFactor = 0.35,
 }
 
 -- Flicker: at most MaxPerSecond state changes per second, on the DIM channel
@@ -167,6 +171,66 @@ Feel.Overlay = {
 	BlipHold = 0.08,
 }
 
+-- P2.2 (23.08.2026) Bayer dither between Machine screens (UiFx). The swap
+-- itself stays a hard cut (section 3); the glass then re-paints the new screen
+-- through Steps ordered-dither tiles, one per frame of the Step.Fps grid
+-- (Steps / Fps = the whole transition). NEVER a smooth alpha tween. Under
+-- ReduceFlicker / ReducedMotion the tiles are replaced by a plain black card
+-- held ReducedSteps frames (a 2-step cut). Tiles[i] is the 4x4 Bayer level i
+-- (1 = sparsest, Steps = densest); TilePx is the on-screen tile size
+-- (8 = each pattern pixel is 2 px; 4 = native).
+Feel.Dither = {
+	Steps = 4,
+	ReducedSteps = 2,
+	TilePx = 8,
+	Tiles = {
+		"rbxassetid://128764657994112",
+		"rbxassetid://121598984043867",
+		"rbxassetid://93726535183476",
+		"rbxassetid://72454964162888",
+	},
+}
+
+-- Phosphor glow on headline labels (UiFx builds it once from a name list):
+-- a 1-px UIStroke plus a 1-px offset echo label with lower alpha. Both
+-- transparencies are MULTIPLIED by GuiService.PreferredTransparency at
+-- apply time (Roblox's accessibility contract: 1 = default, lower = the
+-- player wants less see-through). No per-frame work: the echo mirrors the
+-- label through property-changed signals only.
+Feel.Glow = {
+	StrokeTransparency = 0.6,
+	StrokeThickness = 1,
+	EchoTransparency = 0.75,
+	EchoOffsetPx = 1,
+}
+
+-- Idle life on the Selection screen (UiFx, Overlay layer): four decorrelated
+-- oscillators, all on the Step.Fps grid, none while a trial runs, none while
+-- Selection is hidden. The bracket breathes BreathPx around the tile row
+-- with a fresh period drawn from BracketPeriodMin..Max every cycle; the
+-- uptime counter ticks at UptimeHz; the blip and the band keep Feel.Overlay.
+Feel.Idle = {
+	BracketPeriodMin = 4,
+	BracketPeriodMax = 6,
+	BracketBreathPx = 6,
+	BracketPadPx = 18,
+	UptimeHz = 1,
+}
+
+-- CRT hum bed (UiFx): a low loop on the KenopsiaUI SoundGroup at Volume,
+-- ducked by DuckDb over DuckSeconds under announcements / round cards and
+-- released over the same time. Off while a trial runs and while UiSound is
+-- off. SoundName is looked up under SoundService.KenopsiaAudio (Ambience.Hum,
+-- then any Sound of that name); with none present the PlaceholderId is used
+-- (0 = silent, one warn) until an asset is uploaded (MASTERPLAN P6).
+Feel.Hum = {
+	SoundName = "Hum",
+	PlaceholderId = 0,
+	Volume = 0.12,
+	DuckDb = -6,
+	DuckSeconds = 0.2,
+}
+
 -- Helpers -------------------------------------------------------------------
 
 -- Value of a per-device table for MachineLayout's Platform attribute.
@@ -205,6 +269,22 @@ end
 function Feel.blipSpeed(r)
 	local t = Feel.Typewriter
 	return t.BlipSpeedMin + (t.BlipSpeedMax - t.BlipSpeedMin) * r
+end
+
+-- Seconds one step of the stepped-motion grid is held.
+function Feel.stepSeconds()
+	return 1 / Feel.Step.Fps
+end
+
+-- Seconds a dither transition takes (reduced = the plain 2-step cut).
+function Feel.ditherSeconds(reduced)
+	local steps = reduced and Feel.Dither.ReducedSteps or Feel.Dither.Steps
+	return steps * Feel.stepSeconds()
+end
+
+-- Linear gain for a decibel offset (-6 dB -> ~0.5).
+function Feel.dbGain(db)
+	return 10 ^ (db / 20)
 end
 
 -- Seconds the roulette takes end to end (with the full flicker phase).
