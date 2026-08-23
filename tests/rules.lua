@@ -82,6 +82,9 @@ check(Pacing.TrialPointPool == 1700, "point pool is 1700")
 -- 23.08.2026 (P0.3): the lobby roulette hold moved out of MachineFlow's literal.
 check(type(Pacing.Timing) == "table" and Pacing.Timing.LobbyReveal == 6.4,
 	"Pacing.Timing.LobbyReveal is 6.4 s (the lobby roulette hold)")
+-- P1.3 (23.08.2026), MASTERPLAN section 2/3: verdict stamp 6 s + podium 8 s.
+check(Pacing.Timing.FinalScore == 6 and Pacing.Timing.Podium == 8, "verdict beat is 6 s stamp + 8 s podium",
+	tostring(Pacing.Timing.FinalScore) .. " + " .. tostring(Pacing.Timing.Podium))
 
 -- MP-05 D8: one RoundSeconds number per new trial, section A values.
 local expectedSeconds = {

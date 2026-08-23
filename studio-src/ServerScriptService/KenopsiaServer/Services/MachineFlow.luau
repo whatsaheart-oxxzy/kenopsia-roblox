@@ -38,6 +38,11 @@ local Crawler = require(script.Parent.Crawler)
 local Ricochet = require(script.Parent.Ricochet)
 local PalletDuty = require(script.Parent.PalletDuty)
 local SortingFloor = require(script.Parent.SortingFloor)
+-- P1.3 podium beat / P1.7 bench camera (23.08.2026). Both are presentation:
+-- every call below is pcall-wrapped so a missing arena or rig can never turn a
+-- played-out session into "MINIGAME ERROR".
+local Podium = require(script.Parent.Podium)
+local AudienceCam = require(script.Parent.AudienceCam)
 
 local Shared = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 local Rules = Shared:WaitForChild("Rules")
@@ -306,6 +311,25 @@ local function tellRoom(room, payload)
 	end
 end
 
+-- P1.7: the bench (room.spectators, late joiners held out of the match). The
+-- ONLY packets that go here are the Machine's own cameras - the audience view
+-- of a running trial and the podium - never trial traffic (MP-01 section 7.3).
+local function tellBench(room, payload)
+	if not Remote then return end
+	for userId in pairs(room.spectators or {}) do
+		local plr = Players:GetPlayerByUserId(userId)
+		if plr then Remote:FireClient(plr, payload) end
+	end
+end
+
+-- Trial begin / end hooks for the bench camera. nil trialId = clear.
+local function benchCamera(room, trialId)
+	local ok, packet = pcall(function()
+		return trialId and AudienceCam.packetFor(trialId) or AudienceCam.clearPacket()
+	end)
+	if ok and packet then tellBench(room, packet) end
+end
+
 -- Cancellation-aware wait. Returns false the moment the session dies.
 local function hold(ctx, seconds)
 	local deadline = os.clock() + seconds
@@ -519,6 +543,8 @@ local function runMatch(room)
 		room.preSent = nil
 		room.waitTold = nil
 		tellRoom(room, { kind = "hide" })
+		-- P1.7: whatever route brought us here, the bench gets its camera back.
+		benchCamera(room, nil)
 	end
 
 	local ok, err = xpcall(function()
@@ -612,6 +638,10 @@ local function runMatch(room)
 
 			-- TRIAL
 			RoomServiceRef.setStage(ctx.sessionId, "Trial")
+			-- P1.7: the bench watches this arena from its fixed audience camera
+			-- for the whole trial (late joiners seated mid-trial get it from
+			-- the boot watchdog below, keyed on the same stage).
+			benchCamera(room, trial.id)
 			local isBird = trial.id == "birdhunt"
 			-- Pacing owns this now. The registry used to hardcode 10 rounds for
 			-- Dead Zone and 5 for Bird; both are named in the plan as errors not
@@ -680,6 +710,8 @@ local function runMatch(room)
 				end
 				if not hold(ctx, Pacing.Timing.RoundSettle) then return end
 			end
+			-- P1.7: the trial is over for the bench too.
+			benchCamera(room, nil)
 
 			-- SCORE. A COMPLETED trial distributes exactly 1700, whatever the raw
 			-- in-trial numbers happened to be. That is what makes the games
@@ -765,9 +797,26 @@ local function runMatch(room)
 		room.rematch = { userIds = rematchIds, until_ = os.clock() + 60 }
 
 		-- The board is out and the attributes are written. Nothing after this
-		-- point may downgrade the result: the hold below is presentation only.
+		-- point may downgrade the result: the holds below are presentation only.
 		scoresCommitted = true
-		hold(ctx, Pacing.Timing.FinalScore)
+		if not hold(ctx, Pacing.Timing.FinalScore) then return end
+
+		-- P1.3 PODIUM (MASTERPLAN section 2: stamp 6 s + podium 8 s). The top
+		-- three stand on the blocks; the room AND the bench get the fixed
+		-- camera. pcall-wrapped: a failed stage is a skipped beat, never an
+		-- aborted session. strike() runs on every route out of the hold.
+		local okRaise, stage = pcall(Podium.raise, final, Pacing.Timing.Podium)
+		if okRaise and stage then
+			tellRoom(room, stage.packet)
+			tellBench(room, stage.packet)
+			hold(ctx, Pacing.Timing.Podium or 8)
+			pcall(Podium.strike, stage)
+			local clear = { kind = "podium" }
+			tellRoom(room, clear)
+			tellBench(room, clear)
+		elseif not okRaise then
+			warn(("[MachineFlow] podium skipped: %s"):format(tostring(stage)))
+		end
 	end, debug.traceback)
 
 	-- FINALIZER. Exactly one route out, for every outcome.
@@ -863,6 +912,12 @@ function MachineFlow.start(RoomService)
 								"YOU ARE ON THE BENCH.",
 								"THE NEXT CYCLE TAKES YOU.",
 							} })
+							-- P1.7: seated mid-trial, so the begin hook already
+							-- fired without them - hand them the camera now.
+							if room.stage == "Trial" then
+								local ok, packet = pcall(AudienceCam.packetFor, room.activeTrialId)
+								if ok and packet then Remote:FireClient(plr, packet) end
+							end
 						end
 					end
 					if room and room.preShown and room.phase == "Waiting" then
