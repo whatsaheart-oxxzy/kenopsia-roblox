@@ -2605,7 +2605,8 @@ if settingsPanel then
 	end
 	-- P2.4: the gamepad Back button closes the panel (focus is trapped inside
 	-- its SelectionGroup, so this is the only way out besides CLOSE).
-	UserInputService.InputBegan:Connect(function(input)
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then return end
 		if settingsPanel.Visible and input.KeyCode == Enum.KeyCode.ButtonB then
 			sfx("Click")
 			settingsPanel.Visible = false

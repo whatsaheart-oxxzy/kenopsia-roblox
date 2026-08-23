@@ -316,6 +316,11 @@ local function runDither()
 	local gen = ditherGen
 	local D = Feel.Dither
 	local hold = Feel.stepSeconds()
+	-- Review 23.08.: CRT off means clean glass -- no dither card at all.
+	if not crtOn() then
+		dither.Visible = false
+		return
+	end
 	if ditherReduced() then
 		dither.Image = ""
 		dither.BackgroundTransparency = 0
@@ -525,10 +530,21 @@ task.spawn(function()
 			end
 			local minX, minY, maxX, maxY, sel = tileBounds(machine)
 			local pad = I.BracketPadPx + breath
-			bracket.Position = UDim2.fromOffset(minX - pad, minY - pad)
-			bracket.Size = UDim2.fromOffset(maxX - minX + 2 * pad, maxY - minY + 2 * pad)
+			-- Review 23.08.: write only on change -- an unchanged UDim2 still
+			-- dirties the overlay gui 12x/s (phone cost for nothing).
+			local px, py = minX - pad, minY - pad
+			local sx, sy = maxX - minX + 2 * pad, maxY - minY + 2 * pad
+			if bracket.Position.X.Offset ~= px or bracket.Position.Y.Offset ~= py then
+				bracket.Position = UDim2.fromOffset(px, py)
+			end
+			if bracket.Size.X.Offset ~= sx or bracket.Size.Y.Offset ~= sy then
+				bracket.Size = UDim2.fromOffset(sx, sy)
+			end
 			if sel then
-				uptime.Position = UDim2.fromOffset(sel.AbsolutePosition.X + 24, sel.AbsolutePosition.Y + sel.AbsoluteSize.Y - 36)
+				local ux, uy = sel.AbsolutePosition.X + 24, sel.AbsolutePosition.Y + sel.AbsoluteSize.Y - 36
+				if uptime.Position.X.Offset ~= ux or uptime.Position.Y.Offset ~= uy then
+					uptime.Position = UDim2.fromOffset(ux, uy)
+				end
 			end
 		end
 	end
