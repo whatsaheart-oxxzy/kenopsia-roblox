@@ -231,6 +231,13 @@ Feel.Hum = {
 	DuckSeconds = 0.2,
 }
 
+-- P2.4 (23.08.2026) input-mode hysteresis (MachineLayout through the Glyphs
+-- tracker): a gamepad counts as the console signal once it has been the LAST
+-- input type for more than GamepadHoldSeconds with no click / key / touch in
+-- between; a mouse move alone never ends console mode. Not a motion, so it is
+-- not held to MaxMotion.
+Feel.Input = { GamepadHoldSeconds = 2 }
+
 -- Helpers -------------------------------------------------------------------
 
 -- Value of a per-device table for MachineLayout's Platform attribute.

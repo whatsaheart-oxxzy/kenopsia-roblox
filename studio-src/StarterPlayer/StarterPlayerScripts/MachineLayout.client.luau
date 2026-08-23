@@ -16,6 +16,17 @@ local machine = playerGui:WaitForChild("KenopsiaMachine")
 
 local REF_HEIGHT = 710 -- the window height the screens were authored against
 
+-- P2.4 (23.08.2026): action -> key / button glyphs per device and the
+-- input-mode hysteresis live in the pure Glyphs module; the hold comes from
+-- the feel bible.
+local Glyphs = require(script.Parent:WaitForChild("Glyphs", 10)
+	or error("[MachineLayout] Glyphs module missing (push StarterPlayerScripts/Glyphs first)"))
+local Feel = require(game:GetService("ReplicatedStorage"):WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
+local glyphResolver = Glyphs.robloxResolver(UserInputService)
+local inputTracker = Glyphs.newInputTracker(Feel.Input.GamepadHoldSeconds)
+inputTracker.feed(UserInputService:GetLastInputType().Name, os.clock())
+
 -- fullscreen screens: size-compensated so scale-relative children keep their
 -- share of the screen while pixel offsets shrink with the platform scale
 local FULLSCREEN = { "Selection", "Info", "Status", "RoundCard", "Briefing", "Score", "Announce", "Warning" }
@@ -33,11 +44,17 @@ local function detectPlatform()
 	-- Gamepad-only input is a console whatever the viewport; touch without a
 	-- pointer is a phone or a tablet, told apart by the short axis and the
 	-- aspect (an iPad is 4:3 and ~800 pt tall, a phone is 19.5:9 and < 500).
-	if GuiService:IsTenFootInterface() then return "Console" end
+	-- P2.4: Console is a COMPOSED signal (Glyphs.isConsole): the ten-foot
+	-- flag, OR a gamepad with no keyboard / mouse / touch, OR the gamepad has
+	-- been the last input type for > Feel.Input.GamepadHoldSeconds.
 	local touch = UserInputService.TouchEnabled
-	local pointer = UserInputService.MouseEnabled or UserInputService.KeyboardEnabled
+	local keyboard, mouse = UserInputService.KeyboardEnabled, UserInputService.MouseEnabled
+	local pointer = mouse or keyboard
 	local gamepad = UserInputService.GamepadEnabled
-	if gamepad and not touch and not pointer then return "Console" end
+	if Glyphs.isConsole({ tenFoot = GuiService:IsTenFootInterface(), gamepad = gamepad,
+		keyboard = keyboard, mouse = mouse, touch = touch, mode = inputTracker.mode }) then
+		return "Console"
+	end
 	local cam = workspace.CurrentCamera
 	local vp = cam and cam.ViewportSize or Vector2.new(1920, 1080)
 	local short = math.min(vp.X, vp.Y)
@@ -116,24 +133,24 @@ local TRIAL_TEXT = {
 	birdhunt = {
 		sec1 = "RUNNERS:", sec2 = "HUNTER:",
 		Desktop = {
-			Row1 = "Move",
-			Row1b = "Crouch [Ctrl]",
-			Row2 = "Aim + Shoot",
-			Row3 = "Scope [x2]",
+			Row1 = "Move  [{Move}]",
+			Row1b = "Crouch [{Crouch}]",
+			Row2 = "Aim + Shoot [{Fire}]",
+			Row3 = "Scope [{Scope}]  x2 / x4 [{Zoom}]",
 			icons = true,
 		},
 		Mobile = {
-			Row1 = "Stick  Move",
-			Row1b = "CROUCH button",
-			Row2 = "Drag  Aim  +  FIRE button",
-			Row3 = "SCOPE button [x2]",
+			Row1 = "{Move}  Move",
+			Row1b = "{Crouch} button",
+			Row2 = "{Aim}  Aim  +  {Fire} button",
+			Row3 = "{Scope} button [x2]",
 			icons = false,
 		},
 		Console = {
-			Row1 = "LS  Move",
-			Row1b = "B  Crouch",
-			Row2 = "RS  Aim  +  RT  Shoot",
-			Row3 = "LT  Scope [x2]    Y  Zoom",
+			Row1 = "{Move}  Move",
+			Row1b = "{Crouch}  Crouch",
+			Row2 = "{Aim}  Aim  +  {Fire}  Shoot",
+			Row3 = "{Scope}  Scope [x2]    {Zoom}  Zoom",
 			icons = false,
 		},
 		scoring = {
@@ -147,22 +164,22 @@ local TRIAL_TEXT = {
 	minefield = {
 		sec1 = "RUNNERS:", sec2 = "SONAR:",
 		Desktop = {
-			Row1 = "Move",
-			Row1b = "Use sonar [HOLD]",
+			Row1 = "Move  [{Move}]",
+			Row1b = "Use sonar [HOLD {Scan}]",
 			Row2 = "",
 			Row3 = "",
 			icons = true, noteRows = { Row2 = true, Row3 = true },
 		},
 		Mobile = {
-			Row1 = "Move",
-			Row1b = "Use sonar [HOLD]",
+			Row1 = "{Move}  Move",
+			Row1b = "Use sonar [HOLD {Scan}]",
 			Row2 = "",
 			Row3 = "",
 			icons = false,
 		},
 		Console = {
-			Row1 = "Move",
-			Row1b = "Use sonar [HOLD Y]",
+			Row1 = "{Move}  Move",
+			Row1b = "Use sonar [HOLD {Scan}]",
 			Row2 = "",
 			Row3 = "",
 			icons = false,
@@ -179,22 +196,22 @@ local TRIAL_TEXT = {
 		sec1 = "DINERS:", sec2 = "OBSERVER:",
 		Desktop = {
 			Row1 = "Seated - no moving",
-			Row1b = "Load fork [LMB]",
-			Row2 = "Swallow [RMB]",
+			Row1b = "Load fork [{Load}]",
+			Row2 = "Swallow [{Swallow}]",
 			Row3 = "Never swallow while watched",
 			icons = true, noteRows = { Row1 = true, Row3 = true },
 		},
 		Mobile = {
 			Row1 = "Seated - no moving",
-			Row1b = "PLATE button loads",
-			Row2 = "MOUTH button swallows",
+			Row1b = "{Load} button loads",
+			Row2 = "{Swallow} button swallows",
 			Row3 = "Never swallow while watched",
 			icons = false,
 		},
 		Console = {
 			Row1 = "Seated - no moving",
-			Row1b = "LT  Load fork",
-			Row2 = "RT  Swallow",
+			Row1b = "{Load}  Load fork",
+			Row2 = "{Swallow}  Swallow",
 			Row3 = "Never swallow while watched",
 			icons = false,
 		},
@@ -211,10 +228,10 @@ local TRIAL_TEXT = {
 	-- here: their text ships in TrialClients/<id>.luau as `controlsText`.
 	default = {
 		sec1 = "PLAYERS:", sec2 = "RULE:",
-		Desktop = { Row1 = "Move", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = true,
+		Desktop = { Row1 = "Move  [{Move}]", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = true,
 			noteRows = { Row1b = true, Row2 = true, Row3 = true } },
-		Mobile = { Row1 = "Stick  Move", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = false },
-		Console = { Row1 = "LS  Move", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = false },
+		Mobile = { Row1 = "{Move}  Move", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = false },
+		Console = { Row1 = "{Move}  Move", Row1b = "Follow the machine", Row2 = "", Row3 = "", icons = false },
 		scoring = {},
 	},
 }
@@ -254,6 +271,63 @@ local function moduleControlsText(trialId)
 	return result or nil
 end
 
+-- P2.4: a controls line carries {Action} tokens (Glyphs.Actions). Desktop and
+-- touch lines stay text (layout-correct key strings / pad labels). On console
+-- a line with button images becomes a GlyphRow: a horizontal list of text
+-- segments and the platform's own button images (GetImageForKeyCode), sized
+-- to the row's (floored) text; the plain label is blanked while it shows.
+local function renderGlyphRow(label, line)
+	local segs = Glyphs.segments(line, Glyphs.platformFor(currentPlatform), glyphResolver)
+	local row = label:FindFirstChild("GlyphRow")
+	if not Glyphs.hasImage(segs) then
+		if row then row:Destroy() end
+		label.Text = Glyphs.join(segs)
+		return
+	end
+	label.Text = ""
+	if row then
+		row:ClearAllChildren()
+	else
+		row = Instance.new("Frame")
+		row.Name = "GlyphRow"
+		row.BackgroundTransparency = 1
+		row.Size = UDim2.fromScale(1, 1)
+		row.ZIndex = label.ZIndex
+		row.Parent = label
+	end
+	local list = Instance.new("UIListLayout")
+	list.FillDirection = Enum.FillDirection.Horizontal
+	list.VerticalAlignment = Enum.VerticalAlignment.Center
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Padding = UDim.new(0, 4)
+	list.Parent = row
+	local px = label.TextSize + 6
+	for i, s in ipairs(segs) do
+		local node
+		if s.image then
+			node = Instance.new("ImageLabel")
+			node.Image = s.image
+			node.ScaleType = Enum.ScaleType.Fit
+			node.Size = UDim2.fromOffset(px, px)
+		else
+			node = Instance.new("TextLabel")
+			node.Font = label.Font
+			node.TextSize = label.TextSize
+			node.TextColor3 = label.TextColor3
+			node.TextXAlignment = Enum.TextXAlignment.Left
+			node.Text = s.text
+			node.AutomaticSize = Enum.AutomaticSize.X
+			node.Size = UDim2.new(0, 0, 1, 0)
+		end
+		node.Name = "Seg" .. i
+		node.BackgroundTransparency = 1
+		node.BorderSizePixel = 0
+		node.LayoutOrder = i
+		node.ZIndex = label.ZIndex
+		node.Parent = row
+	end
+end
+
 local function applyControlsText()
 	local info = machine:FindFirstChild("Info")
 	local cw = info and info:FindFirstChild("ControlsWindow")
@@ -266,7 +340,7 @@ local function applyControlsText()
 		local label = row and row:FindFirstChild("Text")
 		local showIcon = t.icons and not (t.noteRows and t.noteRows[rowName])
 		if label then
-			label.Text = t[rowName] or label.Text
+			renderGlyphRow(label, t[rowName] or label.Text)
 			label.Position = showIcon and UDim2.new(0, 28, 0, 0) or UDim2.new(0, 0, 0, 0)
 			label.Size = showIcon and UDim2.new(1, -28, 1, 0) or UDim2.new(1, 0, 1, 0)
 		end
@@ -288,6 +362,24 @@ end
 machine:GetAttributeChangedSignal("TrialId"):Connect(applyControlsText)
 
 local focusScreen -- defined below; apply() retries focus through it
+
+-- P2.4: the panels that take input, in focus priority (a modal first). Each
+-- is a SelectionGroup with every SelectionBehavior edge = Stop, so the d-pad
+-- / stick can never leave the panel it is in; focus moves between panels only
+-- through focusScreen. HunterLookSetup is built by KenopsiaClient at boot
+-- and adopted when it appears.
+local GROUPS = { "Warning", "SettingsPanel", "HunterLookSetup", "Briefing", "Info" }
+-- focus the first visible group panel (console only; nothing if none is up)
+local function focusAny()
+	if currentPlatform ~= "Console" or not focusScreen then return end
+	for _, name in ipairs(GROUPS) do
+		local screen = machine:FindFirstChild(name)
+		if screen and screen.Visible then
+			focusScreen(screen)
+			return
+		end
+	end
+end
 
 -- console: the gamepad focus ring is the machine's own phosphor frame, not
 -- Roblox's default blue rectangle (P2.1, 22.08.2026). PlayerGui's
@@ -324,13 +416,17 @@ local function applyFocusRing()
 	playerGui.SelectionImageObject = ring
 end
 
--- console: an A-button glyph rides the screen's primary control
+-- console: the confirm-button glyph rides each panel's primary control
+-- (P2.4: resolved through Glyphs so the image is the platform's own; the
+-- settings CLOSE button carries one too).
 local function applyButtonHints()
 	local show = currentPlatform == "Console"
 	local targets = {
 		machine:FindFirstChild("Info") and machine.Info:FindFirstChild("Btn_READY"),
 		machine:FindFirstChild("Warning") and machine.Warning:FindFirstChild("Btn_CONTINUE", true),
+		machine:FindFirstChild("SettingsPanel") and machine.SettingsPanel:FindFirstChild("Btn_CLOSE"),
 	}
+	local confirm = Glyphs.glyph("Confirm", "Console", glyphResolver)[1]
 	for _, btn in ipairs(targets) do
 		if btn then
 			local glyph = btn:FindFirstChild("PadHint")
@@ -341,10 +437,10 @@ local function applyButtonHints()
 				glyph.AnchorPoint = Vector2.new(0, 0.5)
 				glyph.Position = UDim2.new(0, 12, 0.5, 0)
 				glyph.Size = UDim2.new(0, 30, 0, 30)
-				glyph.Image = UserInputService:GetImageForKeyCode(Enum.KeyCode.ButtonA)
 				glyph.Parent = btn
 			end
-			glyph.Visible = show
+			glyph.Image = confirm.image or ""
+			glyph.Visible = show and confirm.image ~= nil
 		end
 	end
 end
@@ -397,17 +493,10 @@ local function apply()
 	machine:SetAttribute("Platform", currentPlatform)
 	machine:SetAttribute("LayoutScale", s)
 	-- the boot viewport can be a placeholder size; once layout settles,
-	-- retake gamepad focus if nothing is selected yet
+	-- retake gamepad focus if nothing is selected yet (P2.4: also the moment
+	-- a gamepad becomes the input mode -- apply() runs on that flip too)
 	if currentPlatform == "Console" and not GuiService.SelectedObject then
-		task.defer(function()
-			for _, name in ipairs({ "Warning", "SettingsPanel", "Info" }) do
-				local screen = machine:FindFirstChild(name)
-				if screen and screen.Visible and focusScreen then
-					focusScreen(screen)
-					return
-				end
-			end
-		end)
+		task.defer(focusAny)
 	end
 end
 
@@ -429,37 +518,81 @@ workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 	bindCamera(workspace.CurrentCamera)
 	apply()
 end)
-machine:GetAttributeChangedSignal("ForcePlatform"):Connect(function()
-	currentPlatform = detectPlatform()
-	apply()
-end)
-
--- input mode can change mid-session (tablet + bluetooth keyboard, etc.)
-UserInputService.LastInputTypeChanged:Connect(function()
+-- P2.4: one re-detect path. Leaving Console drops the gamepad selection so
+-- no phosphor ring is left on a mouse-driven screen; entering it re-focuses
+-- through apply().
+local function refreshPlatform()
 	local p = detectPlatform()
-	if p ~= currentPlatform then
-		currentPlatform = p
-		apply()
+	if p == currentPlatform then return end
+	local wasConsole = currentPlatform == "Console"
+	currentPlatform = p
+	apply()
+	if wasConsole and p ~= "Console" and GuiService.SelectedObject then
+		GuiService.SelectedObject = nil
 	end
+end
+machine:GetAttributeChangedSignal("ForcePlatform"):Connect(refreshPlatform)
+
+-- input mode can change mid-session (tablet + bluetooth keyboard, a gamepad
+-- picked up at a desk, ...). P2.4: the Glyphs tracker carries the hysteresis
+-- -- a click / key / touch switches at once, a gamepad only after it has been
+-- the last input type for Feel.Input.GamepadHoldSeconds (a timer re-checks
+-- once the hold can have elapsed), a mouse move alone changes nothing.
+UserInputService.LastInputTypeChanged:Connect(function(inputType)
+	local now = os.clock()
+	inputTracker.feed(inputType.Name, now)
+	local wait = inputTracker.pending(now)
+	if wait then
+		task.delay(wait + 0.05, function()
+			inputTracker.evaluate(os.clock())
+			refreshPlatform()
+		end)
+	end
+	refreshPlatform()
 end)
+do
+	local wait = inputTracker.pending(os.clock())
+	if wait then
+		task.delay(wait + 0.05, function()
+			inputTracker.evaluate(os.clock())
+			refreshPlatform()
+		end)
+	end
+end
 
 -- CONSOLE: drive gamepad focus onto each screen's primary control ----------
+-- P2.4: a path below the panel (dots), walked by findPath.
 local PRIMARY = {
 	Info = "Btn_READY",
 	Warning = "Btn_CONTINUE",
+	SettingsPanel = "Row_UISOUND.Hit",
+	HunterLookSetup = "Track",
+	Briefing = "NavBar.ArrowR.Hit",
 }
+local function findPath(root, path)
+	local obj = root
+	for part in string.gmatch(path, "[^%.]+") do
+		obj = obj and obj:FindFirstChild(part)
+	end
+	return obj
+end
 
 function focusScreen(screen)
-	if currentPlatform ~= "Console" then return end
-	local primaryName = PRIMARY[screen.Name]
+	if currentPlatform ~= "Console" or not screen.Visible then return end
+	-- 1) the named primary
+	local primary = findPath(screen, PRIMARY[screen.Name] or "")
+	if primary and primary:IsA("GuiObject") and primary.Visible and primary.Selectable then
+		GuiService.SelectedObject = primary
+		return
+	end
+	-- 2) the engine's pick inside the SelectionGroup (lowest SelectionOrder)
+	pcall(function() GuiService:Select(screen) end)
+	local sel = GuiService.SelectedObject
+	if sel and sel:IsDescendantOf(screen) then return end
+	-- 3) the largest visible button on the panel
 	local best, bestArea
 	for _, d in ipairs(screen:GetDescendants()) do
 		if d:IsA("TextButton") and d.Visible and d.Selectable then
-			if primaryName and d.Name == primaryName then
-				best = d
-				break
-			end
-			-- no named primary hit yet: prefer the largest button on screen
 			local a = d.AbsoluteSize.X * d.AbsoluteSize.Y
 			if not bestArea or a > bestArea then
 				best, bestArea = d, a
@@ -474,19 +607,37 @@ function focusScreen(screen)
 	end
 end
 
-for _, name in ipairs({ "Info", "Warning", "SettingsPanel" }) do
-	local screen = machine:FindFirstChild(name)
-	if screen then
-		screen:GetPropertyChangedSignal("Visible"):Connect(function()
-			if screen.Visible then
-				task.defer(focusScreen, screen)
-			elseif GuiService.SelectedObject
-				and GuiService.SelectedObject:IsDescendantOf(screen) then
-				GuiService.SelectedObject = nil
-			end
-		end)
-		if screen.Visible then task.defer(focusScreen, screen) end
-	end
+-- P2.4: SelectionGroup + Stop on all four edges (GuiBase2d.SelectionGroup is
+-- the current API; GuiService:AddSelectionParent is deprecated in its favour
+-- and the per-object NextSelection* links would need every button wired).
+-- Shown -> focus its primary; hidden -> drop the selection and fall back to
+-- the next visible panel (closing Settings lands back on Info).
+local wired = {}
+local function wireGroup(screen)
+	if wired[screen] then return end
+	wired[screen] = true
+	screen.SelectionGroup = true
+	screen.SelectionBehaviorUp = Enum.SelectionBehavior.Stop
+	screen.SelectionBehaviorDown = Enum.SelectionBehavior.Stop
+	screen.SelectionBehaviorLeft = Enum.SelectionBehavior.Stop
+	screen.SelectionBehaviorRight = Enum.SelectionBehavior.Stop
+	screen:GetPropertyChangedSignal("Visible"):Connect(function()
+		if screen.Visible then
+			task.defer(focusScreen, screen)
+		else
+			local sel = GuiService.SelectedObject
+			if sel and sel:IsDescendantOf(screen) then GuiService.SelectedObject = nil end
+			task.defer(focusAny)
+		end
+	end)
+	if screen.Visible then task.defer(focusScreen, screen) end
 end
+for _, name in ipairs(GROUPS) do
+	local screen = machine:FindFirstChild(name)
+	if screen then wireGroup(screen) end
+end
+machine.ChildAdded:Connect(function(child)
+	if table.find(GROUPS, child.Name) and child:IsA("GuiObject") then wireGroup(child) end
+end)
 
 print(("[MachineLayout] %s, scale %.2f"):format(currentPlatform, machine:GetAttribute("LayoutScale")))

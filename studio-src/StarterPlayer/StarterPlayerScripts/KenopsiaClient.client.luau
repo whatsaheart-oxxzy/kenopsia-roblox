@@ -36,6 +36,16 @@ local K = {
 	FORWARD_BIND = "KenopsiaForwardOnly",
 	KNOWN_KINDS = { selection = true, info = true, status = true, round = true, score = true, announce = true, hide = true, rolecard = true },
 }
+-- P2.4 (23.08.2026): the glyph helper rides K (no new top-level local -- this
+-- chunk sits at Luau's live-local ceiling). No wait: StarterPlayerScripts is
+-- copied as one; a place without the module keeps the authored hint texts,
+-- with one warn.
+K.Glyphs = (function()
+	local m = script.Parent:FindFirstChild("Glyphs")
+	if not m then warn("[Kenopsia] Glyphs module missing - hints keep their authored text") end
+	return m and require(m) or nil
+end)()
+K.GlyphResolver = K.Glyphs and K.Glyphs.robloxResolver(UserInputService) or nil
 
 local remotes = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Remotes")
 local RoomState = remotes:WaitForChild("RoomState")
@@ -101,6 +111,13 @@ lookPanel.BackgroundTransparency = 1
 lookPanel.BorderSizePixel = 0
 lookPanel.ZIndex = 80
 lookPanel.Visible = false
+-- P2.4: a SelectionGroup that Stops on every edge, so gamepad focus cannot
+-- leave the panel (MachineLayout wires the shipped panels the same way).
+lookPanel.SelectionGroup = true
+lookPanel.SelectionBehaviorUp = Enum.SelectionBehavior.Stop
+lookPanel.SelectionBehaviorDown = Enum.SelectionBehavior.Stop
+lookPanel.SelectionBehaviorLeft = Enum.SelectionBehavior.Stop
+lookPanel.SelectionBehaviorRight = Enum.SelectionBehavior.Stop
 lookPanel.Parent = machine
 
 local function addSizeLimits(gui, minSize, maxSize)
@@ -125,6 +142,7 @@ do
 	addSizeLimits(lookTitle, Vector2.new(260, 42), Vector2.new(520, 42))
 
 	local lookHint = Instance.new("TextLabel")
+	lookHint.Name = "Hint"
 	lookHint.AnchorPoint = Vector2.new(0.5, 0.5)
 	lookHint.Position = UDim2.fromScale(0.5, 0.91)
 	lookHint.Size = UDim2.new(0.9, 0, 0, 28)
@@ -200,6 +218,12 @@ local function setHunterSetup(on)
 	lookPanel.Visible = on
 	if on then
 		setLookSpeed(lookSpeedLevel)
+		-- P2.4: device-correct hint (LEFT / RIGHT keys, d-pad, or TAP BAR)
+		local hint = lookPanel:FindFirstChild("Hint")
+		if hint and K.Glyphs then
+			local gp = K.Glyphs.platformFor(machine:GetAttribute("Platform"))
+			hint.Text = K.Glyphs.text(K.Glyphs.LookHint[gp], gp, K.GlyphResolver)
+		end
 		if machine:GetAttribute("Platform") == "Console" then
 			pcall(function() GuiService.SelectedObject = lookTrack end)
 		end
@@ -2579,6 +2603,14 @@ if settingsPanel then
 			settingsPanel.Visible = false
 		end)
 	end
+	-- P2.4: the gamepad Back button closes the panel (focus is trapped inside
+	-- its SelectionGroup, so this is the only way out besides CLOSE).
+	UserInputService.InputBegan:Connect(function(input)
+		if settingsPanel.Visible and input.KeyCode == Enum.KeyCode.ButtonB then
+			sfx("Click")
+			settingsPanel.Visible = false
+		end
+	end)
 	local openBtn = info:FindFirstChild("Btn_SETTINGS")
 	if openBtn then
 		openBtn.Activated:Connect(function()
