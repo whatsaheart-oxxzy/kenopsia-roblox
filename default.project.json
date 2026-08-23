@@ -38,7 +38,8 @@
             "CrawlerRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/CrawlerRules.luau" },
             "RicochetRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/RicochetRules.luau" },
             "PalletDutyRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/PalletDutyRules.luau" },
-            "SortingFloorRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/SortingFloorRules.luau" }
+            "SortingFloorRules": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/SortingFloorRules.luau" },
+            "MachineCam": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Rules/MachineCam.luau" }
           },
           "Net": {
             "$className": "Folder",
@@ -90,7 +91,9 @@
           "Crawler": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Crawler.luau" },
           "Ricochet": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Ricochet.luau" },
           "PalletDuty": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/PalletDuty.luau" },
-          "SortingFloor": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/SortingFloor.luau" }
+          "SortingFloor": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/SortingFloor.luau" },
+          "Podium": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/Podium.luau" },
+          "AudienceCam": { "$path": "studio-src/ServerScriptService/KenopsiaServer/Services/AudienceCam.luau" }
         }
       }
     },

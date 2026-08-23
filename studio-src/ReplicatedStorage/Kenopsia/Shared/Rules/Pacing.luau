@@ -126,7 +126,10 @@ Pacing.Timing = {
 	CountdownFrom = 3,   -- 3-2-1, one per second
 	FadeMax      = 0.6,  -- upper bound on any transition fade
 	InterimScore = 4.5,  -- score card after each completed minigame (plan: 3.0)
-	FinalScore   = 8.0,  -- final cumulative board (plan: 6.0)
+	-- P1.3 (23.08.2026, MASTERPLAN section 2 "Verdict"): the final board is the
+	-- VIABLE/REJECTED stamp, 6 s, then the podium takes the camera for 8 s.
+	FinalScore   = 6.0,  -- verdict stamp (was 8.0 while it was the only beat)
+	Podium       = 8.0,  -- three blocks, winner in Idle, fixed camera
 	ControlCard  = 8.0,  -- briefing; early confirm is allowed
 }
 

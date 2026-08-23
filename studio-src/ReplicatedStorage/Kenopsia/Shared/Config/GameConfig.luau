@@ -73,6 +73,11 @@ return {
 			breather = Vector3.new(1900, 0, 300), sweep = Vector3.new(1900, 0, 900),
 			crawler = Vector3.new(2400, 0, -900), ricochet = Vector3.new(2400, 0, -300),
 			stacker = Vector3.new(2400, 0, 300), sorting = Vector3.new(2400, 0, 900),
+			-- P1.3 (23.08.2026): the verdict podium (Services/Podium.luau), not a
+			-- trial. Off the legacy content (X <= 200, Z <= 800) and ~780 studs
+			-- from the nearest procedural arena (floorcheck at 1400/900), well
+			-- past FogEnd.
+			podium = Vector3.new(900, 0, 1500),
 		},
 		MaxFootprint = 200, MaxHeight = 120,
 	},

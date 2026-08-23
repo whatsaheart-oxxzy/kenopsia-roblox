@@ -79,6 +79,9 @@ check(Pacing.roundsFor("minefield", 1) == Pacing.roundsFor("minefield", 2),
 check(Pacing.RoundSeconds.minefield == 62 and Pacing.RoundSeconds.birdhunt == 60
 	and Pacing.RoundSeconds.canteen == 60, "round limits 62 / 60 / 60 s")
 check(Pacing.TrialPointPool == 1700, "point pool is 1700")
+-- P1.3 (23.08.2026), MASTERPLAN section 2/3: verdict stamp 6 s + podium 8 s.
+check(Pacing.Timing.FinalScore == 6 and Pacing.Timing.Podium == 8, "verdict beat is 6 s stamp + 8 s podium",
+	tostring(Pacing.Timing.FinalScore) .. " + " .. tostring(Pacing.Timing.Podium))
 
 -- MP-05 D8: one RoundSeconds number per new trial, section A values.
 local expectedSeconds = {

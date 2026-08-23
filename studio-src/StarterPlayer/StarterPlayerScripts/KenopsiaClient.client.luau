@@ -432,6 +432,56 @@ local function restoreCamera()
 	if hum then camera.CameraSubject = hum end
 end
 
+-- P1.3 podium / P1.7 audience camera (23.08.2026): the Machine's own fixed
+-- camera. Set from the `podium` and `audiencecam` packets, released by their
+-- clears. It is written in the RenderStepped writer below like every other
+-- camera here (a BindToRenderStep binding can never override that writer -
+-- docs/QA/2026-08-22-p3-simulation-grade.md), and it outranks the trial cams:
+-- when the Machine shows the podium nothing else may own the view.
+local machineCam = nil        -- CFrame, or nil
+local machineCamKind = nil    -- "podium" | "audiencecam"
+-- Resolved on first use, never awaited at boot: a place without the module
+-- pushed yet boots exactly as before and only these two kinds go dark.
+local MachineCamRules = nil
+local function machineCamRules()
+	if MachineCamRules == nil then
+		local rules = ReplicatedStorage:FindFirstChild("Kenopsia")
+		rules = rules and rules:FindFirstChild("Shared")
+		rules = rules and rules:FindFirstChild("Rules")
+		local m = rules and rules:FindFirstChild("MachineCam")
+		MachineCamRules = m and require(m) or false
+		if not MachineCamRules then warn("[Kenopsia] Shared.Rules.MachineCam missing - podium/audience camera off") end
+	end
+	return MachineCamRules or nil
+end
+-- The bench card (Status screen) stays up while the audience camera runs, so
+-- its opaque ground is thinned to let the arena through and put back after.
+local statusGroundDefault = nil
+local function setMachineCam(kind, p)
+	local rules = machineCamRules()
+	local pos, look = nil, nil
+	if rules then pos, look = rules.read(p) end
+	if pos and look then
+		machineCam = CFrame.lookAt(Vector3.new(pos[1], pos[2], pos[3]), Vector3.new(look[1], look[2], look[3]))
+		machineCamKind = kind
+		if kind == "audiencecam" then
+			if statusGroundDefault == nil then statusGroundDefault = statusScreen.BackgroundTransparency end
+			statusScreen.BackgroundTransparency = 0.55
+		end
+		return true
+	end
+	-- A clear for the kind we hold (a stale clear for another kind is ignored).
+	if machineCamKind == kind then
+		machineCam = nil
+		machineCamKind = nil
+		restoreCamera()
+	end
+	if kind == "audiencecam" and statusGroundDefault ~= nil then
+		statusScreen.BackgroundTransparency = statusGroundDefault
+	end
+	return false
+end
+
 -- P3.1: SimulationGrade publishes the PS1 position step (steps per stud, 0 =
 -- off) as KenopsiaCamQuant. RenderStepped runs AFTER every BindToRenderStep
 -- priority, so the grade's own binding cannot reach a camera this writer sets;
@@ -442,7 +492,12 @@ player:GetAttributeChangedSignal("KenopsiaCamQuant"):Connect(function()
 end)
 
 RunService.RenderStepped:Connect(function(dt)
-	if spectateCF then
+	if machineCam then
+		-- P1.3/P1.7: the Machine's fixed camera (podium, bench audience view).
+		-- First, because it exists only while no trial may own the view.
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = machineCam
+	elseif spectateCF then
 		camera.CameraType = Enum.CameraType.Scriptable
 		-- Follow whoever is still running. spectateCF is the fallback for the
 		-- moment nobody is watchable -- last runner down, or everyone mid
@@ -1860,6 +1915,53 @@ local function showAnnounce(p, token)
 	end)
 end
 
+-- P1.3 PODIUM (23.08.2026): its own beat after the verdict stamp, NOT part of
+-- showScore. The screens go away so the world shows the stage through the
+-- Machine's fixed camera (set by the funnel before this runs); all that stays
+-- on the glass is a phosphor caption, rank + name, bottom centre. Released by
+-- the server's clear packet, with a local deadline as the backstop.
+local podiumCaption = nil
+local PODIUM_ORDINAL = { "1ST", "2ND", "3RD" }
+local function showPodium(p, token)
+	hideAll()
+	if not podiumCaption then
+		podiumCaption = Instance.new("TextLabel")
+		podiumCaption.Name = "PodiumCaption"
+		podiumCaption.AnchorPoint = Vector2.new(0.5, 1)
+		podiumCaption.Position = UDim2.fromScale(0.5, 0.92)
+		podiumCaption.Size = UDim2.new(0.8, 0, 0, 96)
+		podiumCaption.BackgroundTransparency = 1
+		podiumCaption.Font = Enum.Font.Code
+		podiumCaption.TextColor3 = PHOSPHOR
+		podiumCaption.TextSize = 24
+		podiumCaption.TextStrokeColor3 = Color3.new(0, 0, 0)
+		podiumCaption.TextStrokeTransparency = 0.25
+		podiumCaption.TextXAlignment = Enum.TextXAlignment.Center
+		podiumCaption.TextYAlignment = Enum.TextYAlignment.Bottom
+		podiumCaption.ZIndex = 70
+		podiumCaption.Visible = false
+		podiumCaption.Parent = machine
+	end
+	local lines = {}
+	for _, r in ipairs(p.rows or {}) do
+		local ord = PODIUM_ORDINAL[r.place] or (tostring(r.place) .. "TH")
+		lines[#lines + 1] = ("%s  %s"):format(ord, string.upper(tostring(r.displayName or "?")))
+	end
+	podiumCaption.Text = table.concat(lines, "\n")
+	podiumCaption.Visible = #lines > 0
+	local deadline = os.clock() + (tonumber(p.seconds) or 8) + 2
+	task.spawn(function()
+		while session == token and machineCamKind == "podium" and os.clock() < deadline do
+			task.wait(0.1)
+		end
+		podiumCaption.Visible = false
+		-- Out of the loop on a new Machine screen or on the deadline with the
+		-- camera still ours (the clear never came): release it here, or the
+		-- writer would hold the podium view under every screen that follows.
+		if machineCamKind == "podium" then setMachineCam("podium", {}) end
+	end)
+end
+
 -- GORE-FX: sehr aggressiver Kamera-Shake + Blutspritzer auf dem Schirm ------
 -- Trauma-Modell: Events laden auf, quadratische Staerke, schneller Abfall.
 -- Die Connection steht NACH den Kamera-Writern (Runner/Sniper/Spectate),
@@ -2191,6 +2293,21 @@ MachineState.OnClientEvent:Connect(function(p)
 				end)
 			end)
 		end
+		return
+	end
+	-- P1.3 / P1.7: the Machine's fixed cameras. A packet with its camera field
+	-- sets it, one without is the clear (Shared/Rules/MachineCam). Neither
+	-- reaches the screen funnel below: the audience view must NOT cancel the
+	-- bench card it is shown under, and the podium bumps `session` itself.
+	if p.kind == "podium" then
+		if setMachineCam("podium", p) then
+			session += 1
+			showPodium(p, session)
+		end
+		return
+	end
+	if p.kind == "audiencecam" then
+		setMachineCam("audiencecam", p)
 		return
 	end
 	if not KNOWN_KINDS[p.kind] then
