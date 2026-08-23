@@ -14,6 +14,28 @@ local PHOSPHOR = Color3.fromHex("78FFAA")
 local IDLE = Color3.fromHex("8CE8AE")
 local DIM = Color3.fromHex("2E6B4A")
 local AMBER = Color3.fromHex("FFBA3C")
+-- 23.08.2026: one-shot constants live in one table -- Luau allows 200 live
+-- locals per function and the main chunk went over it after the P1 merge.
+local K = {
+	SNIPER_BASE_FOV = 70,
+	ZOOMS = { { fov = 35, label = "x2" }, { fov = 18, label = "x4" } },
+	FIRE_COOLDOWN = 2.2,
+	MARK_LIFETIME = 1.0,
+	MARK_POOL_MAX = 64,
+	CP_PLATE_COOLDOWN = 0.16,
+	CP_MOUTH_COOLDOWN = 0.35,
+	CP_FORK_CAPACITY = 4,
+	CP_IDLE = Color3.fromRGB(150, 158, 152),
+	CP_WARN = Color3.fromRGB(255, 176, 40),
+	CP_DANGER = Color3.fromRGB(255, 58, 44),
+	CP_SAFE = Color3.fromRGB(120, 208, 128),
+	CP_PIP_EMPTY = Color3.fromRGB(40, 46, 40),
+	PODIUM_ORDINAL = { "1ST", "2ND", "3RD" },
+	SETTING_ATTR = { Crt = "KenopsiaCRT" },
+	SFX_POOLS = { Click = "Clicks", Submit = "Submits" },
+	FORWARD_BIND = "KenopsiaForwardOnly",
+	KNOWN_KINDS = { selection = true, info = true, status = true, round = true, score = true, announce = true, hide = true, rolecard = true },
+}
 
 local remotes = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Remotes")
 local RoomState = remotes:WaitForChild("RoomState")
@@ -76,18 +98,40 @@ lookPanel.ZIndex = 80
 lookPanel.Visible = false
 lookPanel.Parent = machine
 
-local lookTitle = Instance.new("TextLabel")
-lookTitle.Name = "Title"
-lookTitle.AnchorPoint = Vector2.new(0.5, 0.5)
-lookTitle.Position = UDim2.fromScale(0.5, 0.77)
-lookTitle.Size = UDim2.new(0.88, 0, 0, 42)
-lookTitle.BackgroundTransparency = 1
-lookTitle.Font = Enum.Font.Code
-lookTitle.Text = "ADJUST LOOK SPEED"
-lookTitle.TextColor3 = PHOSPHOR
-lookTitle.TextSize = 24
-lookTitle.ZIndex = 81
-lookTitle.Parent = lookPanel
+local function addSizeLimits(gui, minSize, maxSize)
+	local constraint = Instance.new("UISizeConstraint")
+	constraint.MinSize = minSize
+	constraint.MaxSize = maxSize
+	constraint.Parent = gui
+end
+do
+	local lookTitle = Instance.new("TextLabel")
+	lookTitle.Name = "Title"
+	lookTitle.AnchorPoint = Vector2.new(0.5, 0.5)
+	lookTitle.Position = UDim2.fromScale(0.5, 0.77)
+	lookTitle.Size = UDim2.new(0.88, 0, 0, 42)
+	lookTitle.BackgroundTransparency = 1
+	lookTitle.Font = Enum.Font.Code
+	lookTitle.Text = "ADJUST LOOK SPEED"
+	lookTitle.TextColor3 = PHOSPHOR
+	lookTitle.TextSize = 24
+	lookTitle.ZIndex = 81
+	lookTitle.Parent = lookPanel
+	addSizeLimits(lookTitle, Vector2.new(260, 42), Vector2.new(520, 42))
+
+	local lookHint = Instance.new("TextLabel")
+	lookHint.AnchorPoint = Vector2.new(0.5, 0.5)
+	lookHint.Position = UDim2.fromScale(0.5, 0.91)
+	lookHint.Size = UDim2.new(0.9, 0, 0, 28)
+	lookHint.BackgroundTransparency = 1
+	lookHint.Font = Enum.Font.Code
+	lookHint.Text = "CLICK / TAP BAR     LEFT / RIGHT"
+	lookHint.TextColor3 = DIM
+	lookHint.TextSize = 16
+	lookHint.ZIndex = 81
+	lookHint.Parent = lookPanel
+	addSizeLimits(lookHint, Vector2.new(280, 28), Vector2.new(540, 28))
+end
 
 local lookTrack = Instance.new("TextButton")
 lookTrack.Name = "Track"
@@ -104,27 +148,7 @@ lookTrack.TextSize = 24
 lookTrack.ZIndex = 81
 lookTrack.Parent = lookPanel
 
-local lookHint = Instance.new("TextLabel")
-lookHint.AnchorPoint = Vector2.new(0.5, 0.5)
-lookHint.Position = UDim2.fromScale(0.5, 0.91)
-lookHint.Size = UDim2.new(0.9, 0, 0, 28)
-lookHint.BackgroundTransparency = 1
-lookHint.Font = Enum.Font.Code
-lookHint.Text = "CLICK / TAP BAR     LEFT / RIGHT"
-lookHint.TextColor3 = DIM
-lookHint.TextSize = 16
-lookHint.ZIndex = 81
-lookHint.Parent = lookPanel
-
-local function addSizeLimits(gui, minSize, maxSize)
-	local constraint = Instance.new("UISizeConstraint")
-	constraint.MinSize = minSize
-	constraint.MaxSize = maxSize
-	constraint.Parent = gui
-end
-addSizeLimits(lookTitle, Vector2.new(260, 42), Vector2.new(520, 42))
 addSizeLimits(lookTrack, Vector2.new(250, 50), Vector2.new(440, 50))
-addSizeLimits(lookHint, Vector2.new(280, 28), Vector2.new(540, 28))
 
 local scopeLook = Instance.new("TextLabel")
 scopeLook.Name = "ScopeLookSpeed"
@@ -200,7 +224,6 @@ local session = 0
 -- P1.6: kinds the funnel renders. Anything else is logged once and IGNORED,
 -- because bumping `session` for an unknown kind cancels every typewriter and
 -- odometer mid-word (this happened once with kind = "select").
-local KNOWN_KINDS = { selection = true, info = true, status = true, round = true, score = true, announce = true, hide = true, rolecard = true }
 local unknownKinds = {}
 local myReady = false
 local maxPlayers = 4
@@ -239,15 +262,13 @@ local trialWalkSpeed = 0    -- WalkSpeed while moveState == "trial"
 -- KenopsiaSimFilter, KenopsiaCRT) so UiFx / SimulationGrade can read it.
 local uiSettings = { UiSound = true, Music = true, ReduceFlicker = GuiService.ReducedMotionEnabled == true,
 	SimFilter = true, Crt = true }
-local SETTING_ATTR = { Crt = "KenopsiaCRT" }
 local function publishSetting(key)
-	player:SetAttribute(SETTING_ATTR[key] or ("Kenopsia" .. key), uiSettings[key])
+	player:SetAttribute(K.SETTING_ATTR[key] or ("Kenopsia" .. key), uiSettings[key])
 end
 for key in uiSettings do publishSetting(key) end
 
 -- Click/Submit draw a random variant from their pool so repeated presses
 -- don't sound like a sample loop
-local SFX_POOLS = { Click = "Clicks", Submit = "Submits" }
 -- P0.3: a name with no Sound under SoundService.KenopsiaAudio.SFX used to be a
 -- silent no-op; now it warns ONCE per name so a typo or a missing asset shows
 -- up in the console instead of as a quiet cue.
@@ -258,7 +279,7 @@ local function sfx(name)
 	local folder = root and root:FindFirstChild("SFX")
 	if not folder then return end
 	local s
-	local poolName = SFX_POOLS[name]
+	local poolName = K.SFX_POOLS[name]
 	local pool = poolName and folder:FindFirstChild(poolName)
 	if pool then
 		local variants = pool:GetChildren()
@@ -325,9 +346,8 @@ task.spawn(function()
 	end)
 end)
 
-local FORWARD_BIND = "KenopsiaForwardOnly"
 local function bindForwardOnly()
-	RunService:BindToRenderStep(FORWARD_BIND, Enum.RenderPriority.Input.Value + 1, function()
+	RunService:BindToRenderStep(K.FORWARD_BIND, Enum.RenderPriority.Input.Value + 1, function()
 		local char = player.Character
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
 		if not hum or not controlsModule then return end
@@ -338,7 +358,7 @@ local function bindForwardOnly()
 end
 local function unbindForwardOnly()
 	pcall(function()
-		RunService:UnbindFromRenderStep(FORWARD_BIND)
+		RunService:UnbindFromRenderStep(K.FORWARD_BIND)
 	end)
 end
 
@@ -577,8 +597,6 @@ local vmAlign = CFrame.identity
 local sniperBase = nil
 local sniperYaw, sniperPitch, recoil = 0, 0, 0
 -- Unscoped view is natural FOV; the two scope levels are x2 and x4.
-local SNIPER_BASE_FOV = 70
-local ZOOMS = { { fov = 35, label = "x2" }, { fov = 18, label = "x4" } }
 local zoomIdx = 1
 
 -- Roblox recreates CurrentCamera after death/respawn; never trust the old one
@@ -619,15 +637,15 @@ end
 RunService.RenderStepped:Connect(alignHipCross)
 
 local function applyScope()
-	local targetFov = scoped and ZOOMS[zoomIdx].fov or (sniperActive and SNIPER_BASE_FOV or 70)
+	local targetFov = scoped and K.ZOOMS[zoomIdx].fov or (sniperActive and K.SNIPER_BASE_FOV or 70)
 	TweenService:Create(camera, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = targetFov }):Play()
 	scopeGui.Visible = scoped
 	local zl = scopeGui:FindFirstChild("ZoomLabel")
-	if zl then zl.Text = ZOOMS[zoomIdx].label end
+	if zl then zl.Text = K.ZOOMS[zoomIdx].label end
 	local zb = touchControls:FindFirstChild("Btn_ZOOM")
 	if zb then
 		zb.Visible = scoped
-		zb.Text = ZOOMS[zoomIdx].label
+		zb.Text = K.ZOOMS[zoomIdx].label
 	end
 	hipCross.Visible = sniperActive and not scoped
 	alignHipCross()
@@ -758,11 +776,10 @@ local function setSniperRig(on)
 	applyScope()
 end
 
-local FIRE_COOLDOWN = 2.2 -- mirror of the server gate, for HUD feedback only
 local lastFireAt = -10
 local function fireShot()
 	if not sniperActive or not sniperCanFire or not SniperFire then return end
-	if os.clock() - lastFireAt < FIRE_COOLDOWN then return end
+	if os.clock() - lastFireAt < K.FIRE_COOLDOWN then return end
 	lastFireAt = os.clock()
 	SniperFire:FireServer()
 	if scoped then
@@ -797,7 +814,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		applyScope()
 	elseif input.KeyCode == Enum.KeyCode.ButtonY and scoped then
 		-- gamepad: Y cycles zoom while scoped
-		zoomIdx = zoomIdx % #ZOOMS + 1
+		zoomIdx = zoomIdx % #K.ZOOMS + 1
 		applyScope()
 	end
 end)
@@ -825,7 +842,7 @@ touchControls.Btn_SCOPE.Activated:Connect(function()
 end)
 touchControls.Btn_ZOOM.Activated:Connect(function()
 	if not sniperActive or not sniperCanFire or not scoped then return end
-	zoomIdx = zoomIdx % #ZOOMS + 1
+	zoomIdx = zoomIdx % #K.ZOOMS + 1
 	applyScope()
 end)
 
@@ -1013,10 +1030,8 @@ local markPool = {}
 -- Plan: markers clear within a second. Was 1.6, which left the field readable
 -- long after the pulse that lit it and made a single scan worth more than the
 -- risk of standing still to cast it.
-local MARK_LIFETIME = 1.0
 -- Bounded so a pathological round cannot turn the pool into a leak. Past this
 -- the surplus is destroyed rather than kept.
-local MARK_POOL_MAX = 64
 
 local function acquireMark()
 	local mark = table.remove(markPool)
@@ -1035,7 +1050,7 @@ end
 
 local function releaseMark(mark)
 	mark.Parent = nil
-	if #markPool < MARK_POOL_MAX then
+	if #markPool < K.MARK_POOL_MAX then
 		table.insert(markPool, mark)
 	else
 		mark:Destroy()
@@ -1054,7 +1069,7 @@ local function showMines(list)
 			revealMarks[key] = mark
 		end
 		mark.Transparency = e[4] and 0.1 or 0.55
-		mark:SetAttribute("DieAt", os.clock() + MARK_LIFETIME)
+		mark:SetAttribute("DieAt", os.clock() + K.MARK_LIFETIME)
 	end
 end
 task.spawn(function()
@@ -1120,15 +1135,7 @@ local cpMouthReadyAt = 0
 -- stop the client spamming a remote it already knows will be refused; they are
 -- NOT the rule. The server re-checks both on its own clock, so editing these
 -- numbers locally buys nothing.
-local CP_PLATE_COOLDOWN = 0.16
-local CP_MOUTH_COOLDOWN = 0.35
-local CP_FORK_CAPACITY = 4
 
-local CP_IDLE = Color3.fromRGB(150, 158, 152)
-local CP_WARN = Color3.fromRGB(255, 176, 40)
-local CP_DANGER = Color3.fromRGB(255, 58, 44)
-local CP_SAFE = Color3.fromRGB(120, 208, 128)
-local CP_PIP_EMPTY = Color3.fromRGB(40, 46, 40)
 
 local function charEatAllowed()
 	local char = player.Character
@@ -1162,7 +1169,7 @@ local function buildCanteenHud()
 	local glow = Instance.new("UIStroke")
 	glow.Name = "Glow"
 	glow.Thickness = 12
-	glow.Color = CP_DANGER
+	glow.Color = K.CP_DANGER
 	glow.Transparency = 1
 	glow.Parent = edge
 	edge.Parent = f
@@ -1175,7 +1182,7 @@ local function buildCanteenHud()
 	phase.BackgroundTransparency = 1
 	phase.Font = Enum.Font.Code
 	phase.TextSize = 26
-	phase.TextColor3 = CP_IDLE
+	phase.TextColor3 = K.CP_IDLE
 	phase.Text = ""
 	phase.ZIndex = 7
 	phase.Parent = f
@@ -1198,7 +1205,7 @@ local function buildCanteenHud()
 	ration.BackgroundTransparency = 1
 	ration.Font = Enum.Font.Code
 	ration.TextSize = 20
-	ration.TextColor3 = CP_IDLE
+	ration.TextColor3 = K.CP_IDLE
 	ration.Text = "PLATE 20    EATEN 00/20" -- placeholder until the first cpstate; PEAS_TOTAL is 20 since 23.08.2026
 	ration.ZIndex = 8
 	ration.Parent = panel
@@ -1209,17 +1216,17 @@ local function buildCanteenHud()
 	fork.Name = "Fork"
 	fork.AnchorPoint = Vector2.new(0.5, 0)
 	fork.Position = UDim2.new(0.5, 0, 0, 38)
-	fork.Size = UDim2.new(0, CP_FORK_CAPACITY * 30, 0, 24)
+	fork.Size = UDim2.new(0, K.CP_FORK_CAPACITY * 30, 0, 24)
 	fork.BackgroundTransparency = 1
 	fork.ZIndex = 8
 	fork.Parent = panel
-	for i = 1, CP_FORK_CAPACITY do
+	for i = 1, K.CP_FORK_CAPACITY do
 		local pip = Instance.new("Frame")
 		pip.Name = "Pip" .. i
 		pip.AnchorPoint = Vector2.new(0.5, 0.5)
 		pip.Position = UDim2.new(0, (i - 0.5) * 30, 0.5, 0)
 		pip.Size = UDim2.new(0, 18, 0, 18)
-		pip.BackgroundColor3 = CP_PIP_EMPTY
+		pip.BackgroundColor3 = K.CP_PIP_EMPTY
 		pip.BorderSizePixel = 0
 		pip.ZIndex = 8
 		local round = Instance.new("UICorner")
@@ -1236,10 +1243,10 @@ end
 local function cpSetState(peas, forkLoad, eaten, total)
 	local hud = buildCanteenHud()
 	hud.Panel.Ration.Text = string.format("PLATE %02d    EATEN %02d/%02d", peas, eaten, total)
-	for i = 1, CP_FORK_CAPACITY do
+	for i = 1, K.CP_FORK_CAPACITY do
 		local pip = hud.Panel.Fork:FindFirstChild("Pip" .. i)
 		if pip then
-			pip.BackgroundColor3 = (i <= forkLoad) and CP_SAFE or CP_PIP_EMPTY
+			pip.BackgroundColor3 = (i <= forkLoad) and K.CP_SAFE or K.CP_PIP_EMPTY
 		end
 	end
 end
@@ -1250,13 +1257,13 @@ local function cpSetPhase(phaseName)
 	local glow = hud.Edge.Glow
 	if phaseName == "lowering" then
 		label.Text = "OBSERVER DESCENDING"
-		label.TextColor3 = CP_WARN
-		glow.Color = CP_WARN
+		label.TextColor3 = K.CP_WARN
+		glow.Color = K.CP_WARN
 		TweenService:Create(glow, TweenInfo.new(0.3), { Transparency = 0.45 }):Play()
 	elseif phaseName == "watching" then
 		label.Text = "OBSERVED - DO NOT SWALLOW"
-		label.TextColor3 = CP_DANGER
-		glow.Color = CP_DANGER
+		label.TextColor3 = K.CP_DANGER
+		glow.Color = K.CP_DANGER
 		-- Snappier than the wind-up on purpose: the warning may fade in slowly,
 		-- the danger may not.
 		TweenService:Create(glow, TweenInfo.new(0.12), { Transparency = 0 }):Play()
@@ -1272,10 +1279,10 @@ local function cpSend(action)
 	local now = os.clock()
 	if action == "plate" then
 		if now < cpPlateReadyAt then return end
-		cpPlateReadyAt = now + CP_PLATE_COOLDOWN
+		cpPlateReadyAt = now + K.CP_PLATE_COOLDOWN
 	else
 		if now < cpMouthReadyAt then return end
-		cpMouthReadyAt = now + CP_MOUTH_COOLDOWN
+		cpMouthReadyAt = now + K.CP_MOUTH_COOLDOWN
 	end
 	-- Echo this round token. Without it the server refuses the action, which is
 	-- what stops a packet from an earlier round landing in a later one.
@@ -1329,10 +1336,10 @@ local function buildCanteenTouch()
 		return b
 	end
 
-	button("Btn_PLATE", "PLATE", 0.18, CP_IDLE).Activated:Connect(function()
+	button("Btn_PLATE", "PLATE", 0.18, K.CP_IDLE).Activated:Connect(function()
 		cpSend("plate")
 	end)
-	button("Btn_MOUTH", "MOUTH", 0.82, CP_SAFE).Activated:Connect(function()
+	button("Btn_MOUTH", "MOUTH", 0.82, K.CP_SAFE).Activated:Connect(function()
 		cpSend("mouth")
 	end)
 
@@ -1376,7 +1383,7 @@ end)
 UserInputService.InputChanged:Connect(function(input, gameProcessed)
 	if gameProcessed or not sniperActive or not scoped then return end
 	if input.UserInputType == Enum.UserInputType.MouseWheel then
-		local newIdx = math.clamp(zoomIdx + (input.Position.Z > 0 and 1 or -1), 1, #ZOOMS)
+		local newIdx = math.clamp(zoomIdx + (input.Position.Z > 0 and 1 or -1), 1, #K.ZOOMS)
 		if newIdx ~= zoomIdx then
 			zoomIdx = newIdx
 			applyScope()
@@ -1484,7 +1491,7 @@ RunService.RenderStepped:Connect(function(dt)
 					* vmAlign)
 				local boltAlpha = 0
 				if boltCycleStart then
-					local bt = (os.clock() - boltCycleStart) / FIRE_COOLDOWN
+					local bt = (os.clock() - boltCycleStart) / K.FIRE_COOLDOWN
 					if bt >= 1 then
 						boltCycleStart = nil
 					elseif bt > 0.12 and bt < 0.34 then
@@ -2000,7 +2007,6 @@ end
 -- on the glass is a phosphor caption, rank + name, bottom centre. Released by
 -- the server's clear packet, with a local deadline as the backstop.
 local podiumCaption = nil
-local PODIUM_ORDINAL = { "1ST", "2ND", "3RD" }
 local function showPodium(p, token)
 	hideAll()
 	if not podiumCaption then
@@ -2023,7 +2029,7 @@ local function showPodium(p, token)
 	end
 	local lines = {}
 	for _, r in ipairs(p.rows or {}) do
-		local ord = PODIUM_ORDINAL[r.place] or (tostring(r.place) .. "TH")
+		local ord = K.PODIUM_ORDINAL[r.place] or (tostring(r.place) .. "TH")
 		lines[#lines + 1] = ("%s  %s"):format(ord, string.upper(tostring(r.displayName or "?")))
 	end
 	podiumCaption.Text = table.concat(lines, "\n")
@@ -2256,14 +2262,14 @@ MachineState.OnClientEvent:Connect(function(p)
 		-- Empty fork to the mouth. Harmless by design, so this is a nudge and
 		-- not a punishment: it says "nothing on the fork", not "you failed".
 		local hud = buildCanteenHud()
-		hud.Panel.Ration.TextColor3 = CP_WARN
-		TweenService:Create(hud.Panel.Ration, TweenInfo.new(0.4), { TextColor3 = CP_IDLE }):Play()
+		hud.Panel.Ration.TextColor3 = K.CP_WARN
+		TweenService:Create(hud.Panel.Ration, TweenInfo.new(0.4), { TextColor3 = K.CP_IDLE }):Play()
 		return
 	end
 	if p.kind == "cpdone" then
 		local hud = buildCanteenHud()
 		hud.Phase.Text = "RATION COMPLETE - YOU ARE SAFE"
-		hud.Phase.TextColor3 = CP_SAFE
+		hud.Phase.TextColor3 = K.CP_SAFE
 		-- Finished players cannot be caught and cannot act. Dropping
 		-- canteenActive here stops the client sending input the server would
 		-- only throw away.
@@ -2275,8 +2281,8 @@ MachineState.OnClientEvent:Connect(function(p)
 	if p.kind == "cpout" then
 		local hud = buildCanteenHud()
 		hud.Phase.Text = "PROTOCOL VIOLATION"
-		hud.Phase.TextColor3 = CP_DANGER
-		hud.Edge.Glow.Color = CP_DANGER
+		hud.Phase.TextColor3 = K.CP_DANGER
+		hud.Edge.Glow.Color = K.CP_DANGER
 		hud.Edge.Glow.Transparency = 0
 		canteenActive = false
 		local pad = machine:FindFirstChild("CanteenTouch")
@@ -2389,7 +2395,7 @@ MachineState.OnClientEvent:Connect(function(p)
 		setMachineCam("audiencecam", p)
 		return
 	end
-	if not KNOWN_KINDS[p.kind] then
+	if not K.KNOWN_KINDS[p.kind] then
 		if not unknownKinds[p.kind] then
 			unknownKinds[p.kind] = true
 			warn("[Kenopsia] unhandled MachineState kind: " .. tostring(p.kind))
