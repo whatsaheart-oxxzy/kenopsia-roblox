@@ -41,10 +41,14 @@ AnimationIds.Player = {          -- rig: PS1Player (20 bones), loops in place, 3
 	-- (see StudioSequences + the warmup bridge).
 	-- DeathField is the death of the FIELD trials (Dead Zone, Bird Hunting);
 	-- the canteen keeps its execution Death above.
-	DeathField  = 0,
-	Crawl       = 0,
-	InjuredWalk = 0,
+	-- Published under the group 23.08.2026 (evening) from Anim_FieldClips.
+	DeathField  = 137420901214756,
+	Crawl       = 102977383488004,
+	InjuredWalk = 109198821545630,
 }
+-- Clip start offsets in seconds: the Sweep Fall source opens with ~0.6 s of
+-- "hands to the head" before the body goes — the field death skips it.
+AnimationIds.PlayerStart = { DeathField = 0.6 }
 -- for AdjustSpeed. Crawl / InjuredWalk (23.08.2026) are MEASURED from the
 -- Mixamo hips trend the retarget removed (8.50 studs / 3.77 s, 6.05 / 1.73 s
 -- at scale 1) -- the clips play in place, these are their natural speeds.

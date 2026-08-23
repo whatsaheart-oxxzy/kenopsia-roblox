@@ -106,6 +106,9 @@ hum.Died:Connect(function()
 	if d then
 		d.Looped = false
 		d:Play(0.05)
+		-- 23.08.2026: the published Sweep Fall starts with a 0.6 s wind-up.
+		local start = AnimationIds.PlayerStart and AnimationIds.PlayerStart[d == track("DeathField") and "DeathField" or "Death"]
+		if start and start > 0 then d.TimePosition = start end
 	end
 end)
 

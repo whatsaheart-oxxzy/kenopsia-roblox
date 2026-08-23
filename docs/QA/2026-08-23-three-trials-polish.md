@@ -60,3 +60,9 @@ PS1Animate 5265/24479636.
 **User:** Animation Editor → rig `Anim_FieldClips` → Load `DeathField` / `Crawl` / `InjuredWalk`
 → Publish to Roblox with the group as creator → paste the ids into `AnimationIds.Player`.
 The raw `mixamo.com` saves and the three husk models can be deleted afterwards.
+
+**Published 23.08. (evening), group creator:** DeathField 137420901214756, Crawl 102977383488004,
+InjuredWalk 109198821545630 → `AnimationIds.Player`; the field death starts at 0.6 s
+(`AnimationIds.PlayerStart.DeathField`, applied in PS1Animate after Play). Live: all three load with
+their full length on the player's Animator (1.73 / 3.77 / 1.73 s); 0.35 s after `Health = 0` the death
+track reads TimePosition 0.95. Parity AnimationIds 12384/620771988, PS1Animate 5517/299047822.
