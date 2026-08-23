@@ -29,10 +29,12 @@ return {
 
 	-- P3.3 (22.08.2026): the PS1 rig is the player character in every trial.
 	-- UsePS1Rig = false brings Roblox avatars back without touching the place;
-	-- Scale is applied per spawn by CharacterService (8.72 rig studs x 0.69 = 6.0).
+	-- Scale is applied per spawn by CharacterService (8.72 rig studs x 0.9 = 7.8;
+	-- 23.08.2026: up from 0.69 after the 2-player test - runners and mines read
+	-- too small in the Dead Zone).
 	Character = {
 		UsePS1Rig = true,
-		Scale = 0.69,
+		Scale = 0.9,
 	},
 
 	Playlist = {

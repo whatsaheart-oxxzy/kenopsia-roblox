@@ -32,8 +32,19 @@ AnimationIds.Player = {          -- rig: PS1Player (20 bones), loops in place, 3
 	-- Bone.CFrame survives the bite. That is the whole reason a bespoke clip
 	-- was needed instead of the obvious stand-in: Push moves the legs.
 	Eat    = 132791710012729,
+	-- 23.08.2026: three Mixamo clips imported on the PS1 rig (Sweep Fall /
+	-- Zombie Crawl / Injured Walking). 0 until published under the group;
+	-- Studio plays the saved sequence (see StudioSequences + the warmup bridge).
+	-- DeathField is the death of the FIELD trials (Dead Zone, Bird Hunting);
+	-- the canteen keeps its execution Death above.
+	DeathField  = 0,
+	Crawl       = 0,
+	InjuredWalk = 0,
 }
-AnimationIds.PlayerSpeeds = { Walk = 4.5, Run = 10.95, Push = 3.15 } -- for AdjustSpeed
+-- for AdjustSpeed. Crawl / InjuredWalk (23.08.2026) are ESTIMATES of the
+-- natural studs/s at scale 1 -- Mixamo clips are not measured like the
+-- Blender exports above; correct them once the clips are on a runner.
+AnimationIds.PlayerSpeeds = { Walk = 4.5, Run = 10.95, Push = 3.15, Crawl = 2.0, InjuredWalk = 2.6 }
 AnimationIds.Boss = {            -- rig: CanteenBoss (19 bones)
 	-- 22.08.2026: re-published under the group; Reading is its own looping clip
 	-- (LookDown lands on the paper, CanteenBoss hands over to Reading from there).
@@ -83,6 +94,10 @@ AnimationIds.StudioSequences = {
 		-- name the Animation Editor save "Anim_Eat" and the sequence inside it
 		-- "Eat" and the diner animates in Studio before anything is published.
 		Eat = { "Anim_Eat", "eat" }, Stab = { "Anim_Stab", "stab beans" },
+		-- 23.08.2026: Mixamo imports keep the importer's sequence name
+		-- "mixamo.com"; the holder (Animation Editor save) tells them apart.
+		DeathField = { "Sweep Fall", "mixamo.com" }, Crawl = { "Zombie Crawl", "mixamo.com" },
+		InjuredWalk = { "Injured Walking", "mixamo.com" },
 	},
 	Boss = {
 		Idle = { "Anim_Idle", "Idle", 100 }, LookUp = { "Anim_LookUp", "LookingUp" },
@@ -119,9 +134,48 @@ local function studioUri(group, name)
 	return studioIds[key] or nil
 end
 
+-- STUDIO BRIDGE (23.08.2026). studioUri() only works on the SERVER (the saves
+-- live in ServerStorage and RegisterKeyframeSequence is server-side), but the
+-- PS1 character clips are played by a LocalScript. So the server registers
+-- every unpublished Player sequence once at warmup and hands the returned
+-- content id to the client as an attribute on ReplicatedStorage.Kenopsia:
+--     StudioAnim_Player_<Name>  (string, Studio only)
+-- load() on the client reads it when resolve() is nil. Missing saves are never
+-- an error: the attribute is simply absent and the clip is skipped as before.
+local STUDIO_ATTR_PREFIX = "StudioAnim_"
+
+local function studioAttrHost()
+	return game:GetService("ReplicatedStorage"):FindFirstChild("Kenopsia")
+end
+
+local function publishStudioSequences()
+	if not (RunService:IsStudio() and RunService:IsServer()) then return end
+	pcall(function()
+		local host = studioAttrHost()
+		if not host then return end
+		for name, _ in pairs(AnimationIds.StudioSequences.Player) do
+			if AnimationIds.resolve("Player", name) == nil then
+				local uri = studioUri("Player", name)
+				if uri then host:SetAttribute(STUDIO_ATTR_PREFIX .. "Player_" .. name, uri) end
+			end
+		end
+	end)
+end
+
+local function studioAttrUri(group, name)
+	if not RunService:IsStudio() or RunService:IsServer() then return nil end
+	local ok, uri = pcall(function()
+		local host = studioAttrHost()
+		return host and host:GetAttribute(STUDIO_ATTR_PREFIX .. group .. "_" .. name) or nil
+	end)
+	if ok and type(uri) == "string" and uri ~= "" then return uri end
+	return nil
+end
+
 -- Server, once at boot (async). Decides publishedPlayable within ~3 s.
 function AnimationIds.warmup()
 	if not RunService:IsServer() or AnimationIds.publishedPlayable ~= nil then return end
+	publishStudioSequences()
 	task.spawn(function()
 		local uri = AnimationIds.resolve("Boss", "Idle")
 		if not uri then
@@ -183,6 +237,11 @@ function AnimationIds.load(animator, group, name)
 	local uri = AnimationIds.resolve(group, name)
 	if AnimationIds.publishedPlayable == false or uri == nil then
 		uri = studioUri(group, name) or uri
+	end
+	-- 23.08.2026: on a Studio CLIENT the server's bridge attribute stands in
+	-- for the unpublished id (see STUDIO BRIDGE). Outside Studio this is nil.
+	if uri == nil then
+		uri = studioAttrUri(group, name)
 	end
 	if not uri then return nil end
 	local key = group .. "/" .. name .. "@" .. uri

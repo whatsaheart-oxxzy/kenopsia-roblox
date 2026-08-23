@@ -76,9 +76,16 @@ end
 -- FAILSAFE_TIME of 150 and is what the crusher traversal must be tuned against;
 -- the Bird value replaces ROUND_TIME 150.
 Pacing.RoundSeconds = {
-	minefield = 55,
+	-- 23.08.2026: 55 -> 62. The compactor's sweep speed is DERIVED from this
+	-- number (Minefield: sweepDistance / (RoundSeconds - grace - approach)),
+	-- so a slightly slower machine, as the 2-player test asked for, is a
+	-- slightly longer round and nothing else.
+	minefield = 62,
 	birdhunt  = 60,
-	canteen   = 45,
+	-- 23.08.2026: 45 -> 60. The 2-player test read the canteen as over before
+	-- the tension arrived; CanteenProtocol's observer ramps its watch across
+	-- THIS number, so a longer round is a longer screw, not just more peas.
+	canteen   = 60,
 	-- MP-05 section A / D8: ONE number per trial, whatever the player count.
 	-- TrialKit's R:setDeadline reads this; no trial derives its length from
 	-- anything else.

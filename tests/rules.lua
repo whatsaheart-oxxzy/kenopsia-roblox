@@ -74,8 +74,10 @@ end
 check(Pacing.roundsFor("minefield", 1) == Pacing.roundsFor("minefield", 2),
 	"solo uses the 2-player row")
 
-check(Pacing.RoundSeconds.minefield == 55 and Pacing.RoundSeconds.birdhunt == 60
-	and Pacing.RoundSeconds.canteen == 45, "round limits 55 / 60 / 45 s")
+-- 23.08.2026: canteen 45 -> 60 (tension ramp; see Pacing.RoundSeconds).
+-- 23.08.2026: minefield 55 -> 62 (slower compactor; its speed derives from this).
+check(Pacing.RoundSeconds.minefield == 62 and Pacing.RoundSeconds.birdhunt == 60
+	and Pacing.RoundSeconds.canteen == 60, "round limits 62 / 60 / 60 s")
 check(Pacing.TrialPointPool == 1700, "point pool is 1700")
 
 -- MP-05 D8: one RoundSeconds number per new trial, section A values.

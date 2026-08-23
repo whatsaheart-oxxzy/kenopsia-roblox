@@ -63,6 +63,27 @@ end
 check(A.PlayerSpeeds.Walk == 4.5 and A.PlayerSpeeds.Run == 10.95 and A.PlayerSpeeds.Push == 3.15,
 	"PlayerSpeeds match the exported clips")
 
+-- 23.08.2026: the three Mixamo field clips (DeathField / Crawl / InjuredWalk)
+-- are EXPLICITLY allowed to ship as placeholders (0) until published under the
+-- group. Offline they must be declared, resolve to nil, load to nil without a
+-- throw, and carry a Studio sequence + an AdjustSpeed reference so the Studio
+-- bridge and PS1Animate have everything they need the day the ids arrive.
+local fieldAnimator = { LoadAnimation = function(_, anim) return { Name = "track:" .. anim.Name } end }
+for _, name in ipairs({ "DeathField", "Crawl", "InjuredWalk" }) do
+	local id = A.Player[name]
+	check(type(id) == "number" and id >= 0, "Player." .. name .. " is declared (0 allowed until published)")
+	local seq = A.StudioSequences.Player[name]
+	check(type(seq) == "table" and type(seq[1]) == "string" and seq[2] == "mixamo.com",
+		"StudioSequences.Player." .. name .. " names a Mixamo save")
+	if id == 0 then
+		check(A.resolve("Player", name) == nil, "resolve(Player." .. name .. ") placeholder -> nil")
+		local okL, rL = pcall(A.load, fieldAnimator, "Player", name)
+		check(okL and rL == nil, "load(Player." .. name .. ") placeholder -> nil offline, no throw")
+	end
+end
+check(A.PlayerSpeeds.Crawl == 2.0 and A.PlayerSpeeds.InjuredWalk == 2.6,
+	"PlayerSpeeds carry the Crawl / InjuredWalk estimates")
+
 -- Every placeholder resolves to nil.
 local placeholdersOk = true
 for _, group in ipairs({ "Player", "Boss", "Textures" }) do

@@ -6,7 +6,7 @@
 -- free, the swallowing is what kills you.
 --
 -- MECHANIC
---   All players eat at the same time, each at their own plate. 16 peas. The
+--   All players eat at the same time, each at their own plate. 20 peas. The
 --   fork carries at most 4. Two actions:
 --     PLATE  plate -> fork, loads up to the remaining capacity. ALWAYS SAFE.
 --     MOUTH  fork -> mouth, consumes the WHOLE load. Detectable.
@@ -14,7 +14,16 @@
 --   nothing else, so mashing MOUTH is self-punishing rather than forbidden.
 --
 -- THE OBSERVER IS ENTIRELY SERVER-SIDE.
---   hidden 2.0-4.0s -> lowering 0.35s -> watching 0.9-1.8s -> raising 0.30s
+--   hidden 2.5-9.0s -> lowering 0.35s -> watching 0.9-1.8s -> raising 0.30s
+--   23.08.2026: the 2-player test called him predictable ("looks up after a
+--   fixed time") and the round short. Three changes, all in runObserver:
+--     * the hidden read is 2.5-9.0 s instead of 2.0-4.0 s, so the rhythm
+--       cannot be counted;
+--     * FAKE-OUT: after raising, 30% of the time the next read is 1.0-1.8 s
+--       and he looks straight up again. Never twice in a row, so two
+--       fake-outs cannot pin a player at the plate for half the round;
+--     * the watch grows across the round, 0.9-1.8 s at GO to 1.4-2.6 s at
+--       the deadline, so the last peas cost more than the first.
 --   The client is TOLD the phase so it can draw a warning; it never decides
 --   whether anyone was seen. A client that lies about the phase changes what
 --   its player sees on screen and nothing else.
@@ -40,9 +49,11 @@ local AnimationIds = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForC
 
 local CanteenProtocol = {}
 
-local ROUND_TIME = Pacing.RoundSeconds.canteen or 45
+local ROUND_TIME = Pacing.RoundSeconds.canteen or 60
 
-local PEAS_TOTAL = 16
+-- 23.08.2026: 16 -> 20 peas (five full forks instead of four). CanteenProps
+-- builds the plate from this number through `opts.peas`; nothing else counts.
+local PEAS_TOTAL = 20
 local FORK_CAPACITY = 4
 
 -- Server-side minimum intervals. These are the rate limit, not a rhythm: they
@@ -57,9 +68,25 @@ local MIN_MOUTH_INTERVAL = 0.50
 -- of.
 local EAT_WINDOW = 0.45
 
-local HIDDEN_MIN, HIDDEN_MAX = 2.0, 4.0
+-- 23.08.2026: 2.0-4.0 -> 2.5-9.0. A 2-second spread is a rhythm; a 6.5-second
+-- spread is a wait you cannot count out. HIDDEN_MIN is also the cosmetic `dur`
+-- announced for the hidden phase -- the real read time is never sent (see
+-- runObserver), or the packet would be the tell.
+local HIDDEN_MIN, HIDDEN_MAX = 2.5, 9.0
+-- FAKE-OUT (23.08.2026): after a raising phase, with this probability the next
+-- read is FAKEOUT_MIN-FAKEOUT_MAX s and the eyes come straight back up. The
+-- player who shovels the moment the paper rises is the player this catches.
+-- Never two in a row: the second one would be a rhythm again, and a pair of
+-- 1-second reads gives nobody a window to eat in.
+local FAKEOUT_CHANCE = 0.3
+local FAKEOUT_MIN, FAKEOUT_MAX = 1.0, 1.8
 local LOWERING_TIME = 0.35
+-- 23.08.2026: the watch ramps. WATCH_MIN/MAX hold at GO; by the deadline the
+-- range is WATCH_END_MIN/MAX, linear in elapsed/ROUND_TIME (watchRange below).
+-- A longer stare late in the round means a swallow started on the tell is
+-- still caught more often, which is where the last peas get their price.
 local WATCH_MIN, WATCH_MAX = 0.9, 1.8
+local WATCH_END_MIN, WATCH_END_MAX = 1.4, 2.6
 local RAISING_TIME = 0.30
 -- Four simultaneous catches are executed serially. The watchdog is a ceiling,
 -- not a mandatory hold: the loop exits as soon as every visible shot finishes.
@@ -69,17 +96,19 @@ local EXECUTION_GRACE = 8.0
 -- sums those across rounds, then ranks and distributes exactly 1700. The bands
 -- encode the plan's order: finished > alive-unfinished > eliminated.
 --
--- The separation is arithmetic, not hope:
---   eliminated  0    + eaten*50 (max 15 -> 750) + survived*2 (max 45 -> 90) = 840
---   alive       1000 + eaten*50 (max 15 -> 750)                             = 1750
---   finished    2000 + spare*10 (max 45 -> 450)                             = 2450
--- 15 is the ceiling for both lower bands because eating the 16th pea IS
--- finishing. 840 < 1000 and 1750 < 2000, so no band can ever reach into the one
--- above it.
+-- The separation is arithmetic, not hope (23.08.2026: re-fitted for 20 peas
+-- and a 60-s round; PEA_STEP 50 -> 40, the bands themselves stay the shared
+-- TrialRules.BAND values):
+--   eliminated  0    + eaten*40 (max 19 -> 760) + survived*2 (max 60 -> 120) = 880
+--   alive       1000 + eaten*40 (max 19 -> 760)                              = 1760
+--   finished    2000 + spare*10 (max 60 -> 600)                              = 2600
+-- 19 is the ceiling for both lower bands because eating the 20th pea IS
+-- finishing. 880 < 1000 and 1760 < 2000, so no band can ever reach into the one
+-- above it. (At PEA_STEP 50 the eliminated band would have reached 1070.)
 local ELIMINATED_BAND = 0
 local ALIVE_BAND = 1000
 local FINISHED_BAND = 2000
-local PEA_STEP = 50
+local PEA_STEP = 40
 local FINISH_SPEED_STEP = 10
 local SURVIVAL_STEP = 2
 
@@ -228,7 +257,16 @@ function CanteenProtocol.validateArena()
 	-- passes every name-and-count check and makes the whole minigame unlosable.
 	local rp = RaycastParams.new()
 	rp.FilterType = Enum.RaycastFilterType.Exclude
-	rp.FilterDescendantsInstances = { a.rig }
+	-- 23.08.2026: player characters are parked at the seats (invisible, with
+	-- hit boxes) from round 2 on; they are not geometry and must not fail the
+	-- camera->plate ray, which the over-the-shoulder camera crosses.
+	local ignore = { a.rig }
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr.Character then table.insert(ignore, plr.Character) end
+	end
+	local props = workspace:FindFirstChild("CP_Props")
+	if props then table.insert(ignore, props) end
+	rp.FilterDescendantsInstances = ignore
 	for i, id in ipairs(SEAT_IDS) do
 		local target = a.mouths[i].Position
 		local hit = workspace:Raycast(a.Observer.Position, target - a.Observer.Position, rp)
@@ -428,10 +466,26 @@ local function sleepWhileActive(st, duration)
 	return roundActive(st)
 end
 
+-- 23.08.2026: the watch range at THIS moment of the round. Linear from
+-- (WATCH_MIN, WATCH_MAX) at GO to (WATCH_END_MIN, WATCH_END_MAX) at the
+-- deadline; clamped so the execution grace after the deadline does not keep
+-- growing it.
+local function watchRange(st)
+	local elapsed = os.clock() - st.startedAt
+	local t = math.clamp(elapsed / ROUND_TIME, 0, 1)
+	return WATCH_MIN + (WATCH_END_MIN - WATCH_MIN) * t,
+		WATCH_MAX + (WATCH_END_MAX - WATCH_MAX) * t
+end
+
 local function runObserver(st)
 	local rng = Random.new()
+	-- 23.08.2026: the read length is decided when the paper goes up, not when
+	-- it comes down, so the fake-out decision and the announce happen together.
+	-- The first read is always a full one: nobody has had a chance to eat yet.
+	local hiddenTime = rng:NextNumber(HIDDEN_MIN, HIDDEN_MAX)
+	local lastWasFakeout = false
 	while roundActive(st) do
-		if not sleepWhileActive(st, rng:NextNumber(HIDDEN_MIN, HIDDEN_MAX)) then break end
+		if not sleepWhileActive(st, hiddenTime) then break end
 		-- Never open the eyes while an execution is still being played. The boss
 		-- is a serial actor: he cannot lower the paper and shoot at the same
 		-- time, so a sweep launched during a queue of shots would arrive with NO
@@ -446,13 +500,26 @@ local function runObserver(st)
 		setPhase(st, "lowering", LOWERING_TIME)
 		if not sleepWhileActive(st, LOWERING_TIME) then break end
 
-		local watchTime = rng:NextNumber(WATCH_MIN, WATCH_MAX)
+		local watchMin, watchMax = watchRange(st)
+		local watchTime = rng:NextNumber(watchMin, watchMax)
 		setPhase(st, "watching", watchTime)
 		sweep(st)
 		if not sleepWhileActive(st, watchTime) then break end
 
 		setPhase(st, "raising", RAISING_TIME)
 		if not sleepWhileActive(st, RAISING_TIME) then break end
+		-- 23.08.2026: roll the next read. A fake-out is short and never follows
+		-- another fake-out. The announced `dur` stays the constant HIDDEN_MIN on
+		-- purpose: the boss rig and the client ignore it for this phase, but the
+		-- procedural fallback tweens its rise with it, and a faster rise would be
+		-- a tell the mechanic is built to not have.
+		local fakeout = (not lastWasFakeout) and rng:NextNumber() < FAKEOUT_CHANCE
+		lastWasFakeout = fakeout
+		if fakeout then
+			hiddenTime = rng:NextNumber(FAKEOUT_MIN, FAKEOUT_MAX)
+		else
+			hiddenTime = rng:NextNumber(HIDDEN_MIN, HIDDEN_MAX)
+		end
 		setPhase(st, "hidden", HIDDEN_MIN)
 	end
 end

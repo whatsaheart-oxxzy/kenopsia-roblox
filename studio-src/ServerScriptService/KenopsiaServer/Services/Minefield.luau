@@ -32,6 +32,15 @@ local Minefield = {}
 --   over the crawl speed (4.2)         -> being maimed still costs the round
 local MAX_SHRED_SPEED = 6.5   -- runner walks at 7
 local MIN_SHRED_SPEED = 4.6   -- runner crawls at 4.2
+-- 23.08.2026: the crawl speed was only ever a number in the comment above.
+-- The client owns WalkSpeed (KenopsiaClient applyMovement: 7 in "scan") and
+-- nothing told it a runner had been maimed, so the attribute played the
+-- crawl clip over a runner still walking at 7 -- faster than the machine,
+-- which is the "no consequence" case the clamps exist to rule out. The
+-- server now writes this onto the humanoid the moment XBotCrawl latches;
+-- it replicates down, and the client does not rewrite WalkSpeed again until
+-- the next role packet. MUST stay under MIN_SHRED_SPEED.
+local CRAWL_SPEED = 4.2
 -- Seconds allowed for the APPROACH -- the stretch from the marker to the
 -- players' line, where the machine is behind everyone and threatens nobody.
 -- Spending gameplay seconds there is what made the round 88 s. Lower this to
@@ -318,7 +327,17 @@ local function runRoundInner(room, roundIndex, guard)
 		if current == roundState then current = nil end
 		local spawnPos = workspace:FindFirstChild("SpawnLocation")
 			and workspace.SpawnLocation.Position or Vector3.new(0, 5, 0)
-		for _, s in livingOf(room) do
+		for uid, s in livingOf(room) do
+			-- 23.08.2026: undo the server-side CRAWL_SPEED write before the
+			-- role="none" packet below. That packet is what restores WalkSpeed
+			-- today (the client's applyMovement has the final word, exactly as
+			-- TrialKit's D10 restore); this only makes sure a crawler does not
+			-- keep 4.2 if the packet never lands. Restored to what the server
+			-- saw before the crawl, the same snapshot TrialKit keeps.
+			local ps = roundState.state[uid]
+			if ps and ps.crawling and ps.walkBefore then
+				s.hum.WalkSpeed = ps.walkBefore
+			end
 			s.char:SetAttribute("XBotCrawl", false)
 			s.char:SetAttribute("XBotScanning", false)
 			s.char:SetAttribute("XBotMoves", "")
@@ -502,6 +521,10 @@ local function runRoundInner(room, roundIndex, guard)
 						-- outer ring is crawl plus glitch with no severing.
 						ps.crawling = true
 						s.char:SetAttribute("XBotCrawl", true)
+						-- 23.08.2026: the crawl is now a SPEED, not only a clip. See
+						-- CRAWL_SPEED. Snapshot first so cleanup() can put it back.
+						ps.walkBefore = s.hum.WalkSpeed
+						s.hum.WalkSpeed = CRAWL_SPEED
 						BloodFX.bleed(s.char, audienceOf(room), roundState.roundToken)
 					end
 				end
@@ -704,7 +727,10 @@ local function runRoundInner(room, roundIndex, guard)
 	local sweepStartZ = behindSpawn
 	local approachDistance = math.abs(sweepStartZ - shredZ)
 	local sweepDistance = math.abs(shredEndZ - sweepStartZ)
-	local targetRound = Pacing.RoundSeconds.minefield or 55
+	-- 23.08.2026: 55 -> 62 (Pacing). The 2-player test wanted the machine a
+	-- bit slower; since its speed is DERIVED from this number, the round
+	-- length is the dial. The fallback only mirrors Pacing.
+	local targetRound = Pacing.RoundSeconds.minefield or 62
 	local sweepBudget = math.max(5, targetRound - SHRED_GRACE - APPROACH_SECONDS)
 	local sweepSpeed = math.clamp(sweepDistance / sweepBudget,
 		MIN_SHRED_SPEED, MAX_SHRED_SPEED)
@@ -749,6 +775,7 @@ local function runRoundInner(room, roundIndex, guard)
 	local t0 = os.clock()
 	local lastTick = os.clock()
 	local spin = 0
+	local crushed = 0 -- 23.08.2026: mines the machine silently removed
 	while os.clock() - t0 < failsafeTime do
 		task.wait(0.05)
 		-- C1.c: break out the moment the match aborts. Previously this loop
@@ -769,11 +796,24 @@ local function runRoundInner(room, roundIndex, guard)
 		spin += dt * 6
 		placeShred(shredZ, spin)
 		local shredFront = shredZ + g.dir * 2
-		-- Minen, die die Maschine ueberrollt, gehen von selbst hoch
+		-- 23.08.2026: Minen, die die Maschine ueberrollt, werden ZERDRUECKT,
+		-- nicht gezuendet. Vorher ging jede ueberrollte Mine von selbst hoch;
+		-- im 2-Spieler-Test war das eine Kette von Explosionen hinter den
+		-- Laeufern, und weil explode() sein gorefx an den ganzen Raum schickt,
+		-- hatte jeder Blut auf dem Schirm, ohne dass irgendwer etwas falsch
+		-- gemacht haette. Eine zerdrueckte Mine ist einfach weg: nicht mehr
+		-- scharf, kein explode(), kein BloodFX, kein gorefx, kein Klang, und
+		-- sie kettet nichts mehr an (explode() prueft other.live). Zu
+		-- verstecken gibt es nichts - eine Mine ist ein Server-Eintrag ohne
+		-- Instanz (REQ-DZ-02); mit live=false faellt sie auch aus dem Sonar.
+		-- Kettenreaktionen bleiben den Minen, die ein LAEUFER ausloest.
+		-- 23.08.2026 (Gate): `not mn.armed` bleibt - eine Mine, auf die ein
+		-- Laeufer schon getreten ist (Zuender laeuft, FUSE), wird von der
+		-- Maschine NICHT entschaerft; sie geht hoch wie versprochen.
 		for _, mn in mines do
 			if mn.live and not mn.armed and (mn.pos.Z - shredFront) * g.dir < 0 then
-				mn.armed = true
-				task.delay(math.random() * 0.2, function() explode(mn) end)
+				mn.live = false
+				crushed += 1
 			end
 		end
 		local liv = livingOf(room)
@@ -824,7 +864,8 @@ local function runRoundInner(room, roundIndex, guard)
 		if (shredZ - shredEndZ) * g.dir >= 0 then break end
 		if #room.members == 0 then break end
 	end
-	print("[DZ] round over, elapsed=" .. math.floor((os.clock() - t0) * 10) / 10)
+	print("[DZ] round over, elapsed=" .. math.floor((os.clock() - t0) * 10) / 10
+		.. " crushed=" .. crushed)
 	roundState.acceptInput = false
 
 	-- An aborted round scores nothing: the plan discards an incomplete

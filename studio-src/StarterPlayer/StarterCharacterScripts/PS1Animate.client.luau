@@ -8,6 +8,15 @@
 -- while the character's `Crouching` attribute is true (CharacterService sets
 -- it from the crouch remote); Death plays once on Died. There is no jump clip
 -- because there is no jumping in this game -- the state is disabled here too.
+--
+-- 23.08.2026, three more gaits from the trials' attributes (all server-set):
+--   XBotCrawl  true -> Crawl, looped, paced by the speed, held at 0 when still
+--                     (the maimed body in the Dead Zone); beats everything
+--   Injured    true -> InjuredWalk while moving, instead of Walk / Run (a
+--                     winged runner in Bird Hunting); Idle / Crouch unchanged
+--   Died            -> DeathField (the field death) when it loads, else Death
+-- A clip that does not load (unpublished outside Studio) degrades to the
+-- plain Idle / Walk / Run choice -- never to a frozen or wrong-speed body.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local char = script.Parent
@@ -34,7 +43,7 @@ hum.JumpPower = 0
 pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end)
 
 -- clip speeds at scale 1 (AnimationIds), so AdjustSpeed keeps the feet planted
-local NATURAL = AnimationIds.PlayerSpeeds or { Walk = 4.5, Run = 10.95 }
+local NATURAL = AnimationIds.PlayerSpeeds or { Walk = 4.5, Run = 10.95, Crawl = 2.0, InjuredWalk = 2.6 }
 local RUN_AT = 7.5 -- studs/s: below this the walk carries the legs
 
 local tracks = {}
@@ -51,7 +60,7 @@ local function play(name, speed)
 	if not t then return end
 	if current ~= t then
 		if current then current:Stop(0.15) end
-		t.Looped = name ~= "Death"
+		t.Looped = name ~= "Death" and name ~= "DeathField" -- 23.08.2026: both deaths one-shot
 		t:Play(0.15)
 		current = t
 	end
@@ -63,10 +72,17 @@ local speedNow = 0
 local function update()
 	if dead then return end
 	local scale = char:GetScale()
-	if char:GetAttribute("Crouching") == true then
-		play("Crouch", speedNow > 0.5 and 1 or 0)
-	elseif speedNow < 0.5 then
+	local moving = speedNow > 0.5
+	-- 23.08.2026: the trial attributes pick the gait first; each falls through
+	-- to the plain choice when its clip is not available (track() -> nil).
+	if char:GetAttribute("XBotCrawl") == true and track("Crawl") then
+		play("Crawl", moving and speedNow / ((NATURAL.Crawl or 2.0) * scale) or 0)
+	elseif char:GetAttribute("Crouching") == true then
+		play("Crouch", moving and 1 or 0)
+	elseif not moving then
 		play("Idle", 1)
+	elseif char:GetAttribute("Injured") == true and track("InjuredWalk") then
+		play("InjuredWalk", speedNow / ((NATURAL.InjuredWalk or 2.6) * scale))
 	elseif speedNow < RUN_AT then
 		play("Walk", speedNow / (NATURAL.Walk * scale))
 	else
@@ -79,11 +95,14 @@ hum.Running:Connect(function(speed)
 	update()
 end)
 char:GetAttributeChangedSignal("Crouching"):Connect(update)
+char:GetAttributeChangedSignal("XBotCrawl"):Connect(update)
+char:GetAttributeChangedSignal("Injured"):Connect(update)
 hum.Died:Connect(function()
 	dead = true
 	if current then current:Stop(0.1) end
 	current = nil
-	local d = track("Death")
+	-- 23.08.2026: the field death first; the execution Death stays the fallback
+	local d = track("DeathField") or track("Death")
 	if d then
 		d.Looped = false
 		d:Play(0.05)

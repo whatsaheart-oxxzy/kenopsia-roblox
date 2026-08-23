@@ -961,7 +961,7 @@ local function acquireMark()
 	if mark then return mark end
 	mark = Instance.new("Part")
 	mark.Shape = Enum.PartType.Cylinder
-	mark.Size = Vector3.new(0.12, 1.6, 1.6)
+	mark.Size = Vector3.new(0.12, 2.56, 2.56) -- 23.08.2026: x1.6, the marks read too small from the 45-degree cam
 	mark.Material = Enum.Material.Neon
 	mark.Color = Color3.fromRGB(255, 60, 50)
 	mark.Anchored = true
@@ -1137,7 +1137,7 @@ local function buildCanteenHud()
 	ration.Font = Enum.Font.Code
 	ration.TextSize = 20
 	ration.TextColor3 = CP_IDLE
-	ration.Text = "PLATE 16    EATEN 00/16"
+	ration.Text = "PLATE 20    EATEN 00/20" -- placeholder until the first cpstate; PEAS_TOTAL is 20 since 23.08.2026
 	ration.ZIndex = 8
 	ration.Parent = panel
 
@@ -2064,7 +2064,7 @@ MachineState.OnClientEvent:Connect(function(p)
 	-- already decided by the time the packet arrives.
 	if p.kind == "cpstate" then
 		cpShowHud()
-		cpSetState(p.peas or 0, p.fork or 0, p.eaten or 0, p.total or 16)
+		cpSetState(p.peas or 0, p.fork or 0, p.eaten or 0, p.total or 20)
 		return
 	end
 	if p.kind == "cpobs" then

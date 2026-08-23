@@ -28,6 +28,12 @@ local MIN_AIM_PITCH = -0.62
 local MAX_AIM_PITCH = 0.27
 local MAX_DIRECTION_COMPONENT = 10000
 local MAX_RUNNER_SPEED = 14
+-- 23.08.2026: a body shot that does not drop the runner wings them -- the
+-- character gets the `Injured` attribute (PS1Animate plays InjuredWalk) and
+-- limps at this WalkSpeed for the REST OF THE LEG. Slower than
+-- MAX_RUNNER_SPEED, so every speed check above still accepts them; restored
+-- only at the next leg's placement, never mid-leg.
+local INJURED_SPEED = 7
 local POSITION_SPEED_FACTOR = 2
 local POSITION_TOLERANCE = 5
 local PATH_SPEED_FACTOR = 1.15
@@ -397,6 +403,7 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 				hum.Jump = false
 			end
 			char:SetAttribute("XBotMoves", "")
+			char:SetAttribute("Injured", false) -- 23.08.2026: out of the leg, no limp
 		end
 		clearCharacter(subject and subject.char)
 		local player = Players:GetPlayerByUserId(uid)
@@ -444,6 +451,7 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			end
 			if char then
 				char:SetAttribute("XBotMoves", "")
+				char:SetAttribute("Injured", false) -- 23.08.2026: the leg is over
 				local mesh = char:FindFirstChild("Beta_Joints")
 				if mesh and mesh:IsA("BasePart") then mesh.Transparency = 0 end
 			end
@@ -489,6 +497,8 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			if mesh and mesh:IsA("BasePart") then mesh.Transparency = 0 end
 			-- new minigame, new moves: runners may sneak in this trial
 			s.char:SetAttribute("XBotMoves", isSniper and "" or "sneak")
+			-- 23.08.2026: a new leg heals the limp; the GO below restores the speed
+			s.char:SetAttribute("Injured", false)
 			if isSniper then
 				-- The hunter operates the turret and is not seen doing it. The
 				-- character still exists -- the scope camera and the shot filter
@@ -703,6 +713,10 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			BloodFX.hit(hit.Position, audience)
 			BloodFX.sound(hit.Position, "ImpactBody", audience)
 			if sst then sst.points += HIT_POINTS end
+			-- 23.08.2026: winged. The limp lasts the rest of the leg -- placement
+			-- of the next leg clears the attribute and restores the speed.
+			s.char:SetAttribute("Injured", true)
+			s.hum.WalkSpeed = math.min(s.hum.WalkSpeed, INJURED_SPEED)
 		end
 	end
 	-- Aim is accepted during the countdown so the first shot uses the reticle,
@@ -743,7 +757,13 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 	-- crouch validation, and anti-teleport state in agreement from the first frame.
 	for uid, st in state do
 		local subject = subjects[uid]
-		if subject and not st.sniper then subject.hum.WalkSpeed = MAX_RUNNER_SPEED end
+		if subject and not st.sniper then
+			-- 23.08.2026: placement cleared `Injured` for this leg, so this is
+			-- the full speed; the guard keeps a limp a limp should that ever
+			-- change (an injured runner is never restored to full speed mid-leg).
+			subject.hum.WalkSpeed = subject.char:GetAttribute("Injured") == true
+				and INJURED_SPEED or MAX_RUNNER_SPEED
+		end
 	end
 	roundState.active = true
 	print("[BH] go; members=" .. #room.members)
