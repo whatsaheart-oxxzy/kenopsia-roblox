@@ -51,6 +51,9 @@ local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Sh
 	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 local CanteenProtocol = {}
+-- #50 watchdog hook state (see CanteenProtocol.abort below).
+CanteenProtocol._guard = nil :: { cleanup: (() -> ())? }?
+CanteenProtocol._guardOwner = nil :: string?
 
 local ROUND_TIME = Pacing.RoundSeconds.canteen or 60
 
@@ -959,6 +962,17 @@ local function runRoundInner(room, roundIndex, guard)
 	return scores
 end
 
+-- #50: watchdog-side cleanup after a task.cancel (see Minefield.abort).
+function CanteenProtocol.abort()
+	local g = CanteenProtocol._guard
+	CanteenProtocol._guard = nil
+	if g and g.cleanup then pcall(g.cleanup) end
+	if arenaOwnerSessionId ~= nil and arenaOwnerSessionId == CanteenProtocol._guardOwner then
+		arenaBusy = false
+		arenaOwnerSessionId = nil
+	end
+end
+
 function CanteenProtocol.runRound(room, roundIndex)
 	local emptyScores = {}
 	for _, mm in room.members do emptyScores[mm.userId] = 0 end
@@ -966,9 +980,12 @@ function CanteenProtocol.runRound(room, roundIndex)
 
 	local owner = room.sessionId
 	local guard = { cleanup = function() end }
+	CanteenProtocol._guard = guard
+	CanteenProtocol._guardOwner = owner
 	local ok, result = xpcall(function()
 		return runRoundInner(room, roundIndex, guard)
 	end, debug.traceback)
+	CanteenProtocol._guard = nil
 	pcall(guard.cleanup)
 	if arenaOwnerSessionId == owner then
 		arenaBusy = false

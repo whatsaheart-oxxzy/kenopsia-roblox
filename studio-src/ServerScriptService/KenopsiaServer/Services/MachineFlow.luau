@@ -23,6 +23,7 @@ local BirdHunting = require(script.Parent.BirdHunting)
 local Minefield = require(script.Parent.Minefield)
 local CanteenProtocol = require(script.Parent.CanteenProtocol)
 local Contexts = require(script.Parent.Contexts)
+local TrialKit = require(script.Parent.TrialKit)
 -- MP-05: the twelve new trials (Framework-stage stubs until each implementer
 -- fills its module in). Every one is required at boot so a missing file fails
 -- loudly here, not mid-session.
@@ -697,6 +698,14 @@ local function runRoundGuarded(trial, ...)
 	if not done then
 		pcall(task.cancel, thread)
 		warn(("[MachineFlow] %s round exceeded %.0f s - cut by the watchdog"):format(trial.id, budget))
+		-- #50: the cancel above kills the round thread mid-yield, so nothing on
+		-- it (guard.cleanup, kit teardown) ever ran. Run the cleanups from here:
+		-- the trial's own abort hook (legacy trio) and the kit round registry.
+		local room = args[1]
+		if type(trial.module.abort) == "function" then
+			pcall(trial.module.abort, room)
+		end
+		pcall(TrialKit.abortRoom, trial.id, room)
 		return false, "timeout"
 	end
 	return ok, result

@@ -41,7 +41,13 @@ end
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
+-- #50: rebuilt at most every 0.5 s -- the exclude list only changes when a
+-- character (re)spawns, not per droplet frame.
+local rayFilterAt = 0
 local function refreshRayFilter()
+	local now = os.clock()
+	if now - rayFilterAt < 0.5 then return end
+	rayFilterAt = now
 	local ex = { fxFolder() }
 	for _, plr in Players:GetPlayers() do
 		if plr.Character then table.insert(ex, plr.Character) end

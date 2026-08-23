@@ -17,6 +17,8 @@ local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Sh
 	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 local Minefield = {}
+-- #50 watchdog hook state (see Minefield.abort below).
+Minefield._guard = nil :: { cleanup: (() -> ())? }?
 
 -- THE COMPACTOR IS THE ROUND TIMER, so its speed is DERIVED from the distance
 -- it has to cover and the round length Pacing asks for -- never fixed. A fixed
@@ -500,7 +502,7 @@ local function runRoundInner(room, roundIndex, guard)
 						-- One localized burst, not a stack. kill() plus shatter() ran both
 						-- the blood hit AND the gib fountain on the same death, which is
 						-- the gore stack the plan rules out and a maturity problem besides.
-						BloodFX.kill(s.root.Position)
+						BloodFX.kill(s.root.Position, audienceOf(room))
 						s.hum.Health = 0
 						tellOne(uid, { kind = "announce", style = "death", text = "YOU STEPPED WRONG." })
 						if R.cam then
@@ -619,6 +621,17 @@ local function runRoundInner(room, roundIndex, guard)
 		shred = Instance.new("Model")
 		shred.Name = "Compactor"
 	end
+	-- #50: the authored model (18 MeshParts) is animated CLIENT-SIDE. The
+	-- server only publishes a motion state (Z0/T0/speed, below) plus the
+	-- statics here; every client integrates z itself at render rate, so the
+	-- march replicates a handful of attribute writes instead of 18 CFrames
+	-- at 20 Hz. The procedural fallback keeps the old server-side path.
+	if custom then
+		shred:SetAttribute("MF_X", g.x0 + g.cols * CELL / 2)
+		shred:SetAttribute("MF_Y", g.gTop + 3.2)
+		shred:SetAttribute("MF_Yaw", g.dir > 0 and 180 or 0)
+		game:GetService("CollectionService"):AddTag(shred, "MF_Compactor")
+	end
 	-- Procedural fallback, used only when no MF_Compactor model is supplied.
 	-- housing / warnStrip / rollers stay declared in both paths because
 	-- placeShred reads them; with a custom model they simply stay nil and
@@ -678,6 +691,15 @@ local function runRoundInner(room, roundIndex, guard)
 				tp.Parent = roller
 			end
 		end
+	end
+
+	local lastPubSpeed = nil
+	local function publishShred(zPos, signedSpeed)
+		if lastPubSpeed == signedSpeed then return end
+		lastPubSpeed = signedSpeed
+		shred:SetAttribute("MF_Z0", zPos)
+		shred:SetAttribute("MF_T0", workspace:GetServerTimeNow())
+		shred:SetAttribute("MF_Speed", signedSpeed)
 	end
 
 	local function placeShred(zPos, spin)
@@ -774,6 +796,7 @@ local function runRoundInner(room, roundIndex, guard)
 		:format(approachDistance, approachSpeed, sweepDistance, sweepSpeed,
 			shredTraversal, targetRound, runnerMargin))
 	placeShred(shredZ, 0)
+	if custom then publishShred(shredZ, 0) end
 	shred.Parent = runtime
 
 	-- Hauptschleife: Zellenerkennung, Fortschritt und der marschierende Compactor
@@ -791,15 +814,20 @@ local function runRoundInner(room, roundIndex, guard)
 		local dt = now - lastTick
 		lastTick = now
 		-- Compactor bewegen (nach Schonfrist), Walzen drehen
+		local speedNow = 0
 		if now - t0 > SHRED_GRACE and (shredZ - shredEndZ) * g.dir < 0 then
 			-- Approach speed until the machine reaches the players' line, sweep
 			-- speed from there on.
-			local speedNow = ((shredZ - sweepStartZ) * g.dir < 0)
+			speedNow = ((shredZ - sweepStartZ) * g.dir < 0)
 				and approachSpeed or sweepSpeed
 			shredZ += g.dir * speedNow * dt
 		end
 		spin += dt * 6
-		placeShred(shredZ, spin)
+		if custom then
+			publishShred(shredZ, g.dir * speedNow)
+		else
+			placeShred(shredZ, spin)
+		end
 		local shredFront = shredZ + g.dir * 2
 		-- 23.08.2026: Minen, die die Maschine ueberrollt, werden ZERDRUECKT,
 		-- nicht gezuendet. Vorher ging jede ueberrollte Mine von selbst hoch;
@@ -838,7 +866,7 @@ local function runRoundInner(room, roundIndex, guard)
 					if now - t0 > SHRED_GRACE and (pos.Z - shredFront) * g.dir < 0 then
 						ps.done = true
 						ps.cardAt = os.clock()
-						BloodFX.shatter(s.char)
+						BloodFX.shatter(s.char, nil, audienceOf(room))
 						announce(room, { kind = "gorefx", pos = { pos.X, pos.Y, pos.Z }, power = 1.6 })
 						s.hum.Health = 0
 						tellOne(uid, { kind = "announce", style = "death", text = "PROCESSED." })
@@ -950,11 +978,22 @@ end
 -- C1.e: every exit path - normal, cancelled, or thrown - runs cleanup exactly
 -- once before returning. A thrown round yields zeroed scores rather than
 -- propagating into MachineFlow's error path with no teardown.
+-- #50: the MachineFlow watchdog task.cancel()s a hung round's thread, which
+-- skips the guard below. abort() lets the watchdog run the same cleanup from
+-- its own thread.
+function Minefield.abort()
+	local g = Minefield._guard
+	Minefield._guard = nil
+	if g and g.cleanup then pcall(g.cleanup) end
+end
+
 function Minefield.runRound(room, roundIndex)
 	local guard = {}
+	Minefield._guard = guard
 	local ok, result = xpcall(function()
 		return runRoundInner(room, roundIndex, guard)
 	end, debug.traceback)
+	Minefield._guard = nil
 	if guard.cleanup then pcall(guard.cleanup) end
 	if not ok then
 		-- Teardown has already run, so it is safe to re-raise. Propagate the

@@ -12,6 +12,8 @@ local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Sh
 	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 local BirdHunting = {}
+-- #50 watchdog hook state (see BirdHunting.abort below).
+BirdHunting._guard = nil :: { cleanup: (() -> ())? }?
 
 -- Upper bound only: a leg ends when every runner is out.
 -- REQ-BH-01: the leg cap comes from Pacing, which the plan sets at 90 s.
@@ -649,8 +651,16 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 	-- times a second reads as broken. Bounded by `stopped`, so it ends with
 	-- the leg instead of outliving it.
 	task.spawn(function()
+		-- #50: PivotTo only when the aim actually changed -- between input
+		-- packets the direction is constant and the write would replicate a
+		-- whole model of CFrames for nothing.
+		local lastDir = nil
 		while not stopped and turret.Parent do
-			aimTurret(turret, eye, roundState.aimDir or baseAim)
+			local dir = roundState.aimDir or baseAim
+			if dir ~= lastDir then
+				lastDir = dir
+				aimTurret(turret, eye, dir)
+			end
 			task.wait(0.06)
 		end
 	end)
@@ -875,7 +885,12 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 				if s then
 					allDone = false
 					local now = os.clock()
-					if not st.sniper then
+					-- #50: the jump lock is a one-time write per character --
+					-- four Humanoid property writes per runner per 0.2 s were
+					-- replication noise. Re-armed when the character changes
+					-- (livingOf hands out a fresh table then).
+					if not st.sniper and st.jumpLockedChar ~= s.char then
+						st.jumpLockedChar = s.char
 						s.hum.UseJumpPower = true
 						s.hum.JumpPower = 0
 						s.hum.JumpHeight = 0
@@ -955,15 +970,25 @@ local function waitForArena(room)
 	return true
 end
 
+-- #50: watchdog-side cleanup after a task.cancel (see Minefield.abort).
+function BirdHunting.abort()
+	local g = BirdHunting._guard
+	BirdHunting._guard = nil
+	if g and g.cleanup then pcall(g.cleanup) end
+	arenaBusy = false
+end
+
 function BirdHunting.runRound(room, roundIndex, forcedHunterUserId, legIndex, legTotal)
 	local emptyScores = {}
 	for _, member in room.members do emptyScores[member.userId] = 0 end
 	if not waitForArena(room) then return emptyScores end
 
 	local guard = {}
+	BirdHunting._guard = guard
 	local ok, result = xpcall(function()
 		return runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, guard)
 	end, debug.traceback)
+	BirdHunting._guard = nil
 	if guard.cleanup then pcall(guard.cleanup) end
 	arenaBusy = false
 	if not ok then error(result, 0) end

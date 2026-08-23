@@ -63,7 +63,8 @@ local DEFAULT_WALKSPEED = 16
 local roundsByRoom = {}   -- [trialId .. ":" .. roomId] = R
 local roundsByUser = {}   -- [trialId .. ":" .. userId] = R
 local refsByTrial = {}    -- [trialId] = refs table from ensureArena
-local inputConns = {}     -- [trialId] = RBXScriptConnection (idempotent wireInput)
+local inputSpecs = {}     -- [trialId] = normalised spec (idempotent wireInput)
+local inputDispatch = nil -- the ONE OnServerEvent connection for TrialInput
 
 local function roomKey(trialId, room)
 	return trialId .. ":" .. tostring(room and room.id or "?")
@@ -263,6 +264,16 @@ function TrialKit.livingOf(room)
 	return out
 end
 
+-- P1.6/#50: the MachineFlow watchdog cancels a hung round's thread, which
+-- skips every cleanup on that thread. This runs the kit round's cleanup from
+-- the outside; legacy trials expose module.abort instead.
+function TrialKit.abortRoom(trialId, room)
+	local R = roundsByRoom[roomKey(trialId, room)]
+	if R then
+		pcall(function() R:cleanup() end)
+	end
+end
+
 function TrialKit.audienceOf(room)
 	local audience = {}
 	for _, mm in room.members do
@@ -349,11 +360,7 @@ function TrialKit.wireInput(trialId, spec)
 		remote.Name = "TrialInput"
 		remote.Parent = folder
 	end
-	-- Idempotent init: a second wireInput for the same trial replaces the first.
-	if inputConns[trialId] then
-		inputConns[trialId]:Disconnect()
-		inputConns[trialId] = nil
-	end
+	-- Idempotent init: a second wireInput for the same trial replaces its spec.
 	local actions = spec.actions or {}
 	-- R-03: the array form is the one mistake here that fails SILENTLY and totally.
 	-- `actions["cut"]` is nil for `{ "cut" }`, so step 3 below drops every packet and
@@ -367,18 +374,26 @@ function TrialKit.wireInput(trialId, spec)
 		for _, name in ipairs(actions) do map[name] = true end
 		actions = map
 	end
-	local cooldown = spec.cooldown or DEFAULT_COOLDOWN
-	local perAction = spec.perAction or {}
-	local handler = spec.handler
-	inputConns[trialId] = remote.OnServerEvent:Connect(function(player, payload)
+	inputSpecs[trialId] = {
+		actions = actions,
+		cooldown = spec.cooldown or DEFAULT_COOLDOWN,
+		perAction = spec.perAction or {},
+		handler = spec.handler,
+	}
+	-- Perf pass 2 (#50): one dispatcher instead of one OnServerEvent connection
+	-- per trial -- with 15 trials wired, every input packet used to wake 15
+	-- handlers, 14 of which failed the trialId check.
+	if inputDispatch then return remote end
+	inputDispatch = remote.OnServerEvent:Connect(function(player, payload)
 		-- 1-2: cheap identity checks first; the remote is shared by every trial.
 		if type(payload) ~= "table" then return end
-		if payload.trialId ~= trialId then return end
+		local sp = type(payload.trialId) == "string" and inputSpecs[payload.trialId] or nil
+		if not sp then return end
 		-- 3: only actions this trial declared.
 		local action = payload.action
-		if type(action) ~= "string" or not actions[action] then return end
+		if type(action) ~= "string" or not sp.actions[action] then return end
 		-- 4: a live round must own this player.
-		local R = roundsByUser[userKey(trialId, player.UserId)]
+		local R = roundsByUser[userKey(payload.trialId, player.UserId)]
 		if not R then return end
 		-- 5-8: input window, phase, session snapshot, token freshness (C1.a).
 		if not R.acceptInput then return end
@@ -402,15 +417,15 @@ function TrialKit.wireInput(trialId, spec)
 		-- 11: per-player, per-action rate gate.
 		local now = os.clock()
 		ps.lastInput = ps.lastInput or {}
-		if now < (ps.lastInput[action] or 0) + (perAction[action] or cooldown) then return end
+		if now < (ps.lastInput[action] or 0) + (sp.perAction[action] or sp.cooldown) then return end
 		ps.lastInput[action] = now
 		-- 12: the trial's handler, isolated: an error drops the packet, never
 		-- the connection. Only payload.data is trial payload and the handler
 		-- must range-check every field of it.
-		if handler then
-			local ok, err = pcall(handler, player, ps, payload, R)
+		if sp.handler then
+			local ok, err = pcall(sp.handler, player, ps, payload, R)
 			if not ok then
-				warn(("[TrialKit:%s] input handler error: %s"):format(trialId, tostring(err)))
+				warn(("[TrialKit:%s] input handler error: %s"):format(payload.trialId, tostring(err)))
 			end
 		end
 	end)
@@ -466,6 +481,19 @@ end
 
 function Round:onCleanup(fn)
 	table.insert(self.teardown, fn)
+end
+
+-- Perf pass 2 (#50): livingOf builds a fresh table (player/char/hum/root per
+-- member) on EVERY call and the Round helpers called it per player per tick.
+-- One cached copy with a 0.1 s TTL keeps the semantics (deaths surface within
+-- a tick) at a fraction of the allocations.
+function Round:living()
+	local now = os.clock()
+	if not self._living or now - (self._livingAt or 0) > 0.1 then
+		self._living = TrialKit.livingOf(self.room)
+		self._livingAt = now
+	end
+	return self._living
 end
 
 -- "<ID>_Runtime" under the arena folder; destroyed by cleanup.
@@ -532,7 +560,7 @@ function Round:countdown()
 	-- kit.movement.set still lets its player move.
 	for uid, ps in self.state do
 		if not ps.done then
-			local s = TrialKit.livingOf(self.room)[uid]
+			local s = self:living()[uid]
 			if s and not (self.restore[uid] and self.restore[uid].anchoredNow) then
 				s.hum.WalkSpeed = self.walkSpeed
 			end
@@ -549,6 +577,7 @@ end
 -- nobody moves during the countdown; countdown() lifts it.
 function Round:place(spots)
 	local subjects = TrialKit.livingOf(self.room)
+	self._living, self._livingAt = subjects, os.clock()
 	self.subjects = subjects
 	self.walkSpeed = (type(spots) == "table" and spots.walkSpeed) or DEFAULT_WALKSPEED
 	local anchored = type(spots) == "table" and spots.anchored == true
@@ -593,7 +622,7 @@ end
 
 -- Server-side movement change mid-round, recorded for restore.
 function Round:setMovement(uid, walkSpeed, anchored)
-	local s = TrialKit.livingOf(self.room)[uid]
+	local s = self:living()[uid]
 	if not s then return end
 	if not self.restore[uid] then
 		self.restore[uid] = {
@@ -614,7 +643,7 @@ end
 -- last good position and that position is returned. Never trusts the client.
 -- aabb = { minX, maxX, minY, maxY, minZ, maxZ } (TrialRules.inBox shape) or nil.
 function Round:sample(uid, dt, maxSpeed, aabb)
-	local s = TrialKit.livingOf(self.room)[uid]
+	local s = self:living()[uid]
 	if not s then return nil end
 	local now = os.clock()
 	local pos = s.root.Position
@@ -706,10 +735,11 @@ function Round:kill(uid, opts)
 	ps.done = true
 	ps.dead = true
 	ps.diedAt = os.clock()
-	local s = TrialKit.livingOf(self.room)[uid]
+	local s = self:living()[uid]
 	local pos = opts.pos or (s and s.root.Position) or (self.placed[uid] and self.placed[uid].Position)
 	if pos then
-		BloodFX.kill(pos)
+		-- #50: room-scoped, never FireAllClients on a 28-player server.
+		BloodFX.kill(pos, TrialKit.audienceOf(self.room))
 		TrialKit.announce(self.room, { kind = "gorefx", pos = v3(pos), power = opts.power or 1.5 })
 	end
 	if s then s.hum.Health = 0 end
@@ -731,7 +761,7 @@ function Round:out(uid, text, opts)
 	ps.done = true
 	ps.outAt = os.clock()
 	TrialKit.sendOne(uid, self.trialId, "out", { text = text or "OUT.", roundToken = self.roundToken })
-	local s = TrialKit.livingOf(self.room)[uid]
+	local s = self:living()[uid]
 	if s then s.hum.WalkSpeed = 0 end
 	local camPart, look = camAndLook(self, opts)
 	if camPart and (opts == nil or opts.spectate ~= false) then

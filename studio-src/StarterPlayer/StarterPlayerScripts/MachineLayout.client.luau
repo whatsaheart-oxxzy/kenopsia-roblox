@@ -445,6 +445,7 @@ local function applyButtonHints()
 	end
 end
 
+local viewportApplyPending = false
 local function apply()
 	local s = platformScale(currentPlatform)
 	for _, name in ipairs(FULLSCREEN) do
@@ -510,7 +511,16 @@ local function bindCamera(camera)
 		viewportConnection = nil
 	end
 	if camera then
-		viewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(apply)
+		-- #50: a window drag fires ViewportSize every frame; run the (full
+		-- tree walk) apply at most every 0.15 s, once more after it settles.
+		viewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			if viewportApplyPending then return end
+			viewportApplyPending = true
+			task.delay(0.15, function()
+				viewportApplyPending = false
+				apply()
+			end)
+		end)
 	end
 end
 bindCamera(workspace.CurrentCamera)

@@ -1201,6 +1201,53 @@ end
 -- Nothing here decides anything. Every number arrives from the server, and the
 -- server alone rules on whether a swallow was seen. A client that lies about
 -- the phase changes only what its own player sees.
+-- #50: the compactor's march runs CLIENT-SIDE. The server tags the authored
+-- model (CollectionService "MF_Compactor") and publishes a motion state as
+-- attributes -- MF_Z0/MF_T0 (position at a server timestamp), MF_Speed
+-- (signed studs/s), plus static MF_X/MF_Y/MF_Yaw. Each client integrates z
+-- against GetServerTimeNow() and pivots the model locally at render rate:
+-- smooth 60 fps motion, no per-tick CFrame replication for 18 MeshParts.
+do
+	local CollectionService = game:GetService("CollectionService")
+	local active = {}
+	local bound = false
+	local BIND = "KenopsiaCompactor"
+	local function step()
+		local any = false
+		for model in pairs(active) do
+			if not model.Parent then
+				active[model] = nil
+			else
+				any = true
+				local z0 = model:GetAttribute("MF_Z0")
+				local t0 = model:GetAttribute("MF_T0")
+				local x = model:GetAttribute("MF_X")
+				if z0 and t0 and x then
+					local z = z0 + (model:GetAttribute("MF_Speed") or 0) * (workspace:GetServerTimeNow() - t0)
+					model:PivotTo(CFrame.new(x, model:GetAttribute("MF_Y") or 0, z)
+						* CFrame.Angles(0, math.rad(model:GetAttribute("MF_Yaw") or 0), 0))
+				end
+			end
+		end
+		if not any and bound then
+			bound = false
+			RunService:UnbindFromRenderStep(BIND)
+		end
+	end
+	local function add(model)
+		active[model] = true
+		if not bound then
+			bound = true
+			RunService:BindToRenderStep(BIND, Enum.RenderPriority.Camera.Value - 1, step)
+		end
+	end
+	for _, m in ipairs(CollectionService:GetTagged("MF_Compactor")) do add(m) end
+	CollectionService:GetInstanceAddedSignal("MF_Compactor"):Connect(add)
+	CollectionService:GetInstanceRemovedSignal("MF_Compactor"):Connect(function(m)
+		active[m] = nil
+	end)
+end
+
 local canteenActive = false
 local canteenHud = nil
 local cpPlateReadyAt = 0
