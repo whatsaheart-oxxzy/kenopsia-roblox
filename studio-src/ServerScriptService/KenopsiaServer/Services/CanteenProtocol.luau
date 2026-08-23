@@ -46,6 +46,9 @@ local Pacing = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("
 	:WaitForChild("Rules"):WaitForChild("Pacing"))
 local AnimationIds = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 	:WaitForChild("Config"):WaitForChild("AnimationIds"))
+-- P1.5: the 3-2-1 step length is the SAME number the kit and the client use.
+local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 local CanteenProtocol = {}
 
@@ -858,7 +861,7 @@ local function runRoundInner(room, roundIndex, guard)
 	for c = 3, 1, -1 do
 		if not roundActive(st) then return scores end
 		announce(room, { kind = "count", n = c })
-		if not sleepWhileActive(st, 1) then return scores end
+		if not sleepWhileActive(st, Feel.Countdown.StepSeconds) then return scores end
 	end
 	if not roundActive(st) then return scores end
 	announce(room, { kind = "go" })

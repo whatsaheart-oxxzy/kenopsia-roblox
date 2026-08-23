@@ -62,6 +62,11 @@ task.spawn(function()
 end)
 
 local machine = playerGui:WaitForChild("KenopsiaMachine")
+-- P1.5: every cps, tween duration, easing, shake and flicker number the
+-- screens use comes from Shared/Config/FeelConfig (the timing bible). ONE
+-- local on purpose -- this chunk sits near Luau's 200-local ceiling.
+local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 -- MachineLayout stamps the detected platform on the gui; touch buttons show
 -- on mobile always, on desktop only when a touchscreen exists, never on console
@@ -372,13 +377,50 @@ local function hideAll()
 	announceScreen.Visible = false
 end
 
-local function typewrite(label, text, cps, token)
-	label.Visible = true
-	label.Text = ""
-	for i = 1, #text do
-		if session ~= token then return end
-		label.Text = string.sub(text, 1, i)
-		task.wait(1 / cps)
+-- P1.5 TYPEWRITER: time-based MaxVisibleGraphemes. The whole text is set once
+-- and the label reveals floor(elapsed * cps) graphemes per frame, so a line is
+-- the same length at the same instant at 30 and 60 fps (the old string.sub +
+-- task.wait(1/cps) loop drifted by one frame per character). utf8.len counts
+-- graphemes for the cap (nil on malformed UTF-8 -> byte length). Blocking,
+-- like before: callers sequence lines with it. `token` keeps the cancel
+-- semantics (a newer screen bumps `session`, the older typewriter stops).
+-- Scoped in a do-block so the blip helper is not another top-level local.
+local typewrite
+do
+	local function blip()
+		if not uiSettings.UiSound then return end
+		local root = SoundService:FindFirstChild("KenopsiaAudio")
+		local folder = root and root:FindFirstChild("SFX")
+		local src = folder and folder:FindFirstChild(Feel.Typewriter.BlipSfx)
+		if not src or src.SoundId == "" then return end
+		local s = src:Clone()
+		s.PlaybackSpeed = Feel.blipSpeed(math.random())
+		s.Parent = SoundService
+		s.Ended:Once(function() s:Destroy() end)
+		s:Play()
+	end
+	typewrite = function(label, text, cps, token)
+		local total = utf8.len(text) or #text
+		label.MaxVisibleGraphemes = 0
+		label.Text = text
+		label.Visible = true
+		local t0 = os.clock()
+		local shown = 0
+		local nextBlip = Feel.Typewriter.BlipEvery
+		while shown < total do
+			RunService.RenderStepped:Wait()
+			if session ~= token then return end
+			local n = Feel.visibleAt(os.clock() - t0, cps, total)
+			if n ~= shown then
+				shown = n
+				label.MaxVisibleGraphemes = n
+				if n >= nextBlip then
+					nextBlip = n + Feel.Typewriter.BlipEvery
+					blip()
+				end
+			end
+		end
+		label.MaxVisibleGraphemes = -1
 	end
 end
 
@@ -638,7 +680,7 @@ RunService.RenderStepped:Connect(alignHipCross)
 
 local function applyScope()
 	local targetFov = scoped and K.ZOOMS[zoomIdx].fov or (sniperActive and K.SNIPER_BASE_FOV or 70)
-	TweenService:Create(camera, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = targetFov }):Play()
+	TweenService:Create(camera, TweenInfo.new(Feel.Scope.ZoomSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = targetFov }):Play()
 	scopeGui.Visible = scoped
 	local zl = scopeGui:FindFirstChild("ZoomLabel")
 	if zl then zl.Text = K.ZOOMS[zoomIdx].label end
@@ -1259,17 +1301,17 @@ local function cpSetPhase(phaseName)
 		label.Text = "OBSERVER DESCENDING"
 		label.TextColor3 = K.CP_WARN
 		glow.Color = K.CP_WARN
-		TweenService:Create(glow, TweenInfo.new(0.3), { Transparency = 0.45 }):Play()
+		TweenService:Create(glow, TweenInfo.new(Feel.panel(machine:GetAttribute("Platform"))), { Transparency = 0.45 }):Play()
 	elseif phaseName == "watching" then
 		label.Text = "OBSERVED - DO NOT SWALLOW"
 		label.TextColor3 = K.CP_DANGER
 		glow.Color = K.CP_DANGER
 		-- Snappier than the wind-up on purpose: the warning may fade in slowly,
 		-- the danger may not.
-		TweenService:Create(glow, TweenInfo.new(0.12), { Transparency = 0 }):Play()
+		TweenService:Create(glow, TweenInfo.new(Feel.Feedback.Jolt), { Transparency = 0 }):Play()
 	else
 		label.Text = ""
-		TweenService:Create(glow, TweenInfo.new(0.35), { Transparency = 1 }):Play()
+		TweenService:Create(glow, TweenInfo.new(Feel.panel(machine:GetAttribute("Platform"))), { Transparency = 1 }):Play()
 	end
 end
 
@@ -1674,28 +1716,31 @@ local function showSelection(p, token)
 	selection.BootText.Visible = false
 
 	task.spawn(function()
-		task.wait(0.4)
+		local R = Feel.Roulette
+		task.wait(R.Lead)
 		for _, t in tiles do
 			if session ~= token then return end
 			t.Visible = true
-			task.wait(0.25)
+			task.wait(R.TileGap)
 		end
-		task.wait(0.3)
+		task.wait(R.Pause)
 		if session ~= token then return end
 
-		-- symbols flicker chaotically, then the machine locks its choice
+		-- symbols flicker, then the machine locks its choice. P1.5: on the
+		-- flicker rule (Feel.Flicker: <= 3 changes/s, dim channel only) -- the
+		-- icons stay put, the tile chrome steps between DIM and PHOSPHOR every
+		-- Hold seconds instead of strobing visibility at 14 Hz.
 		if uiSettings.ReduceFlicker then
-			task.wait(0.6)
+			task.wait(R.ReducedChaos)
 			if session ~= token then return end
 		else
-			local deadline = os.clock() + 1.6
+			local deadline = os.clock() + R.Chaos
 			while os.clock() < deadline do
 				if session ~= token then return end
 				for i = 1, 3 do
-					tiles[i].Icon.Visible = math.random() < 0.55
 					setTileLit(tiles[i], math.random() < 0.4)
 				end
-				task.wait(0.07)
+				task.wait(Feel.Flicker.Hold)
 			end
 		end
 		for i = 1, 3 do
@@ -1703,14 +1748,14 @@ local function showSelection(p, token)
 			setTileLit(tiles[i], i == (p.chosen or 1))
 		end
 
-		-- lock-in flash: longer, heavier blinks
+		-- lock-in blinks, each state held the flicker minimum
 		local chosenTile = tiles[p.chosen or 1]
-		for _ = 1, (uiSettings.ReduceFlicker and 1 or 4) do
+		for _ = 1, (uiSettings.ReduceFlicker and 1 or R.LockBlinks) do
 			if session ~= token then return end
-			chosenTile.Visible = false
-			task.wait(0.14)
-			chosenTile.Visible = true
-			task.wait(0.2)
+			setTileLit(chosenTile, false)
+			task.wait(Feel.Flicker.Hold)
+			setTileLit(chosenTile, true)
+			task.wait(Feel.Flicker.Hold)
 		end
 
 		-- crosshair snaps straight to the mark. The tile centre is an ABSOLUTE
@@ -1730,16 +1775,16 @@ local function showSelection(p, token)
 		crossV.Position = UDim2.new(0, -vThick, 0, 0)
 		crossH.Visible = true
 		crossV.Visible = true
-		TweenService:Create(crossH, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		TweenService:Create(crossH, TweenInfo.new(R.CrosshairSnap, Feel.easing(Feel.Easing.Snap, Feel.Easing.SnapDir)), {
 			Position = UDim2.new(0, 0, 0, localY - hThick / 2),
 		}):Play()
-		TweenService:Create(crossV, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		TweenService:Create(crossV, TweenInfo.new(R.CrosshairSnap, Feel.easing(Feel.Easing.Snap, Feel.Easing.SnapDir)), {
 			Position = UDim2.new(0, localX - vThick / 2, 0, 0),
 		}):Play()
-		task.wait(0.45)
+		task.wait(R.BootDelay)
 		if session ~= token then return end
 		selection.BootText.Position = UDim2.new(0, localX + 90, 0, localY)
-		typewrite(selection.BootText, "Simulation bootst:", 22, token)
+		typewrite(selection.BootText, "Simulation bootst:", Feel.Typewriter.BodyCps, token)
 	end)
 end
 
@@ -1760,7 +1805,7 @@ local function showInfo(p, token)
 	end
 	info.NextLabel.Text = "NEXT SIMULATION: "
 	task.spawn(function()
-		typewrite(info.NextLabel, "NEXT SIMULATION: " .. (p.name or "?"), 26, token)
+		typewrite(info.NextLabel, "NEXT SIMULATION: " .. (p.name or "?"), Feel.Typewriter.BodyCps, token)
 	end)
 	updateReadyVisual()
 end
@@ -1781,8 +1826,8 @@ local function showStatus(p, token)
 		for i, text in p.lines or {} do
 			if session ~= token then return end
 			local l = statusScreen:FindFirstChild("TypeLine" .. i)
-			if l then typewrite(l, text, 30, token) end
-			task.wait(0.25)
+			if l then typewrite(l, text, Feel.Typewriter.StatusCps, token) end
+			task.wait(Feel.Typewriter.LineGap)
 		end
 	end)
 end
@@ -1793,7 +1838,7 @@ local function showRound(p, token)
 	roundCard.Title.Text = ("Round %d/%d"):format(p.n or 1, p.total or 3)
 	roundCard.Verbs.Text = ""
 	task.spawn(function()
-		typewrite(roundCard.Verbs, (p.verbs or "") .. "_", 24, token)
+		typewrite(roundCard.Verbs, (p.verbs or "") .. "_", Feel.Typewriter.BodyCps, token)
 	end)
 end
 
@@ -1801,11 +1846,13 @@ local function rollDigit(cell, target, delay, token)
 	task.spawn(function()
 		task.wait(delay)
 		local value = cell.Value
+		-- P1.5: the odometer is stepped UI motion -- one digit per frame of the
+		-- Feel.Step grid, not an ad-hoc ramp.
 		local spins = 14 + delay * 10
-		for s = 1, spins do
+		for _ = 1, spins do
 			if session ~= token then return end
 			value.Text = tostring(math.random(0, 9))
-			task.wait(0.05 + (s / spins) * 0.06)
+			task.wait(1 / Feel.Step.Fps)
 		end
 		if session ~= token then return end
 		value.Text = target
@@ -1956,9 +2003,9 @@ local function showScoreLine(p, token)
 	l.Visible = false
 	if not p.line or p.line == "" then return end
 	task.spawn(function()
-		task.wait(0.3)
+		task.wait(Feel.Typewriter.ScoreLeadIn)
 		if session ~= token then return end
-		typewrite(l, p.line, 30, token)
+		typewrite(l, p.line, Feel.Typewriter.StatusCps, token)
 	end)
 end
 
@@ -1983,9 +2030,9 @@ local function showAnnounce(p, token)
 		-- then full black before the respawn, so spawn is never seen
 		announceScreen.BackgroundTransparency = 0.4
 		announceScreen.Line.TextColor3 = Color3.fromRGB(255, 48, 32)
-		task.delay(2.5, function()
+		task.delay(Feel.Death.Hold, function()
 			if session == token and announceScreen.Visible then
-				TweenService:Create(announceScreen, TweenInfo.new(0.5), { BackgroundTransparency = 0 }):Play()
+				TweenService:Create(announceScreen, TweenInfo.new(Feel.Death.Fade), { BackgroundTransparency = 0 }):Play()
 			end
 		end)
 	else
@@ -1995,9 +2042,9 @@ local function showAnnounce(p, token)
 	announceScreen.Visible = true
 	announceScreen.Line.Text = ""
 	task.spawn(function()
-		task.wait(0.4)
+		task.wait(Feel.Typewriter.LeadIn)
 		if session ~= token then return end
-		typewrite(announceScreen.Line, p.text or "", 24, token)
+		typewrite(announceScreen.Line, p.text or "", Feel.Typewriter.BodyCps, token)
 	end)
 end
 
@@ -2055,15 +2102,16 @@ local trauma = 0
 local shakeSeed = math.random() * 100
 RunService.RenderStepped:Connect(function(dt)
 	if trauma <= 0 then return end
-	trauma = math.max(0, trauma - dt * 0.33) -- volle Ladung schuettelt ~3 Sekunden
+	local S = Feel.Shake
+	trauma = math.max(0, trauma - dt * S.Decay) -- volle Ladung schuettelt ~3 Sekunden
 	local mag = trauma * trauma
-	local t = os.clock() * 30
+	local t = os.clock() * S.NoiseHz
 	local nx = math.noise(shakeSeed, t)
 	local ny = math.noise(shakeSeed + 17, t)
 	local nz = math.noise(shakeSeed + 43, t)
 	camera.CFrame = camera.CFrame
-		* CFrame.new(nx * 1.15 * mag, ny * 1.15 * mag, 0)
-		* CFrame.Angles(nx * 0.2 * mag, ny * 0.2 * mag, nz * 0.26 * mag)
+		* CFrame.new(nx * S.Translate * mag, ny * S.Translate * mag, 0)
+		* CFrame.Angles(nx * S.Tilt * mag, ny * S.Tilt * mag, nz * S.Roll * mag)
 end)
 
 local function screenBlood(strength)
@@ -2074,8 +2122,8 @@ local function screenBlood(strength)
 	v.Size = UDim2.fromScale(1, 1)
 	v.ZIndex = 60
 	v.Parent = machine
-	TweenService:Create(v, TweenInfo.new(0.55), { BackgroundTransparency = 1 }):Play()
-	task.delay(0.6, function() v:Destroy() end)
+	TweenService:Create(v, TweenInfo.new(Feel.Fade.ScreenBlood), { BackgroundTransparency = 1 }):Play()
+	task.delay(Feel.Fade.ScreenBlood + 0.05, function() v:Destroy() end)
 	local n = math.floor(5 + strength * 9)
 	for _ = 1, n do
 		local b = Instance.new("Frame")
@@ -2263,7 +2311,7 @@ MachineState.OnClientEvent:Connect(function(p)
 		-- not a punishment: it says "nothing on the fork", not "you failed".
 		local hud = buildCanteenHud()
 		hud.Panel.Ration.TextColor3 = K.CP_WARN
-		TweenService:Create(hud.Panel.Ration, TweenInfo.new(0.4), { TextColor3 = K.CP_IDLE }):Play()
+		TweenService:Create(hud.Panel.Ration, TweenInfo.new(Feel.Fade.Ration), { TextColor3 = K.CP_IDLE }):Play()
 		return
 	end
 	if p.kind == "cpdone" then
@@ -2303,8 +2351,8 @@ MachineState.OnClientEvent:Connect(function(p)
 			hideAll()
 			faderFrame.BackgroundTransparency = 0
 			faderFrame.Visible = true
-			TweenService:Create(faderFrame, TweenInfo.new(1.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { BackgroundTransparency = 1 }):Play()
-			task.delay(1.45, function()
+			TweenService:Create(faderFrame, TweenInfo.new(Feel.Fade.ArenaIn, Feel.easing(Feel.Easing.Fade, Feel.Easing.FadeInDir)), { BackgroundTransparency = 1 }):Play()
+			task.delay(Feel.Fade.ArenaIn + 0.05, function()
 				faderFrame.Visible = false
 				faderFrame.BackgroundTransparency = 0
 			end)
@@ -2313,8 +2361,10 @@ MachineState.OnClientEvent:Connect(function(p)
 		if c then
 			c.Text = tostring(p.n)
 			c.Visible = true
-			c.TextSize = 160
-			TweenService:Create(c, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { TextSize = 120 }):Play()
+			-- P1.5: ONE 3-2-1. TrialKit Round:countdown and the three legacy
+			-- services all send {kind="count"}; the punch numbers live in Feel.
+			c.TextSize = Feel.Countdown.PunchFrom
+			TweenService:Create(c, TweenInfo.new(Feel.Countdown.PunchSeconds, Feel.easing(Feel.Easing.Snap, Feel.Easing.SnapDir)), { TextSize = Feel.Countdown.PunchTo }):Play()
 		end
 		return
 	end
@@ -2336,8 +2386,8 @@ MachineState.OnClientEvent:Connect(function(p)
 			hm.TextSize = p.head and 46 or 30
 			hm.TextTransparency = 0
 			hm.Visible = true
-			TweenService:Create(hm, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1 }):Play()
-			task.delay(0.95, function() hm.Visible = false end)
+			TweenService:Create(hm, TweenInfo.new(Feel.Fade.HitMark, Feel.easing(Feel.Easing.Fade, Feel.Easing.FadeInDir)), { TextTransparency = 1 }):Play()
+			task.delay(Feel.Fade.HitMark + 0.05, function() hm.Visible = false end)
 		end
 		sfx(p.head and "AccessGranted" or "Confirm")
 		return
@@ -2352,14 +2402,14 @@ MachineState.OnClientEvent:Connect(function(p)
 		local c = machine:FindFirstChild("CountText")
 		if c then
 			c.Text = "GO!"
-			c.TextSize = 150
+			c.TextSize = Feel.Countdown.GoFrom
 			c.TextTransparency = 0
 			c.Visible = true
-			TweenService:Create(c, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-				TextSize = 118,
-				TextTransparency = 0.08,
+			TweenService:Create(c, TweenInfo.new(Feel.Countdown.GoSeconds, Feel.easing(Feel.Easing.Snap, Feel.Easing.SnapDir)), {
+				TextSize = Feel.Countdown.GoTo,
+				TextTransparency = Feel.Countdown.GoTransparency,
 			}):Play()
-			task.delay(0.7, function()
+			task.delay(Feel.Countdown.GoHold, function()
 				if c.Text == "GO!" then c.Visible = false end
 			end)
 		end
@@ -2371,8 +2421,8 @@ MachineState.OnClientEvent:Connect(function(p)
 			youLabel.Visible = true
 			task.delay(0.85, function()
 				if not pendingRunner then return end
-				TweenService:Create(youLabel, TweenInfo.new(0.45), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
-				task.delay(0.48, function()
+				TweenService:Create(youLabel, TweenInfo.new(Feel.Fade.YouLabel), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+				task.delay(Feel.Fade.YouLabel + 0.03, function()
 					youLabel.Visible = false
 					youLabel.TextStrokeTransparency = 0.25
 				end)
@@ -2617,8 +2667,8 @@ do
 			-- newer message.
 			task.delay(3.5, function()
 				if noticeSeq ~= mine then return end
-				TweenService:Create(line, TweenInfo.new(0.4), { TextTransparency = 1 }):Play()
-				task.delay(0.45, function()
+				TweenService:Create(line, TweenInfo.new(Feel.Fade.Notice), { TextTransparency = 1 }):Play()
+				task.delay(Feel.Fade.Notice + 0.05, function()
 					if noticeSeq == mine then gui.Enabled = false end
 				end)
 			end)
