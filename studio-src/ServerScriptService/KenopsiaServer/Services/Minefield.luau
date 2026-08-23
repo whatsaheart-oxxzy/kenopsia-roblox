@@ -12,6 +12,9 @@ local SoundService = game:GetService("SoundService")
 local BloodFX = require(script.Parent.BloodFX)
 local Pacing = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 	:WaitForChild("Rules"):WaitForChild("Pacing"))
+-- P1.5: the 3-2-1 step length is the SAME number the kit and the client use.
+local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 local Minefield = {}
 
@@ -435,7 +438,7 @@ local function runRoundInner(room, roundIndex, guard)
 		-- C1.b: an abort during the countdown ends the round here.
 		if not active() then return scores end
 		announce(room, { kind = "count", n = c })
-		task.wait(1)
+		task.wait(Feel.Countdown.StepSeconds)
 	end
 	if not active() then return scores end
 	announce(room, { kind = "go" })

@@ -20,6 +20,9 @@
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+-- P1.5: typewriter rates and the default tween feel come from FeelConfig.
+local Feel = require(game:GetService("ReplicatedStorage"):WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 local TrialClientKit = {}
 
@@ -388,16 +391,28 @@ local function newKit(trialId, deps, router)
 		return edge
 	end
 
-	-- Types text into a label; stops when the trial ends.
+	-- Types text into a label; stops when the trial ends. P1.5: time-based
+	-- MaxVisibleGraphemes (same model as the monolith's typewrite), so the
+	-- reveal is frame-rate independent and UTF-8 safe.
 	function kit.typewrite(label, text, cps)
 		local gen = router.generation
+		local rate = cps or Feel.Typewriter.BodyCps
 		task.spawn(function()
-			label.Text = ""
-			for i = 1, #text do
+			local total = utf8.len(text) or #text
+			label.MaxVisibleGraphemes = 0
+			label.Text = text
+			local t0 = os.clock()
+			local shown = 0
+			while shown < total do
+				RunService.RenderStepped:Wait()
 				if not kit.isActive() or router.generation ~= gen or not label.Parent then return end
-				label.Text = string.sub(text, 1, i)
-				task.wait(1 / (cps or 24))
+				local n = Feel.visibleAt(os.clock() - t0, rate, total)
+				if n ~= shown then
+					shown = n
+					label.MaxVisibleGraphemes = n
+				end
 			end
+			label.MaxVisibleGraphemes = -1
 		end)
 	end
 
@@ -595,7 +610,10 @@ local function newKit(trialId, deps, router)
 	end
 
 	function kit.tween(instance, props, seconds, style)
-		local info = TweenInfo.new(seconds or 0.3, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		-- P1.5: default duration = the device's panel transition, default
+		-- easing = the Machine's (Linear); callers that pass their own keep it.
+		local info = TweenInfo.new(seconds or Feel.panel(deps.machine and deps.machine:GetAttribute("Platform")),
+			style or Feel.easing(Feel.Easing.Machine, "Out"), Enum.EasingDirection.Out)
 		local tw = TweenService:Create(instance, info, props)
 		table.insert(tweens, tw)
 		tw:Play()

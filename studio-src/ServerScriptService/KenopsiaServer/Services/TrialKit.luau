@@ -21,6 +21,8 @@ local BloodFX = require(script.Parent.BloodFX)
 
 local Shared = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"):WaitForChild("GameConfig"))
+-- P1.5: the death timeline and the 3-2-1 step come from the feel bible.
+local Feel = require(Shared:WaitForChild("Config"):WaitForChild("FeelConfig"))
 local Rules = Shared:WaitForChild("Rules")
 local Pacing = require(Rules:WaitForChild("Pacing"))
 local TrialRules = require(Rules:WaitForChild("TrialRules"))
@@ -50,7 +52,7 @@ TrialKit.Rules = TrialRules
 
 -- Seconds between a death and the spectate packet (Minefield's 3.2), the cover
 -- hold at round end (Minefield's 0.6) and the default input cooldown.
-local DEATH_CAM_DELAY = 3.2
+local DEATH_CAM_DELAY = Feel.Death.Spectate
 local END_COVER_SECONDS = 0.6
 local DEFAULT_COOLDOWN = 0.25
 local FAILSAFE_EXTRA = 20
@@ -519,7 +521,7 @@ function Round:countdown()
 	for c = 3, 1, -1 do
 		if not self:active() then return false end
 		TrialKit.announce(self.room, { kind = "count", n = c })
-		if not self:wait(1) then return false end
+		if not self:wait(Feel.Countdown.StepSeconds) then return false end
 	end
 	if not self:active() then return false end
 	TrialKit.announce(self.room, { kind = "go" })

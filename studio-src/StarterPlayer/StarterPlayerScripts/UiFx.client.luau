@@ -20,6 +20,9 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- Roblox draws ScaleType.Tile as one quad per tile, so the 8-px tile was
 -- ~40k quads on a phone screen; this one is 64x fewer (perf, 22.08.2026).
 local SCANLINE = "rbxassetid://75481537065425"
+-- P1.5: band / blip cadence from the feel bible.
+local Feel = require(game:GetService("ReplicatedStorage"):WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 local PHOSPHOR = Color3.fromHex("78FFAA")
 
 local gui = Instance.new("ScreenGui")
@@ -158,12 +161,12 @@ task.defer(applyChat)
 
 task.spawn(function()
 	while gui.Parent do
-		task.wait(8)
+		task.wait(Feel.Overlay.BandIdle)
 		if motionOk() then
 			local cam = workspace.CurrentCamera
 			local vh = cam and cam.ViewportSize.Y or 720
 			band.Position = UDim2.new(0, 0, 0, -120)
-			local tw = TweenService:Create(band, TweenInfo.new(2, Enum.EasingStyle.Linear), {
+			local tw = TweenService:Create(band, TweenInfo.new(Feel.Overlay.BandSweep, Feel.easing(Feel.Easing.Machine, "Out")), {
 				Position = UDim2.new(0, 0, 0, vh + 10),
 			})
 			tw:Play()
@@ -174,11 +177,11 @@ end)
 
 task.spawn(function()
 	while gui.Parent do
-		task.wait(8 + math.random() * 12)
+		task.wait(Feel.Overlay.BlipMin + math.random() * (Feel.Overlay.BlipMax - Feel.Overlay.BlipMin))
 		if motionOk() then
 			blip.Position = UDim2.new(0, 0, math.random(), 0)
 			blip.Visible = true
-			task.wait(0.08)
+			task.wait(Feel.Overlay.BlipHold)
 			blip.Visible = false
 		end
 	end

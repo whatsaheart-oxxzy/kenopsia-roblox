@@ -7,6 +7,9 @@ local ServerStorage = game:GetService("ServerStorage")
 local BloodFX = require(script.Parent.BloodFX)
 local Pacing = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 	:WaitForChild("Rules"):WaitForChild("Pacing"))
+-- P1.5: the 3-2-1 step length is the SAME number the kit and the client use.
+local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 local BirdHunting = {}
 
@@ -758,7 +761,7 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 		-- number to clients.
 		if not roomActive(room) then return scores end
 		tellAll({ kind = "count", n = n })
-		task.wait(1)
+		task.wait(Feel.Countdown.StepSeconds)
 	end
 	-- C5: point of no return. Past this line the round is committed - runners
 	-- are unfrozen to MAX_RUNNER_SPEED, roundState.active goes true (unblocking
