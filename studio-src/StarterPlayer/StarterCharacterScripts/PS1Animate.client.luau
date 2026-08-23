@@ -43,7 +43,7 @@ hum.JumpPower = 0
 pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end)
 
 -- clip speeds at scale 1 (AnimationIds), so AdjustSpeed keeps the feet planted
-local NATURAL = AnimationIds.PlayerSpeeds or { Walk = 4.5, Run = 10.95, Crawl = 2.0, InjuredWalk = 2.6 }
+local NATURAL = AnimationIds.PlayerSpeeds or { Walk = 4.5, Run = 10.95, Crawl = 2.26, InjuredWalk = 3.49 }
 local RUN_AT = 7.5 -- studs/s: below this the walk carries the legs
 
 local tracks = {}

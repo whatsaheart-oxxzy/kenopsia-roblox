@@ -32,19 +32,23 @@ AnimationIds.Player = {          -- rig: PS1Player (20 bones), loops in place, 3
 	-- Bone.CFrame survives the bite. That is the whole reason a bespoke clip
 	-- was needed instead of the obvious stand-in: Push moves the legs.
 	Eat    = 132791710012729,
-	-- 23.08.2026: three Mixamo clips imported on the PS1 rig (Sweep Fall /
-	-- Zombie Crawl / Injured Walking). 0 until published under the group;
-	-- Studio plays the saved sequence (see StudioSequences + the warmup bridge).
+	-- 23.08.2026: three Mixamo clips (Sweep Fall / Zombie Crawl / Injured
+	-- Walking) RETARGETED onto the PS1 rig -- the raw imports carry 52
+	-- mixamorig:* bones the 20-bone rig does not have, which is why the
+	-- Animation Editor reported "no root". The retargeted sequences live on
+	-- Workspace.Anim_FieldClips (save holder of the same name); publish from
+	-- that rig under the group. 0 until then; Studio plays the saved sequence
+	-- (see StudioSequences + the warmup bridge).
 	-- DeathField is the death of the FIELD trials (Dead Zone, Bird Hunting);
 	-- the canteen keeps its execution Death above.
 	DeathField  = 0,
 	Crawl       = 0,
 	InjuredWalk = 0,
 }
--- for AdjustSpeed. Crawl / InjuredWalk (23.08.2026) are ESTIMATES of the
--- natural studs/s at scale 1 -- Mixamo clips are not measured like the
--- Blender exports above; correct them once the clips are on a runner.
-AnimationIds.PlayerSpeeds = { Walk = 4.5, Run = 10.95, Push = 3.15, Crawl = 2.0, InjuredWalk = 2.6 }
+-- for AdjustSpeed. Crawl / InjuredWalk (23.08.2026) are MEASURED from the
+-- Mixamo hips trend the retarget removed (8.50 studs / 3.77 s, 6.05 / 1.73 s
+-- at scale 1) -- the clips play in place, these are their natural speeds.
+AnimationIds.PlayerSpeeds = { Walk = 4.5, Run = 10.95, Push = 3.15, Crawl = 2.26, InjuredWalk = 3.49 }
 AnimationIds.Boss = {            -- rig: CanteenBoss (19 bones)
 	-- 22.08.2026: re-published under the group; Reading is its own looping clip
 	-- (LookDown lands on the paper, CanteenBoss hands over to Reading from there).
@@ -94,10 +98,11 @@ AnimationIds.StudioSequences = {
 		-- name the Animation Editor save "Anim_Eat" and the sequence inside it
 		-- "Eat" and the diner animates in Studio before anything is published.
 		Eat = { "Anim_Eat", "eat" }, Stab = { "Anim_Stab", "stab beans" },
-		-- 23.08.2026: Mixamo imports keep the importer's sequence name
-		-- "mixamo.com"; the holder (Animation Editor save) tells them apart.
-		DeathField = { "Sweep Fall", "mixamo.com" }, Crawl = { "Zombie Crawl", "mixamo.com" },
-		InjuredWalk = { "Injured Walking", "mixamo.com" },
+		-- 23.08.2026: the retargeted field clips (see Player above); the raw
+		-- "mixamo.com" imports under Sweep Fall / Zombie Crawl / Injured
+		-- Walking do not fit this skeleton and must not be referenced.
+		DeathField = { "Anim_FieldClips", "DeathField" }, Crawl = { "Anim_FieldClips", "Crawl" },
+		InjuredWalk = { "Anim_FieldClips", "InjuredWalk" },
 	},
 	Boss = {
 		Idle = { "Anim_Idle", "Idle", 100 }, LookUp = { "Anim_LookUp", "LookingUp" },

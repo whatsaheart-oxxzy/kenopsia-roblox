@@ -73,16 +73,18 @@ for _, name in ipairs({ "DeathField", "Crawl", "InjuredWalk" }) do
 	local id = A.Player[name]
 	check(type(id) == "number" and id >= 0, "Player." .. name .. " is declared (0 allowed until published)")
 	local seq = A.StudioSequences.Player[name]
-	check(type(seq) == "table" and type(seq[1]) == "string" and seq[2] == "mixamo.com",
-		"StudioSequences.Player." .. name .. " names a Mixamo save")
+	-- the raw "mixamo.com" imports carry 52 mixamorig:* bones the 20-bone PS1
+	-- rig does not have; only the retargeted save on Anim_FieldClips fits.
+	check(type(seq) == "table" and seq[1] == "Anim_FieldClips" and seq[2] == name,
+		"StudioSequences.Player." .. name .. " names the retargeted Anim_FieldClips save")
 	if id == 0 then
 		check(A.resolve("Player", name) == nil, "resolve(Player." .. name .. ") placeholder -> nil")
 		local okL, rL = pcall(A.load, fieldAnimator, "Player", name)
 		check(okL and rL == nil, "load(Player." .. name .. ") placeholder -> nil offline, no throw")
 	end
 end
-check(A.PlayerSpeeds.Crawl == 2.0 and A.PlayerSpeeds.InjuredWalk == 2.6,
-	"PlayerSpeeds carry the Crawl / InjuredWalk estimates")
+check(A.PlayerSpeeds.Crawl == 2.26 and A.PlayerSpeeds.InjuredWalk == 3.49,
+	"PlayerSpeeds carry the measured Crawl / InjuredWalk hips trends")
 
 -- Every placeholder resolves to nil.
 local placeholdersOk = true

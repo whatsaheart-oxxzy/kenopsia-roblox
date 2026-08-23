@@ -24,3 +24,39 @@ Offline gates: rules 84, trialrules 37, animationids 35, contexts 21, envelope 2
 
 * Publish the three clips under the group (like the others) and paste the ids → `AnimationIds.Player.DeathField / Crawl / InjuredWalk`. Until then they play in Studio only.
 * 2-player: Bird Hunting injured walk + speed 7, Dead Zone crawl + crush (`crushed=n` in the log), canteen fake-outs in play.
+
+## Addendum (23.08., later) — "no root": the Mixamo clips had to be retargeted
+
+The user could not publish the three clips: the Animation Editor reported no root. Cause: the
+saves under `Sweep Fall` / `Zombie Crawl` / `Injured Walking` are the importer's raw Mixamo
+sequences — 52 `mixamorig:*` poses per keyframe — while the PS1 rig has 20 bones with Roblox
+names (`Root`, `LowerTorso`, `UpperTorso`, `LeftUpperArm`, …). In Studio they "loaded" (length
+> 0) but could never move the rig; the earlier "client loads Crawl 3.77 s" check only read
+`track.Length`.
+
+Fix (scratchpad `retarget.lua`, run in the Edit DataModel): world-rotation-delta retarget of
+16 mapped bones (Hips→LowerTorso, Spine2→UpperTorso, Neck, Head, Arm/ForeArm/Hand,
+UpLeg/Leg/Foot per side) with a per-bone rest alignment (the rig is A-pose, Mixamo T-pose),
+a 180° yaw fix (Mixamo faces +Z after import, the rig −Z), hips translation scaled by hip
+height (3.95 studs / 99.8 cm = 0.0396) and rebased — linear XZ trend removed for the two loops,
+first-frame XZ removed for the death (it keeps its 2.5-stud forward fall). Source rest pose from
+the husks' `InitialPoses/*_Initial` (parent-relative binds, cm), target rest from the rig's
+`Bone.WorldCFrame`.
+
+Result: `Workspace.Anim_FieldClips` (clone of `Player_Rig`, 20 studs to the left of it) with
+the save holder `ServerStorage.RBX_ANIMSAVES.Anim_FieldClips` → `DeathField` (53 kf, 1.73 s,
+one-shot, hips end 0.55 above the floor), `Crawl` (114 kf, 3.77 s, loop, hips 0.64 above the
+floor), `InjuredWalk` (53 kf, 1.73 s, loop). Pose tree `RootPart → Root → LowerTorso → …`
+exactly like the published Blender clips. Captures of the posed rig: death end = lying flat,
+crawl = prone with arms forward, injured = hand clutching the side while limping. Play check:
+with `XBotCrawl` set the character's `LowerTorso.Transform.Y` reads −2.98 (= −3.31 × scale 0.9)
+— the retargeted clip drives the real character.
+
+`AnimationIds`: `StudioSequences` now point at `Anim_FieldClips`; `PlayerSpeeds.Crawl 2.26`,
+`InjuredWalk 3.49` measured from the removed hips trends (8.50 studs / 3.77 s, 6.05 / 1.73 s).
+`tests/animationids.lua` updated (35 green). Pushed with parity: AnimationIds 12070/2065416073,
+PS1Animate 5265/24479636.
+
+**User:** Animation Editor → rig `Anim_FieldClips` → Load `DeathField` / `Crawl` / `InjuredWalk`
+→ Publish to Roblox with the group as creator → paste the ids into `AnimationIds.Player`.
+The raw `mixamo.com` saves and the three husk models can be deleted afterwards.
