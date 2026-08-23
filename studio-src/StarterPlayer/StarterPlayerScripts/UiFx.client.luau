@@ -156,7 +156,10 @@ end
 
 -- P2.2: the idle oscillators (band, blip, bracket, uptime) are Selection-screen
 -- life. None runs while a trial is active or while no live screen is visible.
-local LIVE_SCREENS = { "Selection" }
+-- Lead 23.08.: the band and the blip breathe on every Machine screen in the
+-- lobby (players sit on Info/READY the longest); the bracket and the uptime
+-- counter belong to the Selection grid only (selectionOk below).
+local LIVE_SCREENS = { "Selection", "Info", "Status", "Score" }
 local function liveOk()
 	if (player:GetAttribute("KenopsiaActiveTrial") or "") ~= "" then return false end
 	local machine = playerGui:FindFirstChild("KenopsiaMachine")
@@ -166,6 +169,12 @@ local function liveOk()
 		if s and s.Visible then return true end
 	end
 	return false
+end
+local function selectionOk()
+	if not liveOk() then return false end
+	local machine = playerGui:FindFirstChild("KenopsiaMachine")
+	local sel = machine and machine:FindFirstChild("Selection")
+	return sel ~= nil and sel.Visible
 end
 
 local function applyToggle()
@@ -503,7 +512,7 @@ task.spawn(function()
 	local liveNow = false
 	while gui.Parent do
 		task.wait(Feel.stepSeconds())
-		local live = liveOk()
+		local live = selectionOk()
 		if live ~= liveNow then
 			liveNow = live
 			bracket.Visible = live
