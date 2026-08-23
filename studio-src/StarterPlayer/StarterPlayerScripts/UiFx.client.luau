@@ -131,6 +131,31 @@ task.defer(function()
 	end
 end)
 
+-- 5) the Roblox chat window (P0.4, decided 22.08.2026): the default chat
+--    stays ON in the lobby / Machine screens and is hidden while a trial
+--    runs. Observed here rather than in SimulationGrade because that script's
+--    apply/restore is gated by the SIM FILTER setting and the chat must not
+--    follow a look toggle. pcall-guarded: a place without the TextChatService
+--    configuration objects (legacy chat) simply keeps its chat.
+local TextChatService = game:GetService("TextChatService")
+local chatHidden = false
+local function setChatEnabled(on)
+	pcall(function()
+		local window = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
+		if window then window.Enabled = on end
+		local input = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration")
+		if input then input.Enabled = on end
+	end)
+end
+local function applyChat()
+	local inTrial = (player:GetAttribute("KenopsiaActiveTrial") or "") ~= ""
+	if inTrial == chatHidden then return end
+	chatHidden = inTrial
+	setChatEnabled(not inTrial)
+end
+player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(applyChat)
+task.defer(applyChat)
+
 task.spawn(function()
 	while gui.Parent do
 		task.wait(8)

@@ -5,6 +5,31 @@ gelesen am **21.08.2026** live aus dem geöffneten Roblox Studio über die Studi
 
 > Zielort im Repo: `docs/place/`
 
+> **Stand der Wahrheit, 23.08.2026 (P0.5 Docs-Truth-Pass).** Diese Aufnahme ist ein
+> **Schnappschuss vom 21.08.2026** und wurde seither nicht neu erhoben. Was unten als
+> "Stand des Places" steht, ist Geschichte. Die gemessene Gegenwart:
+>
+> | Was | Gemessen | Quelle |
+> |---|---|---|
+> | Framework (`TrialKit`, `TrialClientKit`, `TrialRules`, `TrialClients/`) | **ist im Place** — 62/62 Skripte byte-identisch zu `studio-src/` (measured on 2026-08-22) | `docs/research/2026-08-22-sweep/03-live-place.md`, `docs/MASTERPLAN.md` §0 |
+> | Framework-Smoke (P0.1) | gespielt: `ev="begin"`/`ev="end"`, kein `_Runtime`-Rest, Parität danach (measured on 2026-08-22) | `docs/QA/2026-08-22-framework-smoke.md` |
+> | Trials `ready` | 3/15 (`birdhunt`, `minefield`, `canteen`); `sorting` ist **gebaut** (P4.1, 34 Offline-Checks) und steht bewusst auf `ready=false` bis zum Release (measured on 2026-08-23) | `docs/QA/2026-08-23-p4-sorting.md`, `docs/QA/2026-08-23-three-trials-polish.md` |
+> | Spielfigur | PS1-Rig als `StarterCharacter` überall, Sprung 0 auf jedem Charakter (measured on 2026-08-22) | `docs/QA/2026-08-22-p3-ps1-character.md` |
+> | PS1-Look | `SimulationGrade` nur während `KenopsiaActiveTrial ~= ""`, Snapshot/Restore byte-genau (measured on 2026-08-22) | `docs/QA/2026-08-22-p3-simulation-grade.md` |
+> | Kantine | komplett neu skaliert (0.47), Tisch unter dem Gabelpunkt, vier Doppel-Teller gelöscht (measured on 2026-08-22) | `docs/QA/2026-08-22-p3-simulation-grade.md` (Abschnitt Canteen re-layout), `docs/QA/2026-08-22-canteen-stab-eat.md` |
+> | Animationen | unter der Gruppe neu publiziert, jede ID `Length > 0` im Place (measured on 2026-08-22); die drei Feld-Clips (`DeathField`, `Crawl`, `InjuredWalk`) sind retargetet und warten auf die Publikation durch den Lead (Stand 23.08.2026) | `docs/QA/2026-08-22-canteen-stab-eat.md`, `docs/QA/2026-08-23-three-trials-polish.md` |
+> | Performance | Pass 1 (eigene HUD-ScreenGui, 64-px-Scanline-Kachel, Runner-Cam nur bei Drift, Gore-Caps, Watchdog-Skip) (measured on 2026-08-22) | `docs/QA/2026-08-22-perf-pass-1.md` |
+> | Skripte | 21 (21.08.) → **62** LuaSourceContainer (22.08.); jede QA-Notiz seither prüft die Parität der gepushten Dateien | s.o. |
+>
+> Die Befundliste mit Status je Befund steht in [`07-FINDINGS.md`](07-FINDINGS.md) (Abschnitt
+> "Status 23.08.2026"). Die Zahlen in `01`–`06` sind **nicht** nachgeführt; wer "was läuft live?"
+> wissen will, liest die QA-Notizen unter `docs/QA/` oder misst neu.
+>
+> **`docs/assets/audio-inventory.csv`**: listet 39 Sounds (Stand 21.08.). Die Recherche vom
+> 22.08. hat **34** im Place gemessen (`Music.Loop` und `SFX.AccessGranted` fehlten); P0.3 hat
+> danach `Music.Trials.canteen`, `Music.Loop` und `SFX.AccessGranted` wieder angelegt. Die CSV
+> wird **erst mit Studio neu erzeugt** (braucht den Place); bis dahin gilt die CSV als stale.
+
 ## Was hier drin steht
 
 | Datei | Inhalt |
@@ -57,12 +82,13 @@ jeweiligen Dateien als "Erhebungsmethode" beschrieben. Wichtig:
 - Ausgaben über ~100 KB schreibt die MCP in eine Datei statt sie zurückzugeben.
   Wiederholte Strukturen vorher zusammenfassen.
 
-## Stand des Places zum Aufnahmezeitpunkt
+## Stand des Places zum Aufnahmezeitpunkt (21.08.2026 — historisch, siehe Banner oben)
 
 - **3 Minispiele** live und `ready = true`: `birdhunt`, `minefield`, `canteen`
 - **4 Spieler** pro Server, **ein** Raum pro Server
 - **21 Skripte**, 386 KB Quelltext
 - **40 144** Instanzen im Datamodel, davon 29 785 Animations-Rohdaten
 - **0** Persistenz (kein DataStore, kein Badge, kein GamePass, keine leaderstats)
-- Letzter Commit des Repos: **14.08.2026** — die Arbeit vom 15.–19.08. ist nicht
-  versioniert, und das Repo hat kein Remote. Siehe [`07-FINDINGS.md`](07-FINDINGS.md) F-01.
+- Letzter Commit des Repos: **14.08.2026** — die Arbeit vom 15.–19.08. war nicht
+  versioniert, und das Repo hatte kein Remote. Siehe [`07-FINDINGS.md`](07-FINDINGS.md) F-01
+  (erledigt am 21.08.2026: Commits `bc1160b` + `081a8b8`, privates Remote).

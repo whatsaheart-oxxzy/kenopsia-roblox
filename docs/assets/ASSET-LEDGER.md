@@ -70,6 +70,14 @@ its own. This applies even to modified versions.
 
 ## 2. Audio — 39 Sounds, all populated
 
+> **STALE — regeneration pending (P0.5, 2026-08-23).** `audio-inventory.csv` lists 39 Sounds
+> (generated 2026-08-21). Measured on 2026-08-22 the place held **34** (`Music.Loop` and
+> `SFX.AccessGranted` were gone, among others — `docs/research/2026-08-22-sweep/07`); P0.3 then
+> re-created `Music.Loop`, `SFX.AccessGranted` (clone of `Confirm`) and added
+> `Music.Trials.canteen` (clone of `minefield`), and raised `birdhunt` 0.24 → 0.40
+> (`docs/QA/2026-08-22-framework-smoke.md`). The CSV is regenerated from Studio, not by hand;
+> until then treat its rows as the 21.08. snapshot.
+
 Machine-generated from the live place. Full table:
 `docs/assets/audio-inventory.csv`. 39 instances, 37 distinct asset ids
 (`Click`/`Hover` share one; `Reject`/`AccessDenied` share one).

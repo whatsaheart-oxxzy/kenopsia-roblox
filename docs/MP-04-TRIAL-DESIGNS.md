@@ -14,6 +14,22 @@ Scope: the twelve minigames of the reference roster that are not yet in `Machine
 
 ## 0. Shared decisions (apply to every card)
 
+> **SUPERSEDED (P0.5 docs truth pass, 2026-08-23).** Four of this section's decisions were
+> overridden by `docs/MP-05-BUILD-PLAN.md` §0 on 2026-08-17 and are what the live framework
+> (in the place since 2026-08-22, 62/62 parity) actually implements. Read MP-05 for these;
+> the cards below still say the old thing where they quote them:
+>
+> | Here (MP-04, stale) | Ruled by | What ships |
+> |---|---|---|
+> | Per-trial packet kinds (`carve_template`, `fc_call`, … in the cards) | **MP-05 D1** | one envelope `{kind="trial", trialId, ev}`; reserved `ev="begin"`/`ev="end"`; the card's kinds become `ev` values; new trials never send `role="runner"/"sniper"/"none"` |
+> | §0.4 arena row at `Y = 400`, 600 studs apart | **MP-05 D4** | MP-03's grid on `Y = 0`, stored once in `GameConfig.Arenas.Origins`; each arena builds its own slab with the top at `Y = 0` |
+> | §0.6 SFX names `AccessGranted`, `AccessDenied`, `StandClear`, `Submit`, `SubmitAlt` | **MP-05 D6** | only names that exist in the place: `AccessGranted→Confirm`, `AccessDenied→Reject`, `StandClear→Warning`, `Submit→Submits` (pool), `SubmitAlt→ClickAlt`; `kit.sfx` is silent on a missing name. (`SFX.AccessGranted` was re-created as a clone of `Confirm` on 2026-08-22, P0.3 — so that name resolves again; the others still do not.) |
+> | `carrier` RoundSeconds "45 (2p: 30)" and any other per-count length | **MP-05 D8** | `Pacing.RoundSeconds[id]` is ONE number per trial; `tests/rules.lua` asserts it |
+>
+> Evidence: `docs/research/2026-08-22-sweep/02-design-docs.md` (the drift was measured there),
+> `docs/MASTERPLAN.md` §0/§4 P0.5. Everything else in §0 (mapping, voice, framework contract,
+> palette, exploit guards) stands.
+
 ### 0.1 Reference -> shipped mapping (docs only)
 
 | # | Reference name (docs only) | id | Display name | Icon (Selection.IconPool) |

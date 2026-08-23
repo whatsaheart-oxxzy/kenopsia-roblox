@@ -248,6 +248,10 @@ for key in uiSettings do publishSetting(key) end
 -- Click/Submit draw a random variant from their pool so repeated presses
 -- don't sound like a sample loop
 local SFX_POOLS = { Click = "Clicks", Submit = "Submits" }
+-- P0.3: a name with no Sound under SoundService.KenopsiaAudio.SFX used to be a
+-- silent no-op; now it warns ONCE per name so a typo or a missing asset shows
+-- up in the console instead of as a quiet cue.
+local sfxWarned = {}
 local function sfx(name)
 	if not uiSettings.UiSound then return end
 	local root = SoundService:FindFirstChild("KenopsiaAudio")
@@ -263,6 +267,9 @@ local function sfx(name)
 	s = s or folder:FindFirstChild(name)
 	if s and s.SoundId ~= "" then
 		SoundService:PlayLocalSound(s)
+	elseif not sfxWarned[name] then
+		sfxWarned[name] = true
+		warn((s and "[sfx] empty SoundId: " or "[sfx] unknown name: ") .. tostring(name))
 	end
 end
 

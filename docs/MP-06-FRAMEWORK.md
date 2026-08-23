@@ -22,6 +22,15 @@ You are ONE of twelve parallel implementers. You may create/overwrite ONLY these
 
 plus optionally `docs/trials/<id>.md`. All four already exist as compliant stubs; overwrite them.
 
+> **Correction (P0.5 docs truth pass, 2026-08-23):** "all four already exist as stubs" is true
+> for files 1–3 only. **`tests/<id>.lua` are NEW work** — no test stubs were ever written
+> (`docs/place/07-FINDINGS.md` F-04 side finding, measured 2026-08-21). As of 2026-08-23 the
+> only per-trial test is `tests/sorting.lua` (34 checks, P4.1); the other eleven implementers
+> create theirs from scratch, following `tests/rules.lua`'s `check(ok, label, detail)` style.
+> Also measured 2026-08-22: the framework files 1–3 and the kits ARE in the place (62/62
+> parity, `docs/MASTERPLAN.md` §0) and the P0.1 smoke test ran
+> (`docs/QA/2026-08-22-framework-smoke.md`).
+
 NEVER edit: `MachineFlow.luau`, `TrialKit.luau`, `TrialClientKit.luau`, `TrialRules.luau`,
 `Pacing.luau`, `Playlist.luau`, `GameConfig.luau`, `AnimationIds.luau`, `KenopsiaClient.client.luau`,
 `MachineLayout.client.luau`, `default.project.json`, `tests/rules.lua`, `tests/trialrules.lua`,

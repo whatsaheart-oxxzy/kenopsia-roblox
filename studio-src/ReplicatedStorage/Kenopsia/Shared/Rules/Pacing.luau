@@ -128,6 +128,10 @@ Pacing.Timing = {
 	InterimScore = 4.5,  -- score card after each completed minigame (plan: 3.0)
 	FinalScore   = 8.0,  -- final cumulative board (plan: 6.0)
 	ControlCard  = 8.0,  -- briefing; early confirm is allowed
+	-- 23.08.2026 (MASTERPLAN P0.3 / section 3): the lobby roulette hold. The
+	-- client spins the icon strip and lands on the chosen trial in this time;
+	-- MachineFlow.preFlow used to hard-code `task.wait(6.4)` next to it.
+	LobbyReveal  = 6.4,
 }
 
 -- The scoring pool a completed trial distributes. Kept here rather than in
