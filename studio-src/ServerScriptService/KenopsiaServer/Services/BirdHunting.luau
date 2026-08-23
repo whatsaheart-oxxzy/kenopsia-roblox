@@ -467,13 +467,20 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 	guard.cleanup = cleanupRound
 
 	-- the machine names its hunter on a black card before anyone moves
-	local sniperName = nil
-	for _, m in room.members do
-		if m.userId == sniperUserId then sniperName = string.upper(m.displayName or "?") end
+	--
+	-- P1.4 (23.08.2026): when the session forced the hunter, MachineFlow has
+	-- just shown that sentence as the {kind="rolecard"} beat (1.6 s), so the
+	-- in-leg card is skipped here rather than printing the name twice in a
+	-- row. The direct / solo path (no forced hunter) keeps its own card.
+	if not forcedHunterUserId then
+		local sniperName = nil
+		for _, m in room.members do
+			if m.userId == sniperUserId then sniperName = string.upper(m.displayName or "?") end
+		end
+		tellAll({ kind = "announce", text = sniperName and (sniperName .. " IS THE HUNTER.") or "THE TOWER IS UNMANNED. RUN." })
+		task.wait(2.8)
+		tellAll({ kind = "hide" })
 	end
-	tellAll({ kind = "announce", text = sniperName and (sniperName .. " IS THE HUNTER.") or "THE TOWER IS UNMANNED. RUN." })
-	task.wait(2.8)
-	tellAll({ kind = "hide" })
 	-- C5: the room can abort during the 2.8s hunter card. Bail before anyone is
 	-- frozen, posed or teleported. guard.cleanup is already armed, so this
 	-- return runs cleanupRound through the wrapper - it is not a bare return.
@@ -674,6 +681,11 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 		local function dropRunner()
 			st.progress = math.max(st.progress, progressAt(s.root.Position.Z))
 			st.done = true
+			-- P1.4: this kill never touches Humanoid.Health (the body is a
+			-- corpse clone and the runner is moved out later), so MachineFlow's
+			-- death tally cannot see it through Humanoid.Died. The attribute
+			-- bump is the one signal it watches instead.
+			plr:SetAttribute("KenopsiaProcessed", (tonumber(plr:GetAttribute("KenopsiaProcessed")) or 0) + 1)
 			-- Reference tone: one localized blood hit and one falling body, followed
 			-- by the shared black leg transition. No gib/fountain/screen-gore stack.
 			BloodFX.hit(hit.Position, audience)

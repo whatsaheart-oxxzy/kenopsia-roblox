@@ -200,7 +200,7 @@ local session = 0
 -- P1.6: kinds the funnel renders. Anything else is logged once and IGNORED,
 -- because bumping `session` for an unknown kind cancels every typewriter and
 -- odometer mid-word (this happened once with kind = "select").
-local KNOWN_KINDS = { selection = true, info = true, status = true, round = true, score = true, announce = true, hide = true }
+local KNOWN_KINDS = { selection = true, info = true, status = true, round = true, score = true, announce = true, hide = true, rolecard = true }
 local unknownKinds = {}
 local myReady = false
 local maxPlayers = 4
@@ -1897,6 +1897,78 @@ local function showScore(p, token)
 	end)
 end
 
+-- MACHINE VOICE (P1.4) ------------------------------------------------------
+-- One comment line under the rows of the standings card (Status screen) and
+-- of the score card, from `p.line`. The label is built once per screen at
+-- runtime in the screen's own row style, so the place GUI needs no new
+-- instance; the dispatcher calls these right after showStatus / showScore.
+
+local function voiceLabel(screen, template, position, size, textSize)
+	local l = screen:FindFirstChild("VoiceLine")
+	if l then return l end
+	if template then
+		l = template:Clone()
+	else
+		l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1
+		l.Font = Enum.Font.Code
+		l.TextXAlignment = Enum.TextXAlignment.Left
+	end
+	l.Name = "VoiceLine"
+	l.Text = ""
+	l.TextColor3 = PHOSPHOR
+	if position then l.Position = position end
+	if size then l.Size = size end
+	if textSize then l.TextSize = textSize end
+	l.Visible = false
+	l.Parent = screen
+	return l
+end
+
+-- Standings: one blank row under the last TypeLine, plain (the rows above are
+-- already typing; two typewriters at once read as noise).
+local function showStatusLine(p)
+	local last = statusScreen:FindFirstChild("TypeLine7")
+	local pos = last and UDim2.new(last.Position.X.Scale, last.Position.X.Offset,
+		last.Position.Y.Scale, last.Position.Y.Offset + 36) or UDim2.new(0, 46, 0.62, 0)
+	local l = voiceLabel(statusScreen, last, pos, last and last.Size or UDim2.new(1, -92, 0, 18), nil)
+	l.Text = p.line or ""
+	l.Visible = p.line ~= nil and p.line ~= ""
+end
+
+-- Score: under the rank rows, typed at the status rate while the odometer
+-- rolls (the rows themselves only appear at 2.4 s).
+local function showScoreLine(p, token)
+	local rl = scoreScreen:FindFirstChild("RankList")
+	local pos = rl and UDim2.new(rl.Position.X.Scale, rl.Position.X.Offset,
+		rl.Position.Y.Scale + rl.Size.Y.Scale, rl.Position.Y.Offset + rl.Size.Y.Offset + 14)
+		or UDim2.new(0.55, 0, 0.12, 150)
+	local size = rl and UDim2.new(rl.Size.X.Scale, rl.Size.X.Offset, 0, 22) or UDim2.new(0.4, 0, 0, 22)
+	local l = voiceLabel(scoreScreen, nil, pos, size, 16)
+	l.Text = ""
+	l.Visible = false
+	if not p.line or p.line == "" then return end
+	task.spawn(function()
+		task.wait(0.3)
+		if session ~= token then return end
+		typewrite(l, p.line, 30, token)
+	end)
+end
+
+-- ROLE CARD (P1.4): one sentence, full screen, phosphor on black, hard cut in
+-- and out, for p.seconds (1.6 s). Reuses the Announce screen so hideAll() and
+-- the server's follow-up "hide" both clear it.
+local function showRoleCard(p, token)
+	hideAll()
+	announceScreen.BackgroundTransparency = 0
+	announceScreen.Line.TextColor3 = PHOSPHOR
+	announceScreen.Line.Text = p.text or ""
+	announceScreen.Visible = true
+	task.delay(tonumber(p.seconds) or 1.6, function()
+		if session == token then hideAll() end
+	end)
+end
+
 local function showAnnounce(p, token)
 	hideAll()
 	if p.style == "death" then
@@ -2341,10 +2413,14 @@ MachineState.OnClientEvent:Connect(function(p)
 		showInfo(p, token)
 	elseif p.kind == "status" then
 		showStatus(p, token)
+		showStatusLine(p)
 	elseif p.kind == "round" then
 		showRound(p, token)
+	elseif p.kind == "rolecard" then
+		showRoleCard(p, token)
 	elseif p.kind == "score" then
 		showScore(p, token)
+		showScoreLine(p, token)
 	elseif p.kind == "announce" then
 		showAnnounce(p, token)
 	elseif p.kind == "hide" then

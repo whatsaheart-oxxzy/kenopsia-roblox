@@ -85,6 +85,8 @@ check(type(Pacing.Timing) == "table" and Pacing.Timing.LobbyReveal == 6.4,
 -- P1.3 (23.08.2026), MASTERPLAN section 2/3: verdict stamp 6 s + podium 8 s.
 check(Pacing.Timing.FinalScore == 6 and Pacing.Timing.Podium == 8, "verdict beat is 6 s stamp + 8 s podium",
 	tostring(Pacing.Timing.FinalScore) .. " + " .. tostring(Pacing.Timing.Podium))
+-- P1.4: the role card beat ("<NAME> IS THE HUNTER.") is 1.6 s, MASTERPLAN section 2.
+check(Pacing.Timing.RoleCard == 1.6, "role card beat is 1.6 s", tostring(Pacing.Timing.RoleCard))
 
 -- MP-05 D8: one RoundSeconds number per new trial, section A values.
 local expectedSeconds = {
@@ -222,12 +224,28 @@ end
 -- plain lowercase words -- except that the plain lowercase form is skipped for
 -- a phrase beginning with "the ", which is ordinary English prose. Checked
 -- against Playlist.Ids and against every file default.project.json maps.
+--
+-- P1.4 (23.08.2026): the second block is the reference's CRT COPY -- its round
+-- card taglines, its objective monolith, and the sentences on its briefing and
+-- intermission score cards (docs/research/2026-08-22-sweep/04-reference-game.md,
+-- "MACHINE VERDICT/ORDER LINES" and "INTERMISSION SCORE CARD"). Two of the
+-- taglines had been shipped verbatim as Kenopsia taglines until this test
+-- caught them; MachineVoice.luau is a mapped file, so the comment pool is
+-- grepped by the same loop.
 do
 	local reversed = {
 		"teltnuag lesihc", "yrotcaf mraerif", "yaw gnorw", "gnitoof elbats",
 		"drazah lennut", "boj edisni", "kaerb ekoms", "smroftalp sirbed",
 		"rekaerb enips", "dnuober lahtel", "deifitrec tfilkrof", "retlif eht",
 		"ytrap enihcam",
+		-- CRT copy (P1.4)
+		"pets ruoy hctaw .daeha nacs", "ti no eman ruoy htiw tellub a",
+		"timbus .evrac .eziromem", "edih .tnuh .hcraes", "devres si rennid",
+		"gnimoc era sniart eht", "ylekilnu si lavivrus",
+		"llik ot toohs .epicer eht wollof", "egnirys eht dnif",
+		"erocs noitatum eneg laitnetop", "stniop atad rotinom krowten laruen",
+		"stnapicitrap tinu tset neewteb gnidivid", "ssecorp kcolb metsys noissimretni",
+		"detelpmoc reppartstoob noitalumis", "stcejbus rof gnitiaw", "ylno esu lanretni",
 	}
 	local forbidden = {}
 	local function titleCase(phrase)
@@ -257,6 +275,13 @@ do
 		if offending(id) then idsClean = false end
 	end
 	check(idsClean, "REQ-IP-01: no forbidden token in Playlist.Ids")
+	-- Self-check: the two taglines that were shipped verbatim until P1.4 must
+	-- be caught in the exact form a round card would carry them.
+	local caught = 0
+	for _, r in ipairs({ "pets ruoy hctaw .daeha nacs", "ti no eman ruoy htiw tellub a" }) do
+		if offending(string.upper(string.reverse(r)) .. ".") then caught = caught + 1 end
+	end
+	check(caught == 2, "REQ-IP-01: the reference's round card copy is rejected in UPPER CASE")
 
 	local project = io.open("default.project.json", "r")
 	local mapped, dirty, unreadable = 0, {}, {}

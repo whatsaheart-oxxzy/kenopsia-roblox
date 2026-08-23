@@ -211,7 +211,8 @@ today (`KenopsiaClient.client.luau:1865-2095`):
 
 | kind | sender | payload |
 |---|---|---|
-| `selection`, `info`, `status`, `round`, `score`, `hide` | MachineFlow | see §2. Unknown kinds render NOTHING (Gate 1 defect list). |
+| `selection`, `info`, `status`, `round`, `score`, `hide` | MachineFlow | see §2. Unknown kinds render NOTHING (Gate 1 defect list). P1.4: the standings `status` packet and every `score` packet carry `line` (one `MachineVoice` comment, ≤ 48 chars), drawn under the rows. |
+| `rolecard` | MachineFlow | P1.4: `{text, seconds=1.6}` — one sentence full screen (`MachineVoice.roleCard`, e.g. `TAMEM IS THE HUNTER.`) between the round card and an asymmetric leg. Client hard-cuts it in, hides after `seconds`; the server's `hide` follows anyway. |
 | `announce` | trials | `{text, style?}`; `text=""` = opaque black cover; `style="death"` = death card (`:481`) |
 | `count` / `go` | trials | `{n}` / `{}` |
 | `role` | trials | `{role="runner"|"sniper"|"spectate"|"none", roundToken, frozen?, camDir?, camStyle="top"|"chase", pos?, look?, watch?}`. Client stores `trialRoundToken = p.roundToken` (`:1891`) — the round token reaches the client ONLY through a role packet, so **every participant must receive a role packet carrying `roundToken` before input opens**. `role="none"` = release: clears token, cameras, movement locks, CountText (`:1892-1902`). Send it to every member in cleanup. |

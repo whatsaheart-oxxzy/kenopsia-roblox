@@ -361,7 +361,9 @@ local function runRoundInner(room, roundIndex, guard)
 	end
 	guard.cleanup = cleanup
 
-	announce(room, { kind = "announce", text = "SCAN AHEAD. WATCH YOUR STEP." })
+	-- 23.08.2026 (P1.4, REQ-IP-01): the old sentence was the reference game's
+	-- round card verbatim; this is the DEAD ZONE tagline from MachineFlow.
+	announce(room, { kind = "announce", text = "MARK THE GROUND. OUTRUN THE PRESS." })
 	task.wait(2.8)
 	-- C1.b: an abort during the announcement must not start a round.
 	if not active() then return scores end
