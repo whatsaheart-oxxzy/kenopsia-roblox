@@ -44,6 +44,8 @@ local Rules = Shared:WaitForChild("Rules")
 local Pacing = require(Rules:WaitForChild("Pacing"))
 local Playlist = require(Rules:WaitForChild("Playlist"))
 local Scoring = require(Rules:WaitForChild("Scoring"))
+-- P1.4: the comment pool and the role card sentence. Pure; tests/voice.lua.
+local MachineVoice = require(Shared:WaitForChild("Config"):WaitForChild("MachineVoice"))
 
 local MachineFlow = {}
 
@@ -60,7 +62,9 @@ local TRIALS = {
 		displayName = "BIRD HUNTING",
 		icon = "Crosshair",
 		subtitle = "THE SIGHTLINE NEVER BLINKS._",
-		tagline = "A BULLET WITH YOUR NAME ON IT.",
+		-- 23.08.2026 (P1.4, REQ-IP-01): the previous tagline was the reference
+		-- game's round card verbatim; tests/rules.lua now rejects it.
+		tagline = "CROSS THE FIELD. THE TOWER IS LOADED.",
 		ready = true,
 		showInterRoundScore = false,
 		module = BirdHunting,
@@ -70,7 +74,9 @@ local TRIALS = {
 		displayName = "DEAD ZONE",
 		icon = "Cube",
 		subtitle = "READ THE FLOOR. KEEP MOVING._",
-		tagline = "SCAN AHEAD. WATCH YOUR STEP.",
+		-- 23.08.2026 (P1.4, REQ-IP-01): same as above - the old line was the
+		-- reference's. Minefield's leg announce carries the same new text.
+		tagline = "MARK THE GROUND. OUTRUN THE PRESS.",
 		ready = true,
 		showInterRoundScore = false,
 		module = Minefield,
@@ -434,16 +440,205 @@ local function standingsLines(ctx, totals, roundIndex, rounds, prevRank)
 	end
 	local ranking = Scoring.rankRound(entries, function(a, b) return a.raw > b.raw end)
 	local lines = { ("STANDINGS - ROUND %d/%d"):format(roundIndex, rounds) }
+	-- P1.4: who moved, for the Machine's swing line. Risers first.
+	local moves = {}
 	for _, r in ipairs(ranking) do
 		local uid = r.entry.userId
 		local plr = Players:GetPlayerByUserId(uid)
 		local name = string.upper(plr and plr.DisplayName or tostring(uid)):sub(1, 14)
 		local was = prevRank[uid]
 		local mark = (was == nil or was == r.place) and "" or (r.place < was and "  UP" or "  DOWN")
+		if was ~= nil and was ~= r.place then
+			local move = { userId = uid, dir = r.place < was and "up" or "down" }
+			if move.dir == "up" then table.insert(moves, 1, move) else table.insert(moves, move) end
+		end
 		prevRank[uid] = r.place
 		table.insert(lines, ("%d. %s%s"):format(r.place, name, mark))
 	end
-	return lines
+	return lines, ranking, moves
+end
+
+-- MACHINE VOICE (P1.4) --------------------------------------------------------
+-- One comment line rides on every standings and score packet. The category is
+-- chosen from the data, highest first:
+--   firstdeath  the session's first body (once per session)
+--   sweep       everyone but one went down this round, or one subject was
+--               alone on top in every round of the trial
+--   streak      the same subject alone on top twice or more in a row
+--   swing       a rank changed hands
+--   outcome     anything else
+-- The draw comes from the session's seeded Random, so a replayed seed prints
+-- the same lines. Nothing here yields and nothing here can throw past pcall.
+
+-- The uid alone at place 1, or nil on a tie / empty board.
+local function soleTop(ranking)
+	if #ranking == 0 then return nil end
+	if #ranking >= 2 and ranking[2].place == 1 then return nil end
+	return ranking[1].entry.userId
+end
+
+local function displayNameOf(uid)
+	local plr = Players:GetPlayerByUserId(uid)
+	return plr and plr.DisplayName or tostring(uid)
+end
+
+local function voiceLine(voice, category, uid, dir)
+	local ok, line = pcall(MachineVoice.pick, category, voice.rng,
+		{ name = uid and displayNameOf(uid) or nil, dir = dir })
+	if ok then return line end
+	warn("[MachineFlow] MachineVoice.pick failed: " .. tostring(line))
+	return nil
+end
+
+-- Deaths of one round, seen from outside the trial. Dead Zone, Canteen and
+-- TrialKit kill through Humanoid.Health = 0, so Humanoid.Died is the generic
+-- signal; Bird Hunting drops a runner without touching Health and bumps the
+-- KenopsiaProcessed attribute on the player instead. Both land in `dead`.
+local function watchDeaths(ctx)
+	local conns = {}
+	local dead = {}   -- set of uids
+	local order = {}  -- the same uids in the order they went down
+	local stopped = false
+	local function mark(uid)
+		if stopped or dead[uid] then return end
+		dead[uid] = true
+		table.insert(order, uid)
+	end
+	local function hookCharacter(plr, char)
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not hum then
+			hum = char:WaitForChild("Humanoid", 5)
+		end
+		if stopped then return end
+		if hum and hum.Parent then
+			table.insert(conns, hum.Died:Connect(function() mark(plr.UserId) end))
+		end
+	end
+	for _, uid in ctx.participantUserIds do
+		local plr = Players:GetPlayerByUserId(uid)
+		if plr then
+			if plr.Character then task.spawn(hookCharacter, plr, plr.Character) end
+			table.insert(conns, plr.CharacterAdded:Connect(function(char)
+				task.spawn(hookCharacter, plr, char)
+			end))
+			table.insert(conns, plr:GetAttributeChangedSignal("KenopsiaProcessed"):Connect(function()
+				mark(uid)
+			end))
+		end
+	end
+	return {
+		dead = dead,
+		order = order,
+		stop = function()
+			stopped = true
+			for _, c in conns do c:Disconnect() end
+			table.clear(conns)
+		end,
+	}
+end
+
+-- Counts a round's deaths against the participants. Returns the number of
+-- dead, the first uid to go down and, when exactly one participant is left,
+-- that survivor. `deaths` is a watchDeaths() result (or nil).
+local function tallyDeaths(ctx, deaths)
+	local dead = deaths and deaths.dead or {}
+	local count, firstDead, survivor = 0, nil, nil
+	for _, uid in ctx.participantUserIds do
+		if dead[uid] then
+			count += 1
+		else
+			survivor = uid
+		end
+	end
+	if count > 0 then
+		firstDead = deaths.order and deaths.order[1]
+		if not firstDead then
+			for _, uid in ctx.participantUserIds do
+				if dead[uid] then
+					firstDead = uid
+					break
+				end
+			end
+		end
+	end
+	local n = #ctx.participantUserIds
+	if not (n >= 2 and count == n - 1) then survivor = nil end
+	return count, firstDead, survivor
+end
+
+-- The line for a standings card (after a round that is not the trial's last).
+local function standingsVoice(voice, trialVoice, ranking, moves, deaths)
+	local ctx = voice.ctx
+	local deadCount, firstDead, survivor = tallyDeaths(ctx, deaths)
+	local top = soleTop(ranking)
+	if top and top == trialVoice.topUid then
+		trialVoice.topRun += 1
+	else
+		trialVoice.topUid = top
+		trialVoice.topRun = top and 1 or 0
+	end
+	if deadCount > 0 and not voice.firstDeathSpoken then
+		voice.firstDeathSpoken = true
+		return voiceLine(voice, "firstdeath", firstDead)
+	end
+	if survivor then return voiceLine(voice, "sweep", survivor) end
+	if trialVoice.topRun >= 2 then return voiceLine(voice, "streak", top) end
+	if #moves > 0 then return voiceLine(voice, "swing", moves[1].userId, moves[1].dir) end
+	return voiceLine(voice, "outcome", top)
+end
+
+-- The line for a trial's score board. `roundTops` is the sole-top uid (or
+-- false) of every round; `lastDeaths` the last round's watchDeaths() result;
+-- `board` the session board in place order.
+local function scoreVoice(voice, trialVoice, ranking, board, trialIndex)
+	local ctx = voice.ctx
+	local deadCount, firstDead, survivor = tallyDeaths(ctx, trialVoice.lastDeaths)
+	local winner = soleTop(ranking)
+	-- one subject alone on top in every round of a multi-round trial
+	local sweeper = nil
+	if #trialVoice.roundTops >= 2 then
+		sweeper = trialVoice.roundTops[1] or nil
+		for _, uid in ipairs(trialVoice.roundTops) do
+			if uid ~= sweeper then sweeper = nil end
+		end
+	end
+	-- session-level movement against the previous trial's board
+	local move = nil
+	if trialIndex >= 2 then
+		for _, e in ipairs(board) do
+			local was = voice.prevSessionPlace[e.userId]
+			if was and was ~= e.place then
+				local m = { userId = e.userId, dir = e.place < was and "up" or "down" }
+				if not move or (m.dir == "up" and move.dir ~= "up") then move = m end
+			end
+		end
+	end
+	for _, e in ipairs(board) do voice.prevSessionPlace[e.userId] = e.place end
+	local streak = winner ~= nil and winner == voice.lastWinner
+	voice.lastWinner = winner
+	if winner then voice.trialWins[winner] = (voice.trialWins[winner] or 0) + 1 end
+
+	if deadCount > 0 and not voice.firstDeathSpoken then
+		voice.firstDeathSpoken = true
+		return voiceLine(voice, "firstdeath", firstDead)
+	end
+	if sweeper then return voiceLine(voice, "sweep", sweeper) end
+	if survivor then return voiceLine(voice, "sweep", survivor) end
+	if streak then return voiceLine(voice, "streak", winner) end
+	if move then return voiceLine(voice, "swing", move.userId, move.dir) end
+	return voiceLine(voice, "outcome", winner)
+end
+
+-- The line for the final verdict board.
+local function finalVoice(voice, final, trialCount)
+	local winner = nil
+	if #final >= 1 and not (#final >= 2 and final[2].score == final[1].score) then
+		winner = final[1].userId
+	end
+	if winner and trialCount >= 2 and (voice.trialWins[winner] or 0) >= trialCount then
+		return voiceLine(voice, "sweep", winner)
+	end
+	return voiceLine(voice, "outcome", winner)
 end
 
 local function playableOrder(seed)
@@ -555,6 +750,8 @@ local function runMatch(room)
 			if plr then
 				plr:SetAttribute("KenopsiaSessionScore", 0)
 				plr:SetAttribute("KenopsiaSessionWins", 0)
+				-- P1.4: Bird Hunting's death tally (see watchDeaths).
+				plr:SetAttribute("KenopsiaProcessed", 0)
 			end
 		end
 
@@ -562,6 +759,17 @@ local function runMatch(room)
 		for _, uid in ctx.participantUserIds do
 			sessionTotals[uid] = 0
 		end
+
+		-- P1.4 Machine voice, session-scoped. Drawn from the session seed, so
+		-- the same seed prints the same lines; firstdeath is spoken once.
+		local voice = {
+			ctx = ctx,
+			rng = Random.new(seed),
+			firstDeathSpoken = false,
+			lastWinner = nil,
+			trialWins = {},
+			prevSessionPlace = {},
+		}
 
 		for trialIndex, trial in ipairs(order) do
 			if ctx.cancelled() then return end
@@ -625,6 +833,9 @@ local function runMatch(room)
 			local trialTotals = {}
 			local prevRank = {}
 			local timedOut = false
+			-- P1.4: per-trial voice memory (streak run, sole top per round,
+			-- the last round's deaths).
+			local trialVoice = { topUid = nil, topRun = 0, roundTops = {}, lastDeaths = nil }
 
 			for roundIndex = 1, rounds do
 				if ctx.cancelled() then return end
@@ -638,11 +849,27 @@ local function runMatch(room)
 				tell(ctx, { kind = "round", n = roundIndex, total = rounds,
 					verbs = isFinal and ("FINAL AUDIT. " .. trial.tagline) or trial.tagline })
 				if not hold(ctx, Pacing.Timing.RoundCard) then return end
+
+				-- P1.4 role card. Bird Hunting is the asymmetric trial: the
+				-- Machine names the hunter on a full-screen card for
+				-- Pacing.Timing.RoleCard (1.6 s) between the round card and the
+				-- leg. The seat is chosen here, once, and the leg below uses it;
+				-- BirdHunting skips its own copy of the sentence when the hunter
+				-- is forced, so the name is printed exactly once.
+				local hunter = nil
+				if isBird and #room.members >= 2 then
+					hunter = room.members[(roundIndex - 1) % #room.members + 1]
+					tell(ctx, { kind = "rolecard",
+						text = MachineVoice.roleCard(trial.id, "hunter", hunter.displayName),
+						seconds = Pacing.Timing.RoleCard or 1.6 })
+					if not hold(ctx, Pacing.Timing.RoleCard or 1.6) then return end
+				end
 				tell(ctx, { kind = "hide" })
 				setActiveTrial(ctx, trial.id)
+				local deaths = watchDeaths(ctx)
 
 				local scores
-				if isBird and #room.members >= 2 then
+				if hunter then
 					-- One LEG per iteration: each iteration is a full
 					-- hunter-versus-runners exchange and the hunter seat
 					-- advances. Pacing already sized `rounds` as the leg count
@@ -651,21 +878,24 @@ local function runMatch(room)
 					RoomServiceRef.setProgress(ctx.sessionId, {
 						legIndex = roundIndex, legCount = rounds,
 					})
-					local hunter = room.members[(roundIndex - 1) % #room.members + 1]
 					local legOk, legScores = runRoundGuarded(trial,
 						room, roundIndex, hunter.userId, roundIndex, rounds)
 					if not legOk then
+						deaths.stop()
 						if legScores == "timeout" then timedOut = true else error(legScores, 0) end
 					end
 					scores = type(legScores) == "table" and legScores or {}
 				else
 					local rOk, rScores = runRoundGuarded(trial, room, roundIndex)
 					if not rOk then
+						deaths.stop()
 						if rScores == "timeout" then timedOut = true else error(rScores, 0) end
 					end
 					scores = type(rScores) == "table" and rScores or {}
 				end
 
+				deaths.stop()
+				trialVoice.lastDeaths = deaths
 				setActiveTrial(ctx, "")
 				roundCtx.cleanup:run()
 				for uid, value in scores do
@@ -674,7 +904,11 @@ local function runMatch(room)
 				if timedOut then break end
 				if roundIndex < rounds then
 					-- P1.2: who is winning, after every round - not once per trial.
-					tell(ctx, { kind = "status", lines = standingsLines(ctx, trialTotals, roundIndex, rounds, prevRank) })
+					-- P1.4: with one Machine line under the rows.
+					local lines, ranking, moves = standingsLines(ctx, trialTotals, roundIndex, rounds, prevRank)
+					table.insert(trialVoice.roundTops, soleTop(ranking) or false)
+					tell(ctx, { kind = "status", lines = lines,
+						line = standingsVoice(voice, trialVoice, ranking, moves, deaths) })
 					if not hold(ctx, Pacing.Timing.Standings or 2.5) then return end
 				end
 				if not hold(ctx, Pacing.Timing.RoundSettle) then return end
@@ -711,8 +945,11 @@ local function runMatch(room)
 			end
 
 			RoomServiceRef.setStage(ctx.sessionId, "Score")
+			-- P1.4: the trial's closing standings count as its last round's top.
+			table.insert(trialVoice.roundTops, soleTop(ranking) or false)
 			tell(ctx, { kind = "score", board = board, trialId = trial.id,
-				index = trialIndex, total = #order, final = false })
+				index = trialIndex, total = #order, final = false,
+				line = scoreVoice(voice, trialVoice, ranking, board, trialIndex) })
 			if not hold(ctx, Pacing.Timing.InterimScore) then return end
 
 			-- NO hide() here. Every show* on the client begins with hideAll(),
@@ -755,7 +992,8 @@ local function runMatch(room)
 			})
 		end
 		table.sort(final, function(a, b) return a.score > b.score end)
-		tell(ctx, { kind = "score", board = final, final = true })
+		tell(ctx, { kind = "score", board = final, final = true,
+			line = finalVoice(voice, final, #order) })
 
 		-- P1.7 rematch: the verdict's subjects come back pre-readied (preFlow
 		-- applies it after the next lobby reveal, with a grace to walk away).

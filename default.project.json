@@ -19,7 +19,8 @@
           "Config": {
             "$className": "Folder",
             "GameConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau" },
-            "AnimationIds": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/AnimationIds.luau" }
+            "AnimationIds": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/AnimationIds.luau" },
+            "MachineVoice": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/MachineVoice.luau" }
           },
           "Rules": {
             "$className": "Folder",
