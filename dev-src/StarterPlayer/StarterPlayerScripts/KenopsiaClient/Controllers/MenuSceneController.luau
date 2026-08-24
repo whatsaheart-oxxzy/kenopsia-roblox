@@ -52,6 +52,9 @@ local state = {
 	-- Original Enabled state per PostEffect, so "stop reducing" restores what was
 	-- authored instead of switching everything on.
 	effectsSaved = {},
+	-- The Lighting fields the menu overwrites, captured on the way in. nil means
+	-- "not applied"; see applyMenuLighting for why it is snapshotted only once.
+	lightSaved = nil,
 	-- Authored Neck.C0, captured once so the head can always be put back.
 	neckBase = nil,
 	lookConn = nil,
@@ -516,25 +519,67 @@ local function showOthers()
 end
 
 -- LIGHTING -------------------------------------------------------------------
--- Menu-only and client-side. No global time-of-day change: ClockTime, the Sky
--- and the existing post-effects are left exactly as authored, so nothing here
--- leaks into a trial.
+-- Menu-only and client-side. The Sky and the authored post-effects are left
+-- alone; everything this DOES touch is snapshotted on the way in and written
+-- back on the way out, so nothing leaks into a trial.
+--
+-- 25.08.2026: it now moves the time of day too. The menu used to run under the
+-- place's noon (Brightness 3, ClockTime 14.5, no fog), which flattened three
+-- problems into one cause: the stage's own lamps -- a warm key on the landing,
+-- an amber one on the subject, a cold one on the session wall -- were invisible
+-- against daylight, the cold UI plates could not register over a lit wall, and
+-- text at the bottom of the screen sat on bright concrete. Dropping the scene
+-- to a cold night hands the lighting back to those three lamps, which is what
+-- they were built for, and gives every overlay something dark to sit on.
+local MENU_LIGHT = {
+	Ambient = Color3.fromRGB(18, 24, 30),
+	OutdoorAmbient = Color3.fromRGB(10, 14, 18),
+	Brightness = 1,
+	ClockTime = 0,
+	FogStart = 25,
+	FogEnd = 150,
+	FogColor = Color3.fromRGB(4, 9, 13),
+}
+local LIGHT_FIELDS = { "Ambient", "OutdoorAmbient", "Brightness", "ClockTime",
+	"FogStart", "FogEnd", "FogColor" }
+
+local function applyMenuLighting()
+	-- Snapshot ONCE. Re-entering while already applied would otherwise record
+	-- the menu's own values as the originals and restore() would then leave the
+	-- place in permanent night.
+	if state.lightSaved then return end
+	local saved = {}
+	for _, f in LIGHT_FIELDS do saved[f] = Lighting[f] end
+	state.lightSaved = saved
+	for _, f in LIGHT_FIELDS do Lighting[f] = MENU_LIGHT[f] end
+end
+
+local function restoreMenuLighting()
+	local saved = state.lightSaved
+	if not saved then return end
+	state.lightSaved = nil
+	for _, f in LIGHT_FIELDS do Lighting[f] = saved[f] end
+end
 
 local function addGrade()
+	applyMenuLighting()
 	if state.grade and state.grade.Parent then return end
 	local existing = Lighting:FindFirstChild(GRADE_NAME)
 	if existing then existing:Destroy() end
 	local grade = Instance.new("ColorCorrectionEffect")
 	grade.Name = GRADE_NAME
-	grade.Saturation = -0.28
-	grade.Contrast = 0.08
-	grade.Brightness = -0.02
-	grade.TintColor = Color3.fromRGB(238, 242, 245)
+	-- Pushed further than the old values now that it grades a night rather than
+	-- a noon, and tinted onto the menu's own cold set.
+	grade.Saturation = -0.45
+	grade.Contrast = 0.16
+	grade.Brightness = -0.03
+	grade.TintColor = Color3.fromRGB(196, 224, 240)
 	grade.Parent = Lighting
 	state.grade = grade
 end
 
 local function removeGrade()
+	restoreMenuLighting()
 	if state.grade then
 		state.grade:Destroy()
 		state.grade = nil

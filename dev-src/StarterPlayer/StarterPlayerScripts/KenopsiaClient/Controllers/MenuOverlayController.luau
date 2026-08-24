@@ -161,6 +161,39 @@ local function buildBackdrop(gui)
 	back.ZIndex = 0
 	back.Parent = gui
 
+	-- SCRIM. The menu's whole text column lives on the left, and a UI must not
+	-- depend on what happens to be behind it -- the scene changes, the subject
+	-- moves, a lamp flickers. A dark wedge fading out by mid-screen guarantees
+	-- the title, the entries and the content notice always have ground to sit
+	-- on, and it doubles as the composition's left weight.
+	local scrim = Instance.new("Frame")
+	scrim.Name = "Scrim"
+	scrim.BackgroundColor3 = Theme.Cold.Ground
+	scrim.BorderSizePixel = 0
+	scrim.Size = UDim2.fromScale(1, 1)
+	scrim.ZIndex = 0
+	scrim.Parent = back
+	local grad = Instance.new("UIGradient")
+	grad.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.12),
+		NumberSequenceKeypoint.new(0.30, 0.45),
+		NumberSequenceKeypoint.new(0.62, 1),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	grad.Parent = scrim
+
+	-- ... and a shorter one along the bottom edge, for the notice and the cells.
+	local floorScrim = scrim:Clone()
+	floorScrim.Name = "FloorScrim"
+	local fg = floorScrim:FindFirstChildOfClass("UIGradient")
+	fg.Rotation = 90
+	fg.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.70, 1),
+		NumberSequenceKeypoint.new(1, 0.35),
+	})
+	floorScrim.Parent = back
+
 	local function tile(name, image, px, alpha, colour)
 		local i = Instance.new("ImageLabel")
 		i.Name = name
@@ -177,8 +210,8 @@ local function buildBackdrop(gui)
 		i.Parent = back
 		return i
 	end
-	tile("Rain", PLATE.Rain, 256, 0.9, Theme.Cold.Focus)
-	tile("Dots", PLATE.Dots, 128, 0.86, Theme.Cold.Focus)
+	tile("Rain", PLATE.Rain, 256, 0.86, Theme.Cold.Focus)
+	tile("Dots", PLATE.Dots, 128, 0.8, Theme.Cold.Focus)
 
 	local shards = Instance.new("ImageLabel")
 	shards.Name = "Shards"
@@ -186,7 +219,7 @@ local function buildBackdrop(gui)
 	shards.BorderSizePixel = 0
 	shards.Image = PLATE.Shards
 	shards.ImageColor3 = Theme.Cold.Bright
-	shards.ImageTransparency = 0.82
+	shards.ImageTransparency = 0.74
 	shards.ResampleMode = Enum.ResamplerMode.Pixelated
 	shards.Size = UDim2.fromScale(0.68, 0.95)
 	shards.Position = UDim2.fromScale(0.36, 0.05)
@@ -335,7 +368,7 @@ function MenuOverlayController.new(deps)
 
 	-- The veil sits UNDER Root (which carries the safe-area padding) so the
 	-- plates run edge to edge while the text stays inside the notch.
-	buildBackdrop(gui)
+	self.backdrop = buildBackdrop(gui)
 	root.ZIndex = 1
 
 	self:buildLanding()
@@ -501,7 +534,8 @@ function MenuOverlayController:buildLanding()
 	notice.Font = Theme.MonoFont
 	notice.Text = CONTENT_NOTICE
 	notice.TextSize = 16
-	notice.TextColor3 = Theme.Cold.Dim
+	notice.TextColor3 = Theme.Cold.Text
+	notice.TextTransparency = 0.35
 	notice.TextXAlignment = Enum.TextXAlignment.Left
 	notice.AnchorPoint = Vector2.new(0, 1)
 	notice.Position = UDim2.new(0, 0, 1, -8)
@@ -772,6 +806,13 @@ function MenuOverlayController:setPanelVisible(name, visible)
 	local p = self.panels[name]
 	if not p then return end
 	p.Visible = visible
+	-- The veil belongs to the landing. It is a full-screen layer, so leaving it
+	-- up while the camera is at the session wall darkened the left third of a
+	-- screen it was never composed for and dragged the shard sheet across the
+	-- wall's own text.
+	if name == "Landing" and self.backdrop then
+		self.backdrop.Visible = visible
+	end
 	-- Selectable is cleared as well as Visible: an invisible-but-selectable
 	-- button still takes gamepad focus, which is how a hidden screen ends up
 	-- "clickable" for controller users.
