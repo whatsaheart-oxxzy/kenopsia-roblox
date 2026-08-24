@@ -20,3 +20,16 @@ ForcePlatform cleared after the test. All 10 suites green.
 
 Open (needs the user's phone): aim assist feel (strength tuning lives in the two per-second numbers),
 MicroProfiler, real touch drag vs. the assist.
+
+## Round 2 (user's iPhone-14 emulator screenshot)
+
+- Canteen PLATE/MOUTH: 110 px mid-screen slabs → 84 px pinned into the bottom CORNERS (left thumb
+  PLATE, right thumb MOUTH).
+- All trial touch buttons smaller and SPREAD (place instances): FIRE/PUNCH 88 px bottom-right,
+  SCOPE/CROUCH/SCAN/EAT 68 px moved LEFT of the primary instead of stacked, ZOOM 60 px above.
+- DANCE button is LOBBY-ONLY now (hides the moment a trial starts).
+- Fork: one stab per second (server MIN_PLATE_INTERVAL 0.16 → 1.0, client cooldown matched) — the
+  stab clip gets room to read.
+- Aim assist "bisschen staerker": ease 7/4.5 → 9.5/6.5 per second, scoped cone 5° → 6°.
+
+Next up per the user: console pass, then iPad.

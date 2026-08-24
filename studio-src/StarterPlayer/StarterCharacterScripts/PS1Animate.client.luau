@@ -225,6 +225,13 @@ do
 			danceOn = not danceOn
 			update()
 		end)
+		-- 24.08.2026 (user, phone test): the emote button has no business on a
+		-- trial screen -- lobby only.
+		local function applyDanceVisible()
+			b.Visible = (localPlayer:GetAttribute("KenopsiaActiveTrial") or "") == ""
+		end
+		localPlayer:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(applyDanceVisible)
+		applyDanceVisible()
 	end
 end
 

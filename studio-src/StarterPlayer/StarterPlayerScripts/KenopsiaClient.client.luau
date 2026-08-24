@@ -22,7 +22,7 @@ local K = {
 	FIRE_COOLDOWN = 2.2,
 	MARK_LIFETIME = 1.0,
 	MARK_POOL_MAX = 64,
-	CP_PLATE_COOLDOWN = 0.16,
+	CP_PLATE_COOLDOWN = 1.0, -- 24.08.2026 (user): one stab per second
 	CP_MOUTH_COOLDOWN = 0.35,
 	CP_FORK_CAPACITY = 4,
 	CP_IDLE = Color3.fromRGB(150, 158, 152),
@@ -1618,14 +1618,15 @@ local function buildCanteenTouch()
 	-- player has no controls at all.
 	pad.ZIndex = 68
 
-	local function button(name, text, xScale, colour)
+	local function button(name, text, corner, colour)
 		local b = Instance.new("TextButton")
 		b.Name = name
-		b.AnchorPoint = Vector2.new(0.5, 1)
-		b.Position = UDim2.new(xScale, 0, 1, -120)
-		-- 110 px. The plan floor is 64, and these get pressed repeatedly
-		-- against a countdown, so they are given room.
-		b.Size = UDim2.new(0, 110, 0, 110)
+		-- 24.08.2026 (user, phone test): 110 px mid-screen read as two huge
+		-- slabs on a 390-high viewport. 84 px now, pinned INTO the bottom
+		-- corners where the thumbs already rest -- max spread, less cover.
+		b.AnchorPoint = Vector2.new(corner, 1)
+		b.Position = UDim2.new(corner, corner == 0 and 24 or -24, 1, -24)
+		b.Size = UDim2.new(0, 84, 0, 84)
 		b.BackgroundColor3 = Color3.fromRGB(12, 16, 13)
 		b.BackgroundTransparency = 0.2
 		b.BorderSizePixel = 0
@@ -1641,10 +1642,10 @@ local function buildCanteenTouch()
 		return b
 	end
 
-	button("Btn_PLATE", "PLATE", 0.18, K.CP_IDLE).Activated:Connect(function()
+	button("Btn_PLATE", "PLATE", 0, K.CP_IDLE).Activated:Connect(function()
 		cpSend("plate")
 	end)
-	button("Btn_MOUTH", "MOUTH", 0.82, K.CP_SAFE).Activated:Connect(function()
+	button("Btn_MOUTH", "MOUTH", 1, K.CP_SAFE).Activated:Connect(function()
 		cpSend("mouth")
 	end)
 
@@ -1785,14 +1786,15 @@ RunService.RenderStepped:Connect(function(dt)
 						local wantYaw = math.atan2(-lv.X, -lv.Z)
 						local wantPitch = math.asin(math.clamp(lv.Y, -1, 1))
 						local ang = math.sqrt((wantYaw - sniperYaw) ^ 2 + (wantPitch - sniperPitch) ^ 2)
-						if ang < (scoped and math.rad(5) or math.rad(8)) and (bestAng == nil or ang < bestAng) then
+						if ang < (scoped and math.rad(6) or math.rad(8)) and (bestAng == nil or ang < bestAng) then
 							bestYaw, bestPitch, bestAng = wantYaw, wantPitch, ang
 						end
 					end
 				end
 			end
 			if bestYaw then
-				local alpha = 1 - math.exp(-dt * (scoped and 7 or 4.5))
+				-- 24.08.2026 (user): "bisschen staerker" -- 7/4.5 -> 9.5/6.5.
+				local alpha = 1 - math.exp(-dt * (scoped and 9.5 or 6.5))
 				sniperYaw = sniperYaw + (bestYaw - sniperYaw) * alpha
 				sniperPitch = sniperPitch + (bestPitch - sniperPitch) * alpha
 			end

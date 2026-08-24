@@ -65,7 +65,7 @@ local FORK_CAPACITY = 4
 -- Server-side minimum intervals. These are the rate limit, not a rhythm: they
 -- exist so a macro cannot empty a plate in one frame, and they are checked on
 -- the SERVER clock so a client cannot argue about them.
-local MIN_PLATE_INTERVAL = 0.16
+local MIN_PLATE_INTERVAL = 1.0 -- 24.08.2026 (user): one pea per second, the stab reads
 local MIN_MOUTH_INTERVAL = 0.50
 
 -- How long a swallow stays detectable. An eating window that overlaps the
