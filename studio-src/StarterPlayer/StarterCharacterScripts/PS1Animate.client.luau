@@ -61,9 +61,9 @@ local function play(name, speed)
 	if not t then return end
 	if current ~= t then
 		local prev, prevName = current, currentName
-		if current then current:Stop(0.15) end
+		if current then current:Stop(0.25) end
 		t.Looped = name ~= "Death" and name ~= "DeathField" -- 23.08.2026: both deaths one-shot
-		t:Play(0.15)
+		t:Play(0.25) -- 24.08.2026 (user): smoother gait blends
 		-- 24.08.2026: gait blends land on the SAME FOOT. Walk and Run are both
 		-- authored left-contact-first loops, so carrying the normalised cycle
 		-- phase across the crossfade keeps the feet frame-matched instead of
@@ -81,6 +81,7 @@ end
 local dead = false
 local speedNow = 0
 local danceOn = false
+local localPlayer = game:GetService("Players").LocalPlayer
 local function update()
 	if dead then return end
 	local scale = char:GetScale()
@@ -98,7 +99,9 @@ local function update()
 		else
 			play("Crouch", moving and 1 or 0)
 		end
-	elseif not moving and danceOn and track("Dance") then
+	elseif not moving and danceOn and track("Dance")
+		and localPlayer:GetAttribute("KenopsiaActiveTrial") ~= "canteen" then
+		-- 24.08.2026 (user): no dancing at the dinner table.
 		play("Dance", 1)
 	elseif not moving and char:GetAttribute("XBotRifle") == true and track("RifleIdle") then
 		play("RifleIdle", 1)

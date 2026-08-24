@@ -49,9 +49,10 @@ AnimationIds.Player = {          -- rig: PS1Player (20 bones), loops in place, 3
 	-- (Sneak Walk -> Sneak replaces the crouch gait, Dancing -> Dance emote,
 	-- Rifle Aiming Idle -> RifleIdle for the hunter). 0 until the user
 	-- publishes them under the group; Studio plays the saved sequences.
-	Sneak       = 0,
-	Dance       = 0,
-	RifleIdle   = 0,
+	-- Published under the group 24.08.2026 (evening).
+	Sneak       = 85068622770549,
+	Dance       = 104376411319913,
+	RifleIdle   = 77932828838759,
 }
 -- Clip start offsets in seconds: the Sweep Fall source opens with ~0.6 s of
 -- "hands to the head" before the body goes — the field death skips it.

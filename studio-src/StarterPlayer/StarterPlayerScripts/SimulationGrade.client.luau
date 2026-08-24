@@ -49,6 +49,7 @@ local PRESETS = {
 		tint = Color3.fromRGB(205, 218, 255),
 		saturation = -0.3,
 		contrast = 0.15,
+		skyless = true, -- 24.08.2026 (user): the SAME bright pixel sky everywhere
 		lamps = "minefield",
 	},
 	-- the canteen: sodium tubes, grease in the air, nothing beyond the walls
@@ -60,6 +61,7 @@ local PRESETS = {
 		tint = Color3.fromRGB(255, 228, 192),
 		saturation = -0.45,
 		contrast = 0.18,
+		skyless = true,
 	},
 	-- the range: overcast dusk, thick ground haze; the scope must stay honest,
 	-- so no position quantisation here

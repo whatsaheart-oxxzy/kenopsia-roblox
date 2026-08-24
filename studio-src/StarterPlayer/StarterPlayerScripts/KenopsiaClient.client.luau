@@ -651,11 +651,12 @@ RunService.RenderStepped:Connect(function(dt)
 		if root then
 			camera.CameraType = Enum.CameraType.Scriptable
 			if runnerCamStyle == "top" then
-				-- 23.08.2026 (user call): closer and leaning back -- 16 up, 14 behind,
-				-- looking 45 degrees down at a point two studs ahead of the runner.
-				local eye = root.Position + Vector3.new(0, 16, -14 * runnerCamDir)
+				-- 24.08.2026 (user call): 35 degrees down and LOWER -- the view
+				-- grazes the field so the grass and the buildings read, not the
+				-- floor plan. atan(7/10) = 35.0 degrees.
+				local eye = root.Position + Vector3.new(0, 11, -13 * runnerCamDir)
 				smoothCamPos = smoothCamPos and smoothCamPos:Lerp(eye, math.min(dt * 6, 1)) or eye
-				camera.CFrame = CFrame.lookAt(smoothCamPos, smoothCamPos + Vector3.new(0, -16, 16 * runnerCamDir))
+				camera.CFrame = CFrame.lookAt(smoothCamPos, smoothCamPos + Vector3.new(0, -7, 10 * runnerCamDir))
 			else
 				camera.CFrame = CFrame.lookAt(
 					root.Position + Vector3.new(0, 20, -17 * runnerCamDir),
@@ -1118,10 +1119,36 @@ local function setScanHeld(on)
 	if not on then return end
 
 	task.spawn(function()
+		-- 24.08.2026 (user): the scan reads like RADAR -- a thin neon beam
+		-- sweeps a full turn around the runner while the key is held, stepped
+		-- on the 12 fps grid; the sonar ring keeps marking the actual range.
+		local beam = Instance.new("Part")
+		beam.Name = "ScanBeam"
+		beam.Size = Vector3.new(0.15, 0.05, 8)
+		beam.Material = Enum.Material.Neon
+		beam.Color = Color3.fromRGB(140, 232, 174)
+		beam.Transparency = 0.35
+		beam.Anchored = true
+		beam.CanCollide = false
+		beam.CanQuery = false
+		beam.CanTouch = false
+		beam.Parent = workspace
+		local a0 = os.clock()
 		while scanHeld and generation == scanHoldGeneration and charScanAllowed() do
 			firePulse()
-			task.wait(0.9)
+			for _ = 1, 11 do
+				local char = player.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				if root then
+					local ang = (os.clock() - a0) * 2 * math.pi / 0.9
+					ang = math.floor(ang * 12) / 12
+					beam.CFrame = CFrame.new(root.Position.X, root.Position.Y - 2.2, root.Position.Z)
+						* CFrame.Angles(0, ang, 0) * CFrame.new(0, 0, -4)
+				end
+				task.wait(0.08)
+			end
 		end
+		beam:Destroy()
 	end)
 end
 
@@ -1151,18 +1178,42 @@ local markPool = {}
 -- Bounded so a pathological round cannot turn the pool into a leak. Past this
 -- the surplus is destroyed rather than kept.
 
+-- 24.08.2026 (user): the sonar mark grew up -- a ground disc plus a floating
+-- neon shard that spins and breathes on the 12 fps grid. One Model per mark,
+-- still pooled; the animator below touches only parked marks (<= 48 live).
 local function acquireMark()
 	local mark = table.remove(markPool)
 	if mark then return mark end
-	mark = Instance.new("Part")
-	mark.Shape = Enum.PartType.Cylinder
-	mark.Size = Vector3.new(0.12, 2.56, 2.56) -- 23.08.2026: x1.6, the marks read too small from the 45-degree cam
-	mark.Material = Enum.Material.Neon
-	mark.Color = Color3.fromRGB(255, 60, 50)
-	mark.Anchored = true
-	mark.CanCollide = false
-	mark.CanQuery = false
-	mark.CanTouch = false
+	mark = Instance.new("Model")
+	mark.Name = "SonarMark"
+	local disc = Instance.new("Part")
+	disc.Name = "Disc"
+	disc.Shape = Enum.PartType.Cylinder
+	disc.Size = Vector3.new(0.12, 2.9, 2.9)
+	disc.Material = Enum.Material.Neon
+	disc.Color = Color3.fromRGB(255, 60, 50)
+	disc.Transparency = 0.55
+	disc.Anchored = true
+	disc.CanCollide = false
+	disc.CanQuery = false
+	disc.CanTouch = false
+	disc.Parent = mark
+	local ring = disc:Clone()
+	ring.Name = "Halo"
+	ring.Size = Vector3.new(0.06, 3.9, 3.9)
+	ring.Transparency = 0.85
+	ring.Parent = mark
+	local shard = Instance.new("Part")
+	shard.Name = "Shard"
+	shard.Size = Vector3.new(0.55, 0.9, 0.55)
+	shard.Material = Enum.Material.Neon
+	shard.Color = Color3.fromRGB(255, 84, 64)
+	shard.Anchored = true
+	shard.CanCollide = false
+	shard.CanQuery = false
+	shard.CanTouch = false
+	shard.Parent = mark
+	mark.PrimaryPart = disc
 	return mark
 end
 
@@ -1180,16 +1231,42 @@ local function showMines(list)
 		local mark = revealMarks[key]
 		if not mark then
 			mark = acquireMark()
-			-- Set on every acquire, not only on creation: a recycled part
+			-- Set on every acquire, not only on creation: a recycled mark
 			-- arrives wherever it was last used.
-			mark.CFrame = CFrame.new(e[1], e[2] + 0.12, e[3]) * CFrame.Angles(0, 0, math.rad(90))
+			mark.Disc.CFrame = CFrame.new(e[1], e[2] + 0.12, e[3]) * CFrame.Angles(0, 0, math.rad(90))
+			mark.Halo.CFrame = mark.Disc.CFrame
+			mark:SetAttribute("BaseY", e[2])
 			mark.Parent = workspace
 			revealMarks[key] = mark
 		end
-		mark.Transparency = e[4] and 0.1 or 0.55
+		local hot = e[4] == true
+		mark:SetAttribute("Hot", hot)
+		mark.Disc.Transparency = hot and 0.1 or 0.55
+		mark.Shard.Color = hot and Color3.fromRGB(255, 140, 60) or Color3.fromRGB(255, 84, 64)
 		mark:SetAttribute("DieAt", os.clock() + K.MARK_LIFETIME)
 	end
 end
+-- the shard animator: spin + breathe, whole-pixel steps, 12 fps, marks only
+task.spawn(function()
+	while true do
+		task.wait(Feel.stepSeconds and Feel.stepSeconds() or 1 / 12)
+		local t = os.clock()
+		for _, mark in pairs(revealMarks) do
+			local disc = mark:FindFirstChild("Disc")
+			local shard = mark:FindFirstChild("Shard")
+			if disc and shard then
+				local hot = mark:GetAttribute("Hot") == true
+				local speed = hot and 6 or 2.5
+				local bob = 1.15 + 0.18 * math.sin(t * (hot and 9 or 4))
+				local pos = disc.Position
+				shard.CFrame = CFrame.new(pos.X, (mark:GetAttribute("BaseY") or pos.Y) + bob, pos.Z)
+					* CFrame.Angles(math.rad(45), t * speed % (2 * math.pi), math.rad(45))
+				local halo = mark:FindFirstChild("Halo")
+				if halo then halo.Transparency = 0.7 + 0.25 * math.sin(t * 3) end
+			end
+		end
+	end
+end)
 task.spawn(function()
 	while true do
 		task.wait(0.4)
@@ -1841,8 +1918,6 @@ local function showSelection(p, token)
 	for i = 1, 3 do
 		local t = selection.Tiles["Tile" .. i]
 		t.Visible = false
-		local oldTag = t:FindFirstChild("SimTag")
-		if oldTag then oldTag.Visible = false end
 		t.Icon:ClearAllChildren()
 		local src = pool and pool:FindFirstChild(p.icons and p.icons[i] or "Crosshair")
 		if src then
@@ -1888,31 +1963,15 @@ local function showSelection(p, token)
 		for i = 1, 3 do
 			tiles[i].Icon.Visible = true
 			setTileLit(tiles[i], i == (p.chosen or 1))
-			-- 24.08.2026: the machine names its pick -- losers dim to ghosts,
-			-- the chosen tile's designation flips to the trial's name.
-			local tag = tiles[i]:FindFirstChild("SimTag")
-			if not tag then
-				tag = Instance.new("TextLabel")
-				tag.Name = "SimTag"
-				tag.AnchorPoint = Vector2.new(0.5, 0)
-				tag.Position = UDim2.new(0.5, 0, 1, 10)
-				tag.Size = UDim2.new(3, 0, 0, 18)
-				tag.BackgroundTransparency = 1
-				tag.Font = Enum.Font.Code
-				tag.TextSize = 15
-				tag.ZIndex = 3
-				tag.Parent = tiles[i]
-			end
-			tag.Visible = true
+			-- 24.08.2026 (user): no caption text on the lock -- the pick speaks
+			-- through light alone: losers dim to ghosts, the winner burns.
+			local oldTag = tiles[i]:FindFirstChild("SimTag")
+			if oldTag then oldTag:Destroy() end
 			if i == (p.chosen or 1) then
-				tag.Text = p.name or ("SIMULATION " .. i)
-				tag.TextColor3 = PHOSPHOR
 				for _, d in ipairs(tiles[i].Icon:GetDescendants()) do
 					if d:IsA("GuiObject") then d.BackgroundTransparency = math.min(d.BackgroundTransparency, 0.1) end
 				end
 			else
-				tag.Text = "SIM 0" .. i .. " - HELD"
-				tag.TextColor3 = DIM
 				for _, d in ipairs(tiles[i].Icon:GetDescendants()) do
 					if d:IsA("GuiObject") and d.BackgroundTransparency < 0.6 then d.BackgroundTransparency = 0.72 end
 				end

@@ -34,7 +34,7 @@ return {
 	-- too small in the Dead Zone).
 	Character = {
 		UsePS1Rig = true,
-		Scale = 0.9,
+		Scale = 0.95,
 	},
 
 	Playlist = {
