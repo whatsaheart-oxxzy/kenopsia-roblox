@@ -143,6 +143,7 @@ end
 -- transparent so they can be tinted, all authored small so they magnify with
 -- hard pixel edges instead of going soft.
 local PLATE = {
+	Background = "rbxassetid://99925228392956",
 	Streak = "rbxassetid://134334042347021",
 	Shards = "rbxassetid://120005853529594",
 	Rain = "rbxassetid://105106540934647",
@@ -160,6 +161,24 @@ local function buildBackdrop(gui)
 	back.Size = UDim2.fromScale(1, 1)
 	back.ZIndex = 0
 	back.Parent = gui
+
+	-- THE BACKGROUND. An opaque plate rather than the live 3D view: with the
+	-- subject gone and walking disabled there was nothing left for the scene to
+	-- do, and a painted plate gives full control of the mood. Crop, not Stretch
+	-- -- the image must never be distorted to fit an aspect it was not drawn
+	-- for; it is authored at 960x540, exactly half of 1080p, so Pixelated
+	-- magnifies it 2x with crisp grain.
+	local plate = Instance.new("ImageLabel")
+	plate.Name = "Plate"
+	plate.BackgroundColor3 = Theme.Cold.Ground
+	plate.BackgroundTransparency = 0
+	plate.BorderSizePixel = 0
+	plate.Image = PLATE.Background
+	plate.ScaleType = Enum.ScaleType.Crop
+	plate.ResampleMode = Enum.ResamplerMode.Pixelated
+	plate.Size = UDim2.fromScale(1, 1)
+	plate.ZIndex = 0
+	plate.Parent = back
 
 	-- SCRIM. The menu's whole text column lives on the left, and a UI must not
 	-- depend on what happens to be behind it -- the scene changes, the subject
@@ -219,7 +238,7 @@ local function buildBackdrop(gui)
 	shards.BorderSizePixel = 0
 	shards.Image = PLATE.Shards
 	shards.ImageColor3 = Theme.Cold.Bright
-	shards.ImageTransparency = 0.74
+	shards.ImageTransparency = 0.88
 	shards.ResampleMode = Enum.ResamplerMode.Pixelated
 	shards.Size = UDim2.fromScale(0.68, 0.95)
 	shards.Position = UDim2.fromScale(0.36, 0.05)
@@ -370,6 +389,10 @@ function MenuOverlayController.new(deps)
 	-- plates run edge to edge while the text stays inside the notch.
 	self.backdrop = buildBackdrop(gui)
 	root.ZIndex = 1
+	-- applySafeArea already ran above, before this existed, and it is what sizes
+	-- the backdrop past the GUI inset -- so run it once more now that there is
+	-- something to size.
+	self:applySafeArea()
 
 	self:buildLanding()
 	self:buildCredits()
@@ -415,6 +438,17 @@ function MenuOverlayController:applySafeArea()
 	pad.PaddingBottom = UDim.new(0, 24)
 	pad.PaddingLeft = UDim.new(0, math.max(28, inset.X))
 	pad.PaddingRight = UDim.new(0, 28)
+
+	-- The backdrop must cover the WHOLE viewport, inset included. This
+	-- ScreenGui keeps IgnoreGuiInset = false so the content respects the top
+	-- bar, which means its 1,1 stops short of the screen edge -- and a strip of
+	-- the 3D scene showed above the background plate (measured 25.08.2026).
+	-- Pull it out past the inset on every side; overdraw on a background costs
+	-- nothing and no arithmetic can leave a seam.
+	if self.backdrop then
+		self.backdrop.Position = UDim2.fromOffset(-inset.X, -inset.Y)
+		self.backdrop.Size = UDim2.new(1, inset.X * 2, 1, inset.Y * 2)
+	end
 end
 
 function MenuOverlayController:buildLanding()
@@ -437,8 +471,12 @@ function MenuOverlayController:buildLanding()
 	local menu = Instance.new("Frame")
 	menu.Name = "Actions"
 	menu.BackgroundTransparency = 1
-	menu.AnchorPoint = Vector2.new(0, 1)
-	menu.Position = UDim2.new(0, 0, 1, -46)
+	-- Anchored to a PROPORTION of the height, not to the bottom edge. Glued to
+	-- the bottom the list drifted further and further from the title as the
+	-- window grew, leaving a hole in the middle of the composition (reported on
+	-- a tall Studio viewport, 25.08.2026).
+	menu.AnchorPoint = Vector2.new(0, 0)
+	menu.Position = UDim2.new(0, 0, 0.46, 0)
 	menu.Size = UDim2.new(0, 340, 0, Theme.Touch.Action * 3 + 24)
 	-- Above StreakLayer (1). Sibling z-behaviour sorts whole SUBTREES by the
 	-- sibling's own ZIndex, so leaving both at the default 1 let the bar paint

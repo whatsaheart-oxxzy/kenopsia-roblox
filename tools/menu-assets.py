@@ -373,6 +373,104 @@ def dots(path):
     return img.size
 
 
+def background(path):
+    """The menu's background PLATE: a cold facility corridor.
+
+    Unlike the other four this one is opaque and in colour -- it replaces the
+    live 3D view behind the landing, so it carries the whole mood on its own.
+    Authored at 960x540 and shown with ScaleType.Crop + Pixelated: exactly 2x
+    at 1080p, which keeps the grain crisp and blocky instead of resampled to
+    mush.
+    """
+    rng = random.Random(SEED + 4)
+    W_, H_ = 960, 540
+    horizon = int(H_ * 0.56)
+    img = Image.new("RGB", (W_, H_), (4, 9, 13))
+    d = ImageDraw.Draw(img)
+
+    # --- back wall: vertical concrete panels with seams -----------------------
+    panel = 38
+    for x in range(-panel, W_ + panel, panel):
+        shade = rng.randint(16, 26)
+        d.rectangle([x, 0, x + panel - 3, horizon], fill=(shade, shade + 7, shade + 12))
+        d.rectangle([x + panel - 3, 0, x + panel, horizon], fill=(6, 11, 15))  # seam
+    # horizontal courses, like the stage's stacked slabs
+    for y in (int(horizon * 0.34), int(horizon * 0.67)):
+        d.rectangle([0, y, W_, y + 3], fill=(8, 14, 19))
+
+    # --- floor: brighter at the wall, falling away toward the viewer ---------
+    for y in range(horizon, H_):
+        t = (y - horizon) / max(1, H_ - horizon)
+        v = int(30 * (1 - t) ** 1.6) + 6
+        d.rectangle([0, y, W_, y], fill=(v, v + 5, v + 8))
+
+    # Perspective. A flat gradient reads as a seam between two rectangles, not
+    # as a room -- the depth has to be drawn. Slab joints fan out from a
+    # vanishing point on the horizon, and the courses across them compress as
+    # they recede, which is what actually sells the distance.
+    vpx, vpy = int(W_ * 0.55), horizon
+    for i in range(-9, 10):
+        fx = vpx + i * int(W_ * 0.135)
+        # extend each joint from the vanishing point out through the bottom edge
+        ex = vpx + (fx - vpx) * 6
+        d.line([(vpx, vpy), (ex, H_ + 40)], fill=(10, 17, 22), width=2)
+    for k in range(1, 9):
+        # geometric spacing: each course is closer to the last as depth grows
+        y = horizon + int((H_ - horizon) * (k / 9.0) ** 2.1)
+        d.rectangle([0, y, W_, y], fill=(11, 19, 24))
+    # contact edge where the wall meets the floor, plus its shadow
+    d.rectangle([0, horizon - 1, W_, horizon], fill=(46, 70, 82))
+    for k in range(10):
+        a = int(14 * (1 - k / 10.0))
+        d.rectangle([0, horizon + 1 + k, W_, horizon + 1 + k], fill=(a, a + 3, a + 5))
+
+    # --- two lamp washes on the wall + a pool on the floor -------------------
+    glow = Image.new("RGB", (W_, H_), (0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    for cx, cy, rx, ry, col in (
+        (int(W_ * 0.66), int(horizon * 0.50), 230, 165, (66, 108, 126)),
+        (int(W_ * 0.28), int(horizon * 0.62), 165, 120, (42, 70, 84)),
+        (int(W_ * 0.62), horizon + 80, 330, 105, (52, 86, 102)),
+    ):
+        gd.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=col)
+    glow = glow.filter(ImageFilter.GaussianBlur(60))
+    img = Image.blend(img, Image.blend(img, glow, 0.55), 1.0)
+
+    # --- diagonal shafts from the upper right --------------------------------
+    shaft = Image.new("L", (W_, H_), 0)
+    sd = ImageDraw.Draw(shaft)
+    ang = math.radians(-26)
+    dx, dy = math.cos(ang), math.sin(ang)
+    for _ in range(18):
+        cx = rng.randrange(int(W_ * 0.2), int(W_ * 1.4))
+        cy = rng.randrange(-120, H_)
+        length = rng.randint(300, 900)
+        width = rng.choice([2, 3, 5, 8, 13])
+        p0 = (cx - dx * length / 2, cy - dy * length / 2)
+        p1 = (cx + dx * length / 2, cy + dy * length / 2)
+        sd.polygon(thick(p0, p1, width), fill=rng.randint(40, 130))
+    shaft = shaft.filter(ImageFilter.GaussianBlur(3))
+    img = Image.composite(Image.new("RGB", (W_, H_), (150, 200, 220)), img,
+                          shaft.point(lambda v: int(v * 0.55)))
+
+    # --- grain, scan banding, vignette ---------------------------------------
+    px = img.load()
+    for y in range(H_):
+        band = -4 if (y % 4 < 2) else 0
+        for x in range(W_):
+            r, g, b = px[x, y]
+            n = rng.randint(-9, 9) + band
+            px[x, y] = (max(0, min(255, r + n)), max(0, min(255, g + n)), max(0, min(255, b + n)))
+    vig = Image.new("L", (W_, H_), 0)
+    vd = ImageDraw.Draw(vig)
+    vd.ellipse([-int(W_ * 0.22), -int(H_ * 0.30), int(W_ * 1.22), int(H_ * 1.30)], fill=255)
+    vig = vig.filter(ImageFilter.GaussianBlur(110))
+    img = Image.composite(img, Image.new("RGB", (W_, H_), (2, 5, 8)), vig)
+
+    img.save(path)
+    return img.size
+
+
 if __name__ == "__main__":
     jobs = [
         ("menu_wordmark_512.png", wordmark),
@@ -380,6 +478,7 @@ if __name__ == "__main__":
         ("menu_shards_512.png", shards),
         ("menu_rain_256.png", rain),
         ("menu_dots_128.png", dots),
+        ("menu_bg_960.png", background),
     ]
     for name, fn in jobs:
         path = os.path.join(OUT, name)

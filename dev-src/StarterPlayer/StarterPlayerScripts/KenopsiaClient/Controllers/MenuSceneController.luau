@@ -55,6 +55,8 @@ local state = {
 	-- The Lighting fields the menu overwrites, captured on the way in. nil means
 	-- "not applied"; see applyMenuLighting for why it is snapshotted only once.
 	lightSaved = nil,
+	-- PlayerModule's control object while the menu holds movement off.
+	controls = nil,
 	-- Authored Neck.C0, captured once so the head can always be put back.
 	neckBase = nil,
 	lookConn = nil,
@@ -481,8 +483,10 @@ local function showCharacter(character)
 	end
 end
 
+-- 25.08.2026: this used to skip the local player so the subject could stand on
+-- the landing. The menu shows a painted background now and the subject is gone
+-- from it, so every character is hidden -- including this client's own.
 local function trackOther(other)
-	if other == player then return end
 	local function bind(character)
 		if not state.active then return end
 		hideCharacter(character)
@@ -501,6 +505,32 @@ local function trackOther(other)
 	table.insert(state.charConns, other.CharacterAdded:Connect(bind))
 end
 
+-- WALKING. MenuPresenceService already pins the character server-side (speed 0,
+-- jump 0, root anchored), but that leaves the control module live: the stick
+-- still appears on a phone, WASD still feeds input, and the humanoid still
+-- fights the anchor every frame. Disabling PlayerModule's controls turns the
+-- whole input path off at the source, on every device at once.
+--
+-- pcall'd throughout: PlayerModule is Roblox's own script, and a place that has
+-- replaced or removed it must not take the menu down with it.
+local function setControls(enabled)
+	if enabled then
+		if state.controls then
+			pcall(function() state.controls:Enable() end)
+			state.controls = nil
+		end
+		return
+	end
+	if state.controls then return end
+	local scripts = player:FindFirstChild("PlayerScripts")
+	local module = scripts and scripts:FindFirstChild("PlayerModule")
+	if not module then return end
+	local ok, controls = pcall(function() return require(module):GetControls() end)
+	if not (ok and controls) then return end
+	state.controls = controls
+	pcall(function() controls:Disable() end)
+end
+
 local function hideOthers()
 	for _, other in Players:GetPlayers() do
 		trackOther(other)
@@ -514,7 +544,7 @@ local function showOthers()
 	end
 	table.clear(state.charConns)
 	for _, other in Players:GetPlayers() do
-		if other ~= player then showCharacter(other.Character) end
+		showCharacter(other.Character)
 	end
 end
 
@@ -597,6 +627,7 @@ local function engage()
 	addGrade()
 	applyEffects()
 	hideOthers()
+	setControls(false)
 	-- The head follows the cursor, driven the same way the retro cursor is:
 	-- InputChanged fires only when the mouse actually moves, so a still mouse
 	-- costs nothing and the section 4 no-permanent-RenderStepped rule holds.
@@ -612,6 +643,7 @@ end
 
 local function release()
 	if not state.active then
+		setControls(true)
 		removeGrade()
 		restoreEffects()
 		return
@@ -622,6 +654,7 @@ local function release()
 	-- teleporting into a trial must not carry a scripted neck with them.
 	restoreLook()
 	showOthers()
+	setControls(true)
 	removeGrade()
 	restoreEffects()
 
