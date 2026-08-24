@@ -483,6 +483,32 @@ player.CharacterAdded:Connect(function()
 	task.wait(0.3)
 	applyMovement()
 end)
+
+-- 24.08.2026 (user): in the Dead Zone the runner ACCELERATES -- walk 7 for the
+-- first step, full sprint 10 after 1 s of continuous movement, reset the
+-- moment they stop, scan or crawl. PS1Animate's RUN_AT sits at 7.5, so the
+-- run cycle takes over mid-ramp and the walk->run blend lands frame-matched.
+do
+	local runT = 0
+	RunService.Heartbeat:Connect(function(dt)
+		if moveState ~= "runner" then runT = 0 return end
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if not hum then return end
+		local moves = char:GetAttribute("XBotMoves") or ""
+		if not string.find(moves, "scan") then return end
+		if char:GetAttribute("XBotCrawl") == true then runT = 0 return end
+		if char:GetAttribute("XBotScanning") == true or hum.MoveDirection.Magnitude < 0.2 then
+			runT = 0
+		else
+			runT = math.min(1, runT + dt)
+		end
+		local target = 7 + 3 * runT
+		if math.abs(hum.WalkSpeed - target) > 0.05 and hum.WalkSpeed > 0.5 then
+			hum.WalkSpeed = target
+		end
+	end)
+end
 task.defer(applyMovement)
 
 -- CAMERAS -------------------------------------------------------------------
@@ -1781,6 +1807,8 @@ local function showSelection(p, token)
 	for i = 1, 3 do
 		local t = selection.Tiles["Tile" .. i]
 		t.Visible = false
+		local oldTag = t:FindFirstChild("SimTag")
+		if oldTag then oldTag.Visible = false end
 		t.Icon:ClearAllChildren()
 		local src = pool and pool:FindFirstChild(p.icons and p.icons[i] or "Crosshair")
 		if src then
@@ -1826,6 +1854,35 @@ local function showSelection(p, token)
 		for i = 1, 3 do
 			tiles[i].Icon.Visible = true
 			setTileLit(tiles[i], i == (p.chosen or 1))
+			-- 24.08.2026: the machine names its pick -- losers dim to ghosts,
+			-- the chosen tile's designation flips to the trial's name.
+			local tag = tiles[i]:FindFirstChild("SimTag")
+			if not tag then
+				tag = Instance.new("TextLabel")
+				tag.Name = "SimTag"
+				tag.AnchorPoint = Vector2.new(0.5, 0)
+				tag.Position = UDim2.new(0.5, 0, 1, 10)
+				tag.Size = UDim2.new(3, 0, 0, 18)
+				tag.BackgroundTransparency = 1
+				tag.Font = Enum.Font.Code
+				tag.TextSize = 15
+				tag.ZIndex = 3
+				tag.Parent = tiles[i]
+			end
+			tag.Visible = true
+			if i == (p.chosen or 1) then
+				tag.Text = p.name or ("SIMULATION " .. i)
+				tag.TextColor3 = PHOSPHOR
+				for _, d in ipairs(tiles[i].Icon:GetDescendants()) do
+					if d:IsA("GuiObject") then d.BackgroundTransparency = math.min(d.BackgroundTransparency, 0.1) end
+				end
+			else
+				tag.Text = "SIM 0" .. i .. " - HELD"
+				tag.TextColor3 = DIM
+				for _, d in ipairs(tiles[i].Icon:GetDescendants()) do
+					if d:IsA("GuiObject") and d.BackgroundTransparency < 0.6 then d.BackgroundTransparency = 0.72 end
+				end
+			end
 		end
 
 		-- lock-in blinks, each state held the flicker minimum

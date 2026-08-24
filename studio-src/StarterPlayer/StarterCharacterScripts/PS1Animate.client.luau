@@ -55,14 +55,25 @@ local function track(name)
 end
 
 local current = nil
+local currentName = nil
 local function play(name, speed)
 	local t = track(name)
 	if not t then return end
 	if current ~= t then
+		local prev, prevName = current, currentName
 		if current then current:Stop(0.15) end
 		t.Looped = name ~= "Death" and name ~= "DeathField" -- 23.08.2026: both deaths one-shot
 		t:Play(0.15)
+		-- 24.08.2026: gait blends land on the SAME FOOT. Walk and Run are both
+		-- authored left-contact-first loops, so carrying the normalised cycle
+		-- phase across the crossfade keeps the feet frame-matched instead of
+		-- restarting the stride mid-step.
+		if prev and prev.Length > 0 and t.Length > 0
+			and ((prevName == "Walk" and name == "Run") or (prevName == "Run" and name == "Walk")) then
+			t.TimePosition = (prev.TimePosition / prev.Length) % 1 * t.Length
+		end
 		current = t
+		currentName = name
 	end
 	if speed then t:AdjustSpeed(speed) end
 end
@@ -136,3 +147,74 @@ animator.AnimationPlayed:Connect(function(t)
 	if not isOurs(t) then t:Stop(0) end
 end)
 update()
+
+-- 24.08.2026: ONE MINE takes the lower half. The rig is a single skinned mesh,
+-- so the legs cannot be detached -- instead, while `XBotLegless` is set, the
+-- whole leg chains are pushed 3.2 studs (x scale) straight down every frame
+-- AFTER the Animator has written its transforms (RenderStepped runs after all
+-- BindToRenderStep work, see docs/QA 22.08.); the arena floor swallows them
+-- and the body visually ends at the hips. A dark clot part with a drip
+-- emitter rides the pelvis bone -- each client renders its own.
+do
+	local RunService = game:GetService("RunService")
+	local DROP = 3.2
+	local clot = nil
+	local function ensureClot()
+		if clot and clot.Parent then return clot end
+		clot = Instance.new("Part")
+		clot.Name = "KenopsiaClot"
+		clot.Size = Vector3.new(1.7, 0.9, 1.5)
+		clot.Color = Color3.fromRGB(84, 8, 8)
+		clot.Material = Enum.Material.Slate
+		clot.CanCollide = false
+		clot.CanQuery = false
+		clot.CanTouch = false
+		clot.Anchored = true
+		clot.CastShadow = false
+		local drip = Instance.new("ParticleEmitter")
+		drip.Color = ColorSequence.new(Color3.fromRGB(120, 10, 10))
+		drip.Size = NumberSequence.new(0.22)
+		drip.Lifetime = NumberRange.new(0.3, 0.6)
+		drip.Rate = 14
+		drip.Speed = NumberRange.new(1, 2)
+		drip.Acceleration = Vector3.new(0, -40, 0)
+		drip.EmissionDirection = Enum.NormalId.Bottom
+		drip.Parent = clot
+		clot.Parent = char
+		return clot
+	end
+	local legBones = nil
+	local function legs()
+		if legBones then return legBones end
+		local root = char:FindFirstChild("HumanoidRootPart")
+		local lower = root and root:FindFirstChild("Root", true) and root.Root:FindFirstChild("LowerTorso")
+		if not lower then return nil end
+		legBones = {
+			lower = lower,
+			uppers = { lower:FindFirstChild("LeftUpperLeg"), lower:FindFirstChild("RightUpperLeg") },
+		}
+		return legBones
+	end
+	RunService.RenderStepped:Connect(function()
+		if char:GetAttribute("XBotLegless") ~= true then
+			if clot then clot:Destroy() clot = nil end
+			return
+		end
+		local lb = legs()
+		if not lb then return end
+		local scale = char:GetScale()
+		for _, b in ipairs(lb.uppers) do
+			if b then
+				local base = b.Parent.TransformedWorldCFrame * b.CFrame
+				local w = base * b.Transform
+				b.Transform = base:Inverse() * (w - Vector3.new(0, DROP * scale, 0))
+				for _, c in ipairs(b:GetDescendants()) do
+					if c:IsA("Bone") then c.Transform = CFrame.new() end
+				end
+			end
+		end
+		local c = ensureClot()
+		local hip = lb.lower.TransformedWorldCFrame
+		c.CFrame = CFrame.new(hip.Position - Vector3.new(0, 0.5 * scale, 0))
+	end)
+end

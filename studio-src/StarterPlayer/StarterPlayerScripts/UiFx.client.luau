@@ -224,6 +224,31 @@ end
 player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(applyChat)
 task.defer(applyChat)
 
+-- 24.08.2026 (user: "real PS1 graphics"): while a trial runs, a full-screen
+-- ordered-dither GRAIN sits over the world -- the same Bayer family the
+-- screen swaps use, tiled at 8 px, barely-there alpha. Off with the CRT
+-- toggle and under Reduced Motion it stays static (it never animates anyway).
+do
+	local grain = Instance.new("ImageLabel")
+	grain.Name = "TrialGrain"
+	grain.Size = UDim2.fromScale(1, 1)
+	grain.BackgroundTransparency = 1
+	grain.Image = "rbxassetid://121598984043867"
+	grain.ImageTransparency = 0.93
+	grain.ScaleType = Enum.ScaleType.Tile
+	grain.TileSize = UDim2.fromOffset(8, 8)
+	grain.ResampleMode = Enum.ResamplerMode.Pixelated
+	grain.ZIndex = 3
+	grain.Visible = false
+	grain.Parent = gui
+	local function applyGrain()
+		grain.Visible = crtOn() and (player:GetAttribute("KenopsiaActiveTrial") or "") ~= ""
+	end
+	player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(applyGrain)
+	player:GetAttributeChangedSignal("KenopsiaCRT"):Connect(applyGrain)
+	task.defer(applyGrain)
+end
+
 task.spawn(function()
 	while gui.Parent do
 		task.wait(Feel.Overlay.BandIdle)

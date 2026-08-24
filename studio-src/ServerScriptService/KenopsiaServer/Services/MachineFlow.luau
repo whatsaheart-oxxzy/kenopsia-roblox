@@ -422,7 +422,7 @@ local function preFlow(room)
 	RoomServiceRef.setWaitingStage(waitingToken, "Selecting")
 	room.preSent = room.preSent or {}
 	for _, m in room.members do room.preSent[m.userId] = true end
-	tellRoom(room, { kind = "selection", icons = icons, chosen = chosenIdx })
+	tellRoom(room, { kind = "selection", icons = icons, chosen = chosenIdx, name = trial.displayName })
 	-- P0.3: the roulette hold lives in Pacing.Timing.LobbyReveal (6.4 s), not here.
 	task.wait(Pacing.Timing.LobbyReveal or 6.4)
 	if room.phase ~= "Waiting" or #room.members == 0 then return end

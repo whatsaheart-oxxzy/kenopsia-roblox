@@ -72,7 +72,9 @@ local SHRED_GRACE = 1.5
 -- suppressed. They are true, and leaving them visible keeps the missing
 -- validation on the radar; an allow() would hide exactly the signal this
 -- comment exists to preserve.
-local MAX_RUNNER_SPEED = 7
+-- 24.08.2026: runners SPRINT after 1 s of continuous movement (7 -> 10, the
+-- client ramp in KenopsiaClient); the validator allows the ramped top speed.
+local MAX_RUNNER_SPEED = 10
 local POSITION_SPEED_FACTOR = 2
 local POSITION_TOLERANCE = 5
 local PATH_SPEED_FACTOR = 1.5
@@ -344,6 +346,7 @@ local function runRoundInner(room, roundIndex, guard)
 				s.hum.WalkSpeed = ps.walkBefore
 			end
 			s.char:SetAttribute("XBotCrawl", false)
+			s.char:SetAttribute("XBotLegless", false)
 			s.char:SetAttribute("XBotScanning", false)
 			s.char:SetAttribute("XBotMoves", "")
 			s.root.CFrame = CFrame.new(spawnPos + Vector3.new(math.random(-6, 6), 4, math.random(-6, 6)))
@@ -416,6 +419,7 @@ local function runRoundInner(room, roundIndex, guard)
 			s.hum.Health = s.hum.MaxHealth
 			s.char:SetAttribute("XBotMoves", "scan")
 			s.char:SetAttribute("XBotCrawl", false)
+			s.char:SetAttribute("XBotLegless", false)
 			s.char:SetAttribute("XBotScanning", false)
 			local w = math.max(R.spawn.Size.X - 6, 8)
 			local x = R.spawn.Position.X - w / 2 + w * ((n + 0.5) / math.max(#room.members, 1))
@@ -528,11 +532,16 @@ local function runRoundInner(room, roundIndex, guard)
 						-- outer ring is crawl plus glitch with no severing.
 						ps.crawling = true
 						s.char:SetAttribute("XBotCrawl", true)
+						-- 24.08.2026 (user): one mine takes the LOWER HALF. The
+						-- client folds the leg chains under the floor while
+						-- XBotLegless is set (PS1Animate) and maim() throws the
+						-- hip gibs; bleed (inside maim) keeps the crawl trail.
+						s.char:SetAttribute("XBotLegless", true)
 						-- 23.08.2026: the crawl is now a SPEED, not only a clip. See
 						-- CRAWL_SPEED. Snapshot first so cleanup() can put it back.
 						ps.walkBefore = s.hum.WalkSpeed
 						s.hum.WalkSpeed = CRAWL_SPEED
-						BloodFX.bleed(s.char, audienceOf(room), roundState.roundToken)
+						BloodFX.maim(s.char, audienceOf(room), roundState.roundToken)
 					end
 				end
 			end

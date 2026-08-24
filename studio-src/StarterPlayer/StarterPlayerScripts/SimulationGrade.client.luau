@@ -21,7 +21,7 @@ local GuiService = game:GetService("GuiService")
 local player = Players.LocalPlayer
 local trialClientsFolder = script.Parent:FindFirstChild("TrialClients")
 
-local QUANT = 8 -- steps per stud
+local QUANT = 6 -- 24.08.2026: was 8; harder position steps read more PS1 -- steps per stud
 local BIND = "KenopsiaSimulationGrade"
 
 -- Every preset may set any of these Lighting fields; unset ones keep the
@@ -45,8 +45,10 @@ local PRESETS = {
 		OutdoorAmbient = Color3.fromRGB(10, 13, 20),
 		Brightness = 1,
 		ClockTime = 0,
-		fog = { 45, 150, Color3.fromRGB(0, 0, 0) },
+		fog = { 40, 130, Color3.fromRGB(0, 0, 0) },
 		tint = Color3.fromRGB(205, 218, 255),
+		saturation = -0.3,
+		contrast = 0.15,
 		lamps = "minefield",
 	},
 	-- the canteen: sodium tubes, grease in the air, nothing beyond the walls
@@ -56,8 +58,8 @@ local PRESETS = {
 		Brightness = 1.35,
 		fog = { 38, 140, Color3.fromRGB(18, 13, 10) },
 		tint = Color3.fromRGB(255, 228, 192),
-		saturation = -0.4,
-		contrast = 0.12,
+		saturation = -0.45,
+		contrast = 0.18,
 	},
 	-- the range: overcast dusk, thick ground haze; the scope must stay honest,
 	-- so no position quantisation here
@@ -66,7 +68,8 @@ local PRESETS = {
 		atmosphere = { Density = 0.4, Offset = 0.22, Haze = 2.2, Glare = 0,
 			Color = Color3.fromRGB(118, 112, 104), Decay = Color3.fromRGB(64, 58, 56) },
 		tint = Color3.fromRGB(206, 214, 226),
-		saturation = -0.3,
+		saturation = -0.35,
+		contrast = 0.1,
 		quantise = false,
 	},
 }

@@ -126,12 +126,12 @@ end
 
 -- DER KASTRIERER: Mine reisst die Beine weg. Alle sichtbaren Spuren
 -- entstehen nur bei den Empfaengern des aktiven Raums.
-function BloodFX.maim(char, recipients)
+function BloodFX.maim(char, recipients, scope)
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 	local hip = root.Position - Vector3.new(0, 1.2, 0)
 	ev({ t = "maim", p = v(hip) }, recipients)
-	BloodFX.bleed(char, recipients)
+	BloodFX.bleed(char, recipients, scope)
 end
 
 function BloodFX.bleed(char, recipients, scope)
