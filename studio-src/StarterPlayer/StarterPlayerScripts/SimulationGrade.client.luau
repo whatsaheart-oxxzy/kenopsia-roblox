@@ -75,7 +75,10 @@ local PRESETS = {
 }
 
 local LIGHT_FIELDS = { "Ambient", "OutdoorAmbient", "Brightness", "ClockTime", "ExposureCompensation",
-	"FogStart", "FogEnd", "FogColor" }
+	"FogStart", "FogEnd", "FogColor",
+	-- 24.08.2026 (PS1 pass 2): no soft shadows, no PBR ambience in a trial.
+	"GlobalShadows", "EnvironmentDiffuseScale", "EnvironmentSpecularScale" }
+local disabledFx = {}
 
 local snapshot = nil
 local created = {}
@@ -95,7 +98,11 @@ end
 -- binding below only handles the default (Custom) camera.
 local quantWanted = false
 local function publishQuant()
-	player:SetAttribute("KenopsiaCamQuant", (quantWanted and motionOk()) and QUANT or 0)
+	local on = quantWanted and motionOk()
+	player:SetAttribute("KenopsiaCamQuant", on and QUANT or 0)
+	-- 24.08.2026: the camera also HOLDS its frame at a retro cadence while the
+	-- filter runs -- the world renders at full rate, the view steps at 30 Hz.
+	player:SetAttribute("KenopsiaCamStep", on and 30 or 0)
 end
 
 local function presetFor(id)
@@ -175,6 +182,17 @@ local function apply(id)
 	if preset.fog then
 		Lighting.FogStart, Lighting.FogEnd, Lighting.FogColor = preset.fog[1], preset.fog[2], preset.fog[3]
 	end
+	-- PS1 rules: hard light only. Smooth shadow maps, PBR environment light
+	-- and any modern post effect (bloom, DoF, sun rays) go dark for the trial.
+	Lighting.GlobalShadows = false
+	Lighting.EnvironmentDiffuseScale = 0
+	Lighting.EnvironmentSpecularScale = 0
+	for _, e in Lighting:GetChildren() do
+		if (e:IsA("BloomEffect") or e:IsA("DepthOfFieldEffect") or e:IsA("SunRaysEffect")) and e.Enabled then
+			disabledFx[e] = true
+			e.Enabled = false
+		end
+	end
 	if preset.atmosphere then
 		make("Atmosphere", "SimGrade_Atmosphere", preset.atmosphere)
 	end
@@ -211,6 +229,10 @@ local function restore()
 	publishQuant()
 	for _, inst in created do inst:Destroy() end
 	table.clear(created)
+	for e in disabledFx do
+		if e.Parent then e.Enabled = true end
+	end
+	table.clear(disabledFx)
 	for k, v in snapshot do Lighting[k] = v end
 	snapshot = nil
 	activeId = ""

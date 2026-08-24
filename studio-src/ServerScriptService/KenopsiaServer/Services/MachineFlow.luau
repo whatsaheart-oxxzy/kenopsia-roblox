@@ -989,10 +989,19 @@ local function runMatch(room)
 			RoomServiceRef.setStage(ctx.sessionId, "Score")
 			-- P1.4: the trial's closing standings count as its last round's top.
 			table.insert(trialVoice.roundTops, soleTop(ranking) or false)
-			tell(ctx, { kind = "score", board = board, trialId = trial.id,
-				index = trialIndex, total = #order, final = false,
+			-- 24.08.2026 (user): the WINNER BOARD shows once, after the last
+			-- minigame. Between minigames only a brief rank card -- no
+			-- odometer, no binary blocks; the session keeps its pace.
+			local bySession = {}
+			for _, row in board do table.insert(bySession, row) end
+			table.sort(bySession, function(a, b) return a.score > b.score end)
+			local lines = { trial.displayName .. " COMPLETE.", " " }
+			for i, row in bySession do
+				table.insert(lines, ("%d. %s"):format(i, row.displayName))
+			end
+			tell(ctx, { kind = "status", lines = lines,
 				line = scoreVoice(voice, trialVoice, ranking, board, trialIndex) })
-			if not hold(ctx, Pacing.Timing.InterimScore) then return end
+			if not hold(ctx, Pacing.Timing.Standings or 2.5) then return end
 
 			-- NO hide() here. Every show* on the client begins with hideAll(),
 			-- so the next minigame's reveal replaces this board by itself. Hiding

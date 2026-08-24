@@ -615,6 +615,7 @@ end
 -- priority, so the grade's own binding cannot reach a camera this writer sets;
 -- the snap has to happen here, after the branches. Position only, never rotation.
 local camQuant = tonumber(player:GetAttribute("KenopsiaCamQuant")) or 0
+local camStep = { at = 0, cf = nil }
 player:GetAttributeChangedSignal("KenopsiaCamQuant"):Connect(function()
 	camQuant = tonumber(player:GetAttribute("KenopsiaCamQuant")) or 0
 end)
@@ -681,6 +682,22 @@ RunService.RenderStepped:Connect(function(dt)
 			math.floor(pos.Y * camQuant + 0.5) / camQuant,
 			math.floor(pos.Z * camQuant + 0.5) / camQuant)
 		if q ~= pos then camera.CFrame = cf.Rotation + q end
+		-- 24.08.2026 (PS1 pass 2): the view runs at a retro cadence -- the
+		-- written camera frame is HELD until 1/KenopsiaCamStep elapsed, so the
+		-- world steps like a 30 fps console while the game simulates at full
+		-- rate. Published by SimulationGrade, off with the filter/ReducedMotion.
+		local stepHz = tonumber(player:GetAttribute("KenopsiaCamStep")) or 0
+		if stepHz > 0 then
+			local now = os.clock()
+			if camStep.cf and now - camStep.at < 1 / stepHz then
+				camera.CFrame = camStep.cf
+			else
+				camStep.at = now
+				camStep.cf = camera.CFrame
+			end
+		else
+			camStep.cf = nil
+		end
 	end
 end)
 
@@ -2841,3 +2858,134 @@ do
 end
 
 print("[Kenopsia] client online")
+
+-- 24.08.2026 (user): SHIFT COMPLETE end card. After the podium the session
+-- does not dump the players silently back into the lobby -- a grunge card
+-- (slanted black bars, the reference's pause-menu language) shows the final
+-- board once and asks: PLAY AGAIN (ready up, the carried rematch does the
+-- rest) or BACK TO MENU (un-ready; RoomService drops the player from the
+-- pending rematch). Self-contained: own MachineState listener, no new
+-- top-level locals outside this block.
+do
+	local MS = remotes:WaitForChild("MachineState")
+	local ReadyRemote = remotes:WaitForChild("RoomReadyRequest")
+	local lastFinal = nil
+	local card = nil
+	local INK = Color3.fromRGB(8, 8, 8)
+	local PAPER = Color3.fromRGB(226, 224, 218)
+	local function bar(parent, y, wScale, h, tilt)
+		local b = Instance.new("Frame")
+		b.AnchorPoint = Vector2.new(0.5, 0)
+		b.Position = UDim2.new(0.5, 0, 0, y)
+		b.Size = UDim2.new(wScale, 0, 0, h)
+		b.BackgroundColor3 = INK
+		b.BorderSizePixel = 0
+		b.Rotation = tilt
+		b.ZIndex = 96
+		b.Parent = parent
+		local edge = Instance.new("Frame")
+		edge.Size = UDim2.new(1, 6, 0, 3)
+		edge.Position = UDim2.new(0, -3, 1, 0)
+		edge.BackgroundColor3 = Color3.fromRGB(60, 58, 54)
+		edge.BackgroundTransparency = 0.35
+		edge.BorderSizePixel = 0
+		edge.ZIndex = 95
+		edge.Parent = b
+		return b
+	end
+	local function label(parent, text, size, color)
+		local t = Instance.new("TextLabel")
+		t.Size = UDim2.new(1, -28, 1, 0)
+		t.Position = UDim2.new(0, 20, 0, 0)
+		t.BackgroundTransparency = 1
+		t.Font = Enum.Font.Code
+		t.Text = text
+		t.TextSize = size
+		t.TextColor3 = color or PAPER
+		t.TextXAlignment = Enum.TextXAlignment.Left
+		t.ZIndex = 97
+		t.Parent = parent
+		return t
+	end
+	local function dismiss(ready)
+		if card then card.Visible = false end
+		pcall(function() ReadyRemote:FireServer(ready) end)
+		sfx("Click")
+	end
+	local function build()
+		if card and card.Parent then return card end
+		card = Instance.new("Frame")
+		card.Name = "EndCard"
+		card.Size = UDim2.fromScale(1, 1)
+		card.BackgroundColor3 = Color3.fromRGB(4, 4, 4)
+		card.BackgroundTransparency = 0.06
+		card.BorderSizePixel = 0
+		card.ZIndex = 94
+		card.Visible = false
+		card.Parent = machine
+		local head = bar(card, 64, 0.56, 66, -3)
+		label(head, "SHIFT COMPLETE", 40)
+		card:SetAttribute("RowsAt", 150)
+		local btnY = 0.72
+		for i, spec in ipairs({ { "PLAY AGAIN", true }, { "BACK TO MENU", false } }) do
+			local b = Instance.new("TextButton")
+			b.Name = spec[2] and "Btn_AGAIN" or "Btn_MENU"
+			b.AnchorPoint = Vector2.new(0.5, 0)
+			b.Position = UDim2.new(0.5, 0, btnY + (i - 1) * 0.095, 0)
+			b.Size = UDim2.new(0.42, 0, 0, 52)
+			b.BackgroundColor3 = INK
+			b.BorderSizePixel = 0
+			b.Rotation = -3
+			b.Font = Enum.Font.Code
+			b.Text = spec[1]
+			b.TextSize = 26
+			b.TextColor3 = PAPER
+			b.ZIndex = 97
+			b.Parent = card
+			b.MouseEnter:Connect(function()
+				b.BackgroundColor3 = PAPER
+				b.TextColor3 = INK
+			end)
+			b.MouseLeave:Connect(function()
+				b.BackgroundColor3 = INK
+				b.TextColor3 = PAPER
+			end)
+			b.Activated:Connect(function() dismiss(spec[2]) end)
+		end
+		return card
+	end
+	local function show()
+		local c = build()
+		for _, old in ipairs(c:GetChildren()) do
+			if old.Name == "Row" then old:Destroy() end
+		end
+		local y = 150
+		for i, row in ipairs(lastFinal or {}) do
+			if i > 4 then break end
+			local r = bar(c, y, 0.5 - i * 0.02, 44, -3)
+			r.Name = "Row"
+			label(r, ("%d. %s"):format(i, row.displayName), 24,
+				row.verdict == "VIABLE" and PAPER or Color3.fromRGB(150, 146, 140))
+			local score = label(r, ("%d  %s"):format(row.score or 0, row.verdict or ""), 20,
+				row.verdict == "VIABLE" and PAPER or Color3.fromRGB(150, 146, 140))
+			score.TextXAlignment = Enum.TextXAlignment.Right
+			y += 54
+		end
+		c.Visible = true
+	end
+	MS.OnClientEvent:Connect(function(p)
+		if type(p) ~= "table" then return end
+		if p.kind == "score" and p.final and type(p.board) == "table" then
+			lastFinal = p.board
+		elseif p.kind == "podium" and lastFinal then
+			local rules = machineCamRules and machineCamRules()
+			local pos = rules and rules.read(p)
+			if pos == nil then
+				-- the CLEAR packet: podium done, the lobby is next
+				task.delay(0.4, show)
+			end
+		elseif p.kind == "round" or p.kind == "rolecard" or p.kind == "count" then
+			if card then card.Visible = false end
+		end
+	end)
+end

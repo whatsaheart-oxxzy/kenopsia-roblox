@@ -354,6 +354,13 @@ local function setReady(player, ready)
 		return
 	end
 	room.members[i].ready = (ready == true)
+	-- 24.08.2026: BACK TO MENU on the end card un-readies BEFORE the carried
+	-- rematch re-arms; drop the player from the pending rematch set so the
+	-- re-arm respects the choice.
+	local rematch = (room :: any).rematch
+	if ready ~= true and rematch and rematch.userIds then
+		rematch.userIds[player.UserId] = nil
+	end
 	if room.phase == "Starting" and ready ~= true then
 		abortCountdown("READY REVOKED - COUNTDOWN ABORTED")
 		return
