@@ -506,7 +506,13 @@ local function runRoundInner(room, roundIndex, guard)
 						-- One localized burst, not a stack. kill() plus shatter() ran both
 						-- the blood hit AND the gib fountain on the same death, which is
 						-- the gore stack the plan rules out and a maturity problem besides.
-						BloodFX.kill(s.root.Position, audienceOf(room))
+						-- 24.08.2026 (user): a DIRECT hit also takes the lower
+						-- half -- the corpse plays the field death with the leg
+						-- chains folded under the floor (PS1Animate keeps the
+						-- XBotLegless writer running on a dead character) and
+						-- the hip clot marks the cut. maim() carries the burst.
+						s.char:SetAttribute("XBotLegless", true)
+						BloodFX.maim(s.char, audienceOf(room), roundState.roundToken)
 						s.hum.Health = 0
 						tellOne(uid, { kind = "announce", style = "death", text = "YOU STEPPED WRONG." })
 						if R.cam then
