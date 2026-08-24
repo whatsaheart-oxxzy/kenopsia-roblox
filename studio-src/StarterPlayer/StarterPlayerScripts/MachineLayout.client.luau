@@ -369,6 +369,33 @@ local focusScreen -- defined below; apply() retries focus through it
 -- through focusScreen. HunterLookSetup is built by KenopsiaClient at boot
 -- and adopted when it appears.
 local GROUPS = { "Warning", "SettingsPanel", "HunterLookSetup", "Briefing", "Info" }
+-- 24.08.2026 (console pass): at join the READY button is briefly
+-- Selectable=false (no roster yet), so the first focus lands on SETTINGS and
+-- stays there. When READY becomes selectable while Info is up, take the
+-- focus back to it.
+task.defer(function()
+	local info = machine:WaitForChild("Info", 10)
+	local ready = info and info:WaitForChild("Btn_READY", 10)
+	if not ready then return end
+	local function reclaim()
+		if currentPlatform ~= "Console" or not ready.Selectable then return end
+		if not info.Visible then return end
+		local sel = GuiService.SelectedObject
+		if sel == nil or (sel ~= ready and sel:IsDescendantOf(info)) then
+			GuiService.SelectedObject = ready
+		end
+	end
+	ready:GetPropertyChangedSignal("Selectable"):Connect(reclaim)
+	-- the screen usually becomes visible AFTER the selectable flip, so the
+	-- show itself re-checks too (short delay: focusScreen runs on the same
+	-- signal and must lose this race, not win it).
+	info:GetPropertyChangedSignal("Visible"):Connect(function()
+		if info.Visible then task.delay(0.3, reclaim) end
+	end)
+	reclaim()
+	task.delay(3, reclaim)
+end)
+
 -- focus the first visible group panel (console only; nothing if none is up)
 local function focusAny()
 	if currentPlatform ~= "Console" or not focusScreen then return end

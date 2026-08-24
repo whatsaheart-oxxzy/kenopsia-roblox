@@ -33,3 +33,18 @@ MicroProfiler, real touch drag vs. the assist.
 - Aim assist "bisschen staerker": ease 7/4.5 → 9.5/6.5 per second, scoped cone 5° → 6°.
 
 Next up per the user: console pass, then iPad.
+
+## Round 3 — console + tablet look (ForcePlatform, live)
+
+- **Console focus bug fixed**: at join READY is briefly `Selectable=false` (no roster yet), so the
+  first `focusScreen` fell through to the engine pick (SETTINGS / the pager arrow) and stayed there.
+  MachineLayout now reclaims the focus onto READY when it becomes selectable AND 0.3 s after the Info
+  screen shows (losing the race to focusScreen on purpose). Live: selection lands on Btn_READY,
+  phosphor ring + Ⓐ glyph (capture).
+- Console capture otherwise clean: gamepad glyphs in the controls (stick icon, HOLD Ⓨ), 22 px text
+  floor, SYS cells bottom-left without collisions.
+- Tablet capture clean at scale 1; "STICK Move / HOLD SCAN" is the correct Touch wording (on-screen
+  joystick), not a glyph bug.
+- ForcePlatform cleared after the tests.
+
+Still needs a real gamepad (user): d-pad walk Info → Settings → Briefing without leaving a panel.
