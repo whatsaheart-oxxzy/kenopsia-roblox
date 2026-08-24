@@ -569,7 +569,30 @@ local function runRoundInner(room, roundIndex, guard)
 		end
 	end
 
-	-- Exit
+	-- Exit. 24.08.2026 (user: standing IN the gate won nothing): the Touched
+	-- event needed a physical overlap the gate geometry did not always give.
+	-- The escape is now a LINE CHECK in the 20 Hz loop (crossing the exit's z
+	-- wins, however you got there); Touched stays as a secondary trigger.
+	local function escapeRunner(plr, ps)
+		if not active() or not ps or ps.done then return end
+		ps.done = true
+		ps.escaped = true
+		roundState.escapeCount = (roundState.escapeCount or 0) + 1
+		ps.escapeOrder = roundState.escapeCount
+		ps.cardAt = os.clock()
+		local s = livingOf(room)[plr.UserId]
+		if s then s.hum.WalkSpeed = 0 end
+		tellOne(plr.UserId, { kind = "announce", style = "win", text = "SECTOR CLEARED." })
+		if R.cam then
+			task.delay(1.2, function()
+				if not active() then return end
+				tellOne(plr.UserId, { kind = "role", role = "spectate",
+					watch = stillRunning(state, plr.UserId),
+					pos = { R.cam.Position.X, R.cam.Position.Y, R.cam.Position.Z },
+					look = { R.exit.Position.X, g.gTop, R.exit.Position.Z } })
+			end)
+		end
+	end
 	exitConn = R.exit.Touched:Connect(function(hit)
 		-- C1.d: Touched can fire during teardown; an abort must not award an escape.
 		if not active() then return end
@@ -579,28 +602,7 @@ local function runRoundInner(room, roundIndex, guard)
 			char = char and char.Parent
 			plr = char and Players:GetPlayerFromCharacter(char)
 		end
-		local ps = plr and state[plr.UserId]
-		if ps and not ps.done then
-			ps.done = true
-			ps.escaped = true
-			roundState.escapeCount = (roundState.escapeCount or 0) + 1
-			ps.escapeOrder = roundState.escapeCount
-			-- No "FIELD CLEARED." card: escaping is already legible from the
-			-- exit itself, and the Score stage reports the outcome shortly after.
-			-- cardAt is still stamped -- the death card below reads it.
-			ps.cardAt = os.clock()
-			local s = livingOf(room)[plr.UserId]
-			if s then s.hum.WalkSpeed = 0 end
-			-- Securing the exit hands you the same view a death does. Finishing
-			-- first otherwise meant standing still watching nothing for the rest
-			-- of the round, which punishes the player who did best.
-			if R.cam then
-				tellOne(plr.UserId, { kind = "role", role = "spectate",
-					watch = stillRunning(state, plr.UserId),
-					pos = { R.cam.Position.X, R.cam.Position.Y, R.cam.Position.Z },
-					look = { R.exit.Position.X, g.gTop, R.exit.Position.Z } })
-			end
-		end
+		escapeRunner(plr, plr and state[plr.UserId])
 	end)
 
 	-- DER COMPACTOR: eine Shredderwand, die von hinten durchs Feld marschiert.
@@ -883,6 +885,13 @@ local function runRoundInner(room, roundIndex, guard)
 					-- Fortschritt in Studs Richtung Exit
 					local prog = (pos.Z - g.z0) * g.dir
 					if prog > ps.progress then ps.progress = prog end
+					-- crossing the exit line IS the win (see escapeRunner above);
+					-- 1.5 studs of grace so STANDING IN THE GATE already counts
+					-- (the user stood exactly on the line and nothing fired).
+					if (pos.Z - R.exit.Position.Z) * g.dir >= -1.5 then
+						local plr2 = Players:GetPlayerByUserId(uid)
+						if plr2 then escapeRunner(plr2, ps) end
+					end
 					-- vom Compactor eingeholt? Sofort zerlegt. (Nie in der Schonfrist)
 					if now - t0 > SHRED_GRACE and (pos.Z - shredFront) * g.dir < 0 then
 						ps.done = true

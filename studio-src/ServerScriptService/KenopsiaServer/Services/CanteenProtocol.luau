@@ -566,6 +566,12 @@ local function handleAction(player, action)
 	if action == "plate" then
 		if now < (ps.nextPlateAt or 0) then return end
 		ps.nextPlateAt = now + MIN_PLATE_INTERVAL
+		-- 24.08.2026 (user): the observer catches the FORK too -- any table
+		-- movement under open eyes is a violation, not just the swallow.
+		if st.phase == "watching" then
+			eliminate(st, player.UserId, "seen")
+			return
+		end
 		-- Loading is ALWAYS safe -- the observer only ever catches a swallow.
 		-- 24.08.2026 (user): ONE pea per stab. Filling the fork is four clicks
 		-- of theatre (the stab clip plays on every one), not one.

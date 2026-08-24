@@ -48,3 +48,17 @@ Next up per the user: console pass, then iPad.
 - ForcePlatform cleared after the tests.
 
 Still needs a real gamepad (user): d-pad walk Info → Settings → Briefing without leaving a panel.
+
+## Round 4 — the win that never fired, camera, stick, fork catch
+
+- **DZ exit fixed**: reaching the gate did NOTHING — the win hung on `Exit.Touched`, and standing in
+  the gate left the runner ~0.5 studs before the part's plane. The escape is now a LINE CHECK in the
+  20 Hz loop with 1.5 studs of grace (standing in the gate wins), plus the "SECTOR CLEARED." card,
+  1.2 s later the black-beat spectate, and the round-end blackout. Verified live: teleport across the
+  line → SECTOR CLEARED at 6.9 s → spectate at 8.1 s → round over (and the crush counter finally
+  showed live numbers: crushed=49).
+- **Bird Hunting camera** a touch further down (look target Y 3 → −1).
+- **Default touch joystick** only where movement IS the game: `GuiService.TouchControlsEnabled`
+  follows `moveState == "runner"` (DZ + BH runners); lobby, canteen seats and the sniper post drop it.
+- **Canteen**: the observer now catches the FORK too — any plate action during `watching` is
+  `eliminate(..., "seen")`, not just the swallow.

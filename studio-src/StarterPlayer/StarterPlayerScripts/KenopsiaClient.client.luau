@@ -478,6 +478,12 @@ local function applyMovement()
 	-- no jumping anywhere in this game
 	hum.UseJumpPower = true
 	hum.JumpPower = 0
+	-- 24.08.2026 (user): the touch movement stick exists ONLY where moving is
+	-- the game -- Dead Zone and the Bird Hunting runners. Everywhere else
+	-- (lobby, canteen seats, the sniper post) it is dead weight on the screen.
+	pcall(function()
+		GuiService.TouchControlsEnabled = moveState == "runner"
+	end)
 end
 player.CharacterAdded:Connect(function()
 	task.wait(0.3)
@@ -717,9 +723,10 @@ RunService.RenderStepped:Connect(function(dt)
 				smoothCamPos = smoothCamPos and smoothCamPos:Lerp(eye, math.min(dt * 6, 1)) or eye
 				camera.CFrame = CFrame.lookAt(smoothCamPos, smoothCamPos + Vector3.new(0, -7, 10 * runnerCamDir))
 			else
+				-- 24.08.2026 (user): a touch further down.
 				camera.CFrame = CFrame.lookAt(
 					root.Position + Vector3.new(0, 20, -17 * runnerCamDir),
-					root.Position + Vector3.new(0, 3, 30 * runnerCamDir))
+					root.Position + Vector3.new(0, -1, 30 * runnerCamDir))
 			end
 			-- Shiftlock only: der Charakter blickt immer in Bahnrichtung. perf
 			-- (22.08.2026): the yaw is rewritten only when physics actually turned
