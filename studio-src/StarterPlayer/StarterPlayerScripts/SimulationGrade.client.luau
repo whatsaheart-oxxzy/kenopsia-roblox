@@ -107,9 +107,9 @@ local quantWanted = false
 local function publishQuant()
 	local on = quantWanted and motionOk()
 	player:SetAttribute("KenopsiaCamQuant", on and QUANT or 0)
-	-- 24.08.2026: the camera also HOLDS its frame at a retro cadence while the
-	-- filter runs -- the world renders at full rate, the view steps at 30 Hz.
-	player:SetAttribute("KenopsiaCamStep", on and 30 or 0)
+	-- 24.08.2026 (evening, user test): the 30 Hz camera hold read as STUTTER,
+	-- not as retro -- removed the same day it shipped. Full-rate camera again.
+	player:SetAttribute("KenopsiaCamStep", 0)
 end
 
 local function presetFor(id)

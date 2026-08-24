@@ -615,7 +615,6 @@ end
 -- priority, so the grade's own binding cannot reach a camera this writer sets;
 -- the snap has to happen here, after the branches. Position only, never rotation.
 local camQuant = tonumber(player:GetAttribute("KenopsiaCamQuant")) or 0
-local camStep = { at = 0, cf = nil }
 player:GetAttributeChangedSignal("KenopsiaCamQuant"):Connect(function()
 	camQuant = tonumber(player:GetAttribute("KenopsiaCamQuant")) or 0
 end)
@@ -654,7 +653,8 @@ RunService.RenderStepped:Connect(function(dt)
 				-- 24.08.2026 (user call): 35 degrees down and LOWER -- the view
 				-- grazes the field so the grass and the buildings read, not the
 				-- floor plan. atan(7/10) = 35.0 degrees.
-				local eye = root.Position + Vector3.new(0, 11, -13 * runnerCamDir)
+				-- 24.08.2026 (evening, user test): further out, same 35 degrees.
+				local eye = root.Position + Vector3.new(0, 15, -18 * runnerCamDir)
 				smoothCamPos = smoothCamPos and smoothCamPos:Lerp(eye, math.min(dt * 6, 1)) or eye
 				camera.CFrame = CFrame.lookAt(smoothCamPos, smoothCamPos + Vector3.new(0, -7, 10 * runnerCamDir))
 			else
@@ -683,22 +683,8 @@ RunService.RenderStepped:Connect(function(dt)
 			math.floor(pos.Y * camQuant + 0.5) / camQuant,
 			math.floor(pos.Z * camQuant + 0.5) / camQuant)
 		if q ~= pos then camera.CFrame = cf.Rotation + q end
-		-- 24.08.2026 (PS1 pass 2): the view runs at a retro cadence -- the
-		-- written camera frame is HELD until 1/KenopsiaCamStep elapsed, so the
-		-- world steps like a 30 fps console while the game simulates at full
-		-- rate. Published by SimulationGrade, off with the filter/ReducedMotion.
-		local stepHz = tonumber(player:GetAttribute("KenopsiaCamStep")) or 0
-		if stepHz > 0 then
-			local now = os.clock()
-			if camStep.cf and now - camStep.at < 1 / stepHz then
-				camera.CFrame = camStep.cf
-			else
-				camStep.at = now
-				camStep.cf = camera.CFrame
-			end
-		else
-			camStep.cf = nil
-		end
+		-- (the 30 Hz camera hold lived here for a day -- the user's test read
+		-- it as stutter, so the camera runs at full rate again.)
 	end
 end)
 

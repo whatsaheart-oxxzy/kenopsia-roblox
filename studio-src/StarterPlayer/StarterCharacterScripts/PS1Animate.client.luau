@@ -53,6 +53,21 @@ local function track(name)
 	end
 	return tracks[name] or nil
 end
+-- 24.08.2026 (evening, user test): the clips were fetched LAZILY -- the first
+-- W of a life pulled Walk from the CDN and the rig stood in its bind pose (the
+-- "T cross") for a beat. Warm every clip the moment the character exists and
+-- put Idle on with no fade so no bind pose ever reaches the screen.
+task.spawn(function()
+	for _, name in ipairs({ "Idle", "Walk", "Run", "Sneak", "Crouch", "Crawl", "InjuredWalk",
+		"Dance", "RifleIdle", "DeathField", "Death", "Push" }) do
+		track(name)
+	end
+	local idle = track("Idle")
+	if idle and not idle.IsPlaying then
+		idle.Looped = true
+		idle:Play(0)
+	end
+end)
 
 local current = nil
 local currentName = nil

@@ -584,6 +584,161 @@ task.spawn(function()
 	end
 end)
 
+-- 24.08.2026 (user, Idea.jpg): TERMINAL CHROME. The machine screens sit on a
+-- layered grid (the user's two backgrounds, rebuilt as tiles) and carry the
+-- terminal furniture of the reference: a USER line with an index box top-left,
+-- corner ticks, a function-key strip at the bottom and a row of boxed status
+-- cells. Built once at boot into the LIVE gui; everything static, zero
+-- per-frame work, hidden with the screen it decorates.
+task.defer(function()
+	local machine = playerGui:WaitForChild("KenopsiaMachine", 30)
+	if not machine then return end
+	local PHOSPHOR = Color3.fromRGB(140, 232, 174)
+	local DIM = Color3.fromRGB(46, 107, 74)
+	local GRID_SOFT = "rbxassetid://80856993711380"
+	local GRID_BLACK = "rbxassetid://139301976639622"
+	local function gridInto(screen, image, alpha)
+		if not screen or screen:FindFirstChild("TermGrid") then return end
+		local g = Instance.new("ImageLabel")
+		g.Name = "TermGrid"
+		g.Size = UDim2.fromScale(1, 1)
+		g.BackgroundTransparency = 1
+		g.Image = image
+		g.ImageTransparency = alpha
+		g.ScaleType = Enum.ScaleType.Tile
+		g.TileSize = UDim2.fromOffset(256, 256)
+		g.ResampleMode = Enum.ResamplerMode.Pixelated
+		g.ZIndex = 0
+		g.Parent = screen
+	end
+	-- layered: black fine grid on the lobby screens, soft grid on the boards
+	gridInto(machine:FindFirstChild("Info"), GRID_BLACK, 0.55)
+	gridInto(machine:FindFirstChild("Selection"), GRID_BLACK, 0.62)
+	gridInto(machine:FindFirstChild("Status"), GRID_SOFT, 0.72)
+	gridInto(machine:FindFirstChild("Score"), GRID_SOFT, 0.72)
+	gridInto(machine:FindFirstChild("Briefing"), GRID_BLACK, 0.62)
+	local function chromeInto(screen, opts)
+		if not screen or screen:FindFirstChild("TermChrome") then return end
+		local c = Instance.new("Frame")
+		c.Name = "TermChrome"
+		c.Size = UDim2.fromScale(1, 1)
+		c.BackgroundTransparency = 1
+		c.ZIndex = 2
+		c.Parent = screen
+		-- USER line + index box, the reference's top-left cluster
+		local user = Instance.new("TextLabel")
+		user.Name = "UserLine"
+		user.Position = UDim2.new(0, 46, 0, 8)
+		user.Size = UDim2.new(0, 360, 0, 16)
+		user.BackgroundTransparency = 1
+		user.Font = Enum.Font.Code
+		user.TextSize = 14
+		user.TextColor3 = DIM
+		user.TextXAlignment = Enum.TextXAlignment.Left
+		user.Text = "USER:  " .. string.upper(player.DisplayName)
+		user.ZIndex = 3
+		user.Parent = c
+		local idx = Instance.new("TextLabel")
+		idx.Position = UDim2.new(0, 420, 0, 6)
+		idx.Size = UDim2.new(0, 34, 0, 20)
+		idx.BackgroundColor3 = Color3.fromRGB(6, 14, 10)
+		idx.BackgroundTransparency = 0.2
+		idx.BorderSizePixel = 0
+		idx.Font = Enum.Font.Code
+		idx.TextSize = 13
+		idx.TextColor3 = PHOSPHOR
+		idx.Text = opts.index or "01"
+		idx.ZIndex = 3
+		idx.Parent = c
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = DIM
+		stroke.Thickness = 1
+		stroke.Parent = idx
+		-- corner ticks
+		for _, spec in ipairs({ { 0, 0, 0, 1 }, { 1, 0, -12, 1 }, { 0, 1, 0, -13 }, { 1, 1, -12, -13 } }) do
+			local h = Instance.new("Frame")
+			h.Position = UDim2.new(spec[1], spec[3] + (spec[1] == 0 and 28 or -28), spec[2], spec[4] + (spec[2] == 0 and 4 or -4))
+			h.Size = UDim2.new(0, 12, 0, 2)
+			h.BackgroundColor3 = DIM
+			h.BorderSizePixel = 0
+			h.ZIndex = 3
+			h.Parent = c
+			local v = Instance.new("Frame")
+			v.Position = UDim2.new(spec[1], (spec[1] == 0 and 28 or -30), spec[2], spec[4] + (spec[2] == 0 and 4 or -14))
+			v.Size = UDim2.new(0, 2, 0, 12)
+			v.BackgroundColor3 = DIM
+			v.BorderSizePixel = 0
+			v.ZIndex = 3
+			v.Parent = c
+		end
+		-- bottom function-key strip
+		local strip = Instance.new("TextLabel")
+		strip.Name = "KeyStrip"
+		strip.AnchorPoint = Vector2.new(0.5, 1)
+		strip.Position = UDim2.new(0.5, 0, 1, -6)
+		strip.Size = UDim2.new(0.7, 0, 0, 14)
+		strip.BackgroundTransparency = 1
+		strip.Font = Enum.Font.Code
+		strip.TextSize = 12
+		strip.TextColor3 = DIM
+		strip.Text = opts.keys or "F1_READY      F2_SETTINGS      F3_ROSTER"
+		strip.ZIndex = 3
+		strip.Parent = c
+		-- boxed status cells, the reference's CORE row
+		if opts.cells then
+			local row = Instance.new("Frame")
+			row.Name = "Cells"
+			row.AnchorPoint = Vector2.new(0.5, 1)
+			row.Position = UDim2.new(0.5, 0, 1, -28)
+			row.Size = UDim2.new(0, #opts.cells * 96 - 8, 0, 34)
+			row.BackgroundTransparency = 1
+			row.ZIndex = 3
+			row.Parent = c
+			for i, cell in ipairs(opts.cells) do
+				local b = Instance.new("Frame")
+				b.Position = UDim2.new(0, (i - 1) * 96, 0, 0)
+				b.Size = UDim2.new(0, 88, 0, 34)
+				b.BackgroundColor3 = Color3.fromRGB(5, 12, 8)
+				b.BackgroundTransparency = 0.25
+				b.BorderSizePixel = 0
+				b.ZIndex = 3
+				b.Parent = row
+				local st = Instance.new("UIStroke")
+				st.Color = DIM
+				st.Thickness = 1
+				st.Parent = b
+				local t1 = Instance.new("TextLabel")
+				t1.Position = UDim2.new(0, 6, 0, 3)
+				t1.Size = UDim2.new(1, -12, 0, 13)
+				t1.BackgroundTransparency = 1
+				t1.Font = Enum.Font.Code
+				t1.TextSize = 11
+				t1.TextColor3 = PHOSPHOR
+				t1.TextXAlignment = Enum.TextXAlignment.Left
+				t1.Text = cell[1]
+				t1.ZIndex = 4
+				t1.Parent = b
+				local t2 = t1:Clone()
+				t2.Position = UDim2.new(0, 6, 0, 17)
+				t2.TextColor3 = DIM
+				t2.Text = cell[2]
+				t2.Parent = b
+			end
+		end
+	end
+	chromeInto(machine:FindFirstChild("Info"), { index = "01",
+		keys = "F1_READY      F2_SETTINGS      F3_ROSTER",
+		cells = { { "SYS A-1", "SET" }, { "SYS A-2", "READY" }, { "SYS B-1", "SYNC" }, { "SIM STS", "ONLINE_" } } })
+	chromeInto(machine:FindFirstChild("Selection"), { index = "02",
+		keys = "SELECTOR ARMED      DO NOT INTERFERE" })
+	chromeInto(machine:FindFirstChild("Status"), { index = "03",
+		keys = "STANDINGS FEED      LIVE" })
+	chromeInto(machine:FindFirstChild("Score"), { index = "04",
+		keys = "AUDIT FEED      DO NOT DISPUTE" })
+	chromeInto(machine:FindFirstChild("Briefing"), { index = "05",
+		keys = "F1_PAGE      F2_BACK" })
+end)
+
 -- Wiring that needs the Machine gui: the dither request, the hum duck and
 -- the glow labels. Bounded wait; a place without the gui keeps the glass.
 task.defer(function()
