@@ -1767,6 +1767,36 @@ RunService.RenderStepped:Connect(function(dt)
 		local sens = lookSensitivity * (camera.FieldOfView / 70)
 		sniperYaw = math.clamp(sniperYaw - dx * sens, -0.7, 0.7)
 		sniperPitch = math.clamp(sniperPitch - dy * sens, -0.6, 0.25)
+		-- 24.08.2026 (user): MOBILE AIM ASSIST, medium pull. Touch players get
+		-- a magnet toward the nearest living runner inside a small cone: the
+		-- aim angles ease toward the target every frame (framerate-safe
+		-- exponential), stronger while scoped, never a snap, never on PC.
+		if touchAllowed() then
+			local baseRot = sniperBase - sniperBase.Position
+			local camPos = sniperBase.Position
+			local bestYaw, bestPitch, bestAng
+			for _, other in ipairs(Players:GetPlayers()) do
+				if other ~= player then
+					local ch = other.Character
+					local head = ch and (ch:FindFirstChild("Head") or ch:FindFirstChild("HumanoidRootPart"))
+					local hum2 = ch and ch:FindFirstChildOfClass("Humanoid")
+					if head and hum2 and hum2.Health > 0 then
+						local lv = baseRot:VectorToObjectSpace((head.Position - camPos).Unit)
+						local wantYaw = math.atan2(-lv.X, -lv.Z)
+						local wantPitch = math.asin(math.clamp(lv.Y, -1, 1))
+						local ang = math.sqrt((wantYaw - sniperYaw) ^ 2 + (wantPitch - sniperPitch) ^ 2)
+						if ang < (scoped and math.rad(5) or math.rad(8)) and (bestAng == nil or ang < bestAng) then
+							bestYaw, bestPitch, bestAng = wantYaw, wantPitch, ang
+						end
+					end
+				end
+			end
+			if bestYaw then
+				local alpha = 1 - math.exp(-dt * (scoped and 7 or 4.5))
+				sniperYaw = sniperYaw + (bestYaw - sniperYaw) * alpha
+				sniperPitch = sniperPitch + (bestPitch - sniperPitch) * alpha
+			end
+		end
 		camera.CameraType = Enum.CameraType.Scriptable
 
 		-- Keep the camera origin identical to the authoritative server ray.

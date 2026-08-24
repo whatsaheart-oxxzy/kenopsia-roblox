@@ -688,8 +688,10 @@ task.defer(function()
 		if opts.cells then
 			local row = Instance.new("Frame")
 			row.Name = "Cells"
-			row.AnchorPoint = Vector2.new(0.5, 1)
-			row.Position = UDim2.new(0.5, 0, 1, -28)
+			-- bottom-LEFT: centred it collided with the roster/progress
+			-- cluster on the mobile layout (measured 24.08.).
+			row.AnchorPoint = Vector2.new(0, 1)
+			row.Position = UDim2.new(0, 46, 1, -28)
 			row.Size = UDim2.new(0, #opts.cells * 96 - 8, 0, 34)
 			row.BackgroundTransparency = 1
 			row.ZIndex = 3

@@ -208,7 +208,7 @@ do
 		local b = Instance.new("TextButton")
 		b.AnchorPoint = Vector2.new(0, 1)
 		b.Position = UDim2.new(0, 16, 1, -110)
-		b.Size = UDim2.fromOffset(56, 56)
+		b.Size = UDim2.fromOffset(64, 64) -- 44 pt touch floor with margin
 		b.BackgroundColor3 = Color3.fromRGB(8, 18, 13)
 		b.BackgroundTransparency = 0.25
 		b.BorderColor3 = Color3.fromRGB(46, 107, 74)
@@ -216,6 +216,10 @@ do
 		b.Text = "DANCE"
 		b.TextSize = 12
 		b.TextColor3 = Color3.fromRGB(140, 232, 174)
+		local st = Instance.new("UIStroke")
+		st.Color = Color3.fromRGB(46, 107, 74)
+		st.Thickness = 2
+		st.Parent = b
 		b.Parent = gui
 		b.Activated:Connect(function()
 			danceOn = not danceOn
