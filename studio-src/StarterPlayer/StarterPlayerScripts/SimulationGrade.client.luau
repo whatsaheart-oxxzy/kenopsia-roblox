@@ -65,12 +65,16 @@ local PRESETS = {
 	-- so no position quantisation here
 	birdhunt = {
 		Brightness = 1.1,
-		atmosphere = { Density = 0.4, Offset = 0.22, Haze = 2.2, Glare = 0,
-			Color = Color3.fromRGB(118, 112, 104), Decay = Color3.fromRGB(64, 58, 56) },
+		-- 24.08.2026 (user): a light-blue PS1 sky -- the authored skybox is
+		-- pulled while the trial runs (skyless) and the atmosphere paints a
+		-- flat pale blue; the world grain overlay keeps it pixelated.
+		atmosphere = { Density = 0.35, Offset = 0.22, Haze = 1.6, Glare = 0,
+			Color = Color3.fromRGB(152, 186, 214), Decay = Color3.fromRGB(118, 138, 158) },
 		tint = Color3.fromRGB(206, 214, 226),
 		saturation = -0.35,
 		contrast = 0.1,
 		quantise = false,
+		skyless = true,
 	},
 }
 
@@ -79,6 +83,7 @@ local LIGHT_FIELDS = { "Ambient", "OutdoorAmbient", "Brightness", "ClockTime", "
 	-- 24.08.2026 (PS1 pass 2): no soft shadows, no PBR ambience in a trial.
 	"GlobalShadows", "EnvironmentDiffuseScale", "EnvironmentSpecularScale" }
 local disabledFx = {}
+local savedSky = nil
 
 local snapshot = nil
 local created = {}
@@ -193,6 +198,27 @@ local function apply(id)
 			e.Enabled = false
 		end
 	end
+	if get(preset, "skyless") == true then
+		local sky = Lighting:FindFirstChildOfClass("Sky")
+		if sky then
+			savedSky = sky
+			sky.Parent = nil
+		end
+		-- 24.08.2026 (user): the trial sky is a 128 px Bayer-dithered light
+		-- blue (uploaded asset), flat on all six faces -- a PS1 backdrop, not
+		-- a photograph. Swapped in per trial, restored with the snapshot.
+		local ps1 = Instance.new("Sky")
+		ps1.Name = "SimGrade_PS1Sky"
+		local face = "rbxassetid://131765931649272"
+		ps1.SkyboxBk, ps1.SkyboxFt, ps1.SkyboxLf, ps1.SkyboxRt, ps1.SkyboxUp, ps1.SkyboxDn =
+			face, face, face, face, face, face
+		ps1.CelestialBodiesShown = false
+		ps1.StarCount = 0
+		ps1.SunAngularSize = 0
+		ps1.MoonAngularSize = 0
+		ps1.Parent = Lighting
+		table.insert(created, ps1)
+	end
 	if preset.atmosphere then
 		make("Atmosphere", "SimGrade_Atmosphere", preset.atmosphere)
 	end
@@ -233,6 +259,10 @@ local function restore()
 		if e.Parent then e.Enabled = true end
 	end
 	table.clear(disabledFx)
+	if savedSky then
+		savedSky.Parent = Lighting
+		savedSky = nil
+	end
 	for k, v in snapshot do Lighting[k] = v end
 	snapshot = nil
 	activeId = ""

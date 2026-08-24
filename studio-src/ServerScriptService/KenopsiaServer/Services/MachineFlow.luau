@@ -938,6 +938,10 @@ local function runMatch(room)
 				trialVoice.lastDeaths = deaths
 				setActiveTrial(ctx, "")
 				roundCtx.cleanup:run()
+				-- 24.08.2026 (user): a short BLACKOUT closes every round --
+				-- reach the exit, cut to black, then the next round card.
+				tell(ctx, { kind = "cover", seconds = 0.7 })
+				if not hold(ctx, 0.7) then return end
 				for uid, value in scores do
 					trialTotals[uid] = (trialTotals[uid] or 0) + value
 				end

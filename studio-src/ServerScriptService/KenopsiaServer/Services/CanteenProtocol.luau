@@ -567,9 +567,11 @@ local function handleAction(player, action)
 		if now < (ps.nextPlateAt or 0) then return end
 		ps.nextPlateAt = now + MIN_PLATE_INTERVAL
 		-- Loading is ALWAYS safe -- the observer only ever catches a swallow.
+		-- 24.08.2026 (user): ONE pea per stab. Filling the fork is four clicks
+		-- of theatre (the stab clip plays on every one), not one.
 		local space = FORK_CAPACITY - ps.fork
 		if space <= 0 or ps.remaining <= 0 then return end
-		local take = math.min(space, ps.remaining)
+		local take = math.min(1, space, ps.remaining)
 		ps.fork = ps.fork + take
 		ps.remaining = ps.remaining - take
 		pushState(st, player.UserId)

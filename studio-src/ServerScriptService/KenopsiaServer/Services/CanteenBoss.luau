@@ -109,6 +109,10 @@ end
 local function applyPhase(self)
 	if not self.alive or self.executing then return end
 	local phase = self.phase
+	-- any phase change puts the scan sweep back to centre
+	if self.basePivot and phase ~= "watching" and self.model and self.model.Parent then
+		self.model:PivotTo(self.basePivot)
+	end
 	if phase == "lowering" then
 		setPistolVisible(self, false)
 		setAngry(self, true)
@@ -123,6 +127,25 @@ local function applyPhase(self)
 		setPistolVisible(self, false)
 		setAngry(self, true)
 		playTrack(self, "Idle", true, Enum.AnimationPriority.Idle)
+		-- 24.08.2026 (user): the boss scans BOTH ways while watching -- a
+		-- stepped yaw sweep (right, left, centre), PS1-stepped on purpose.
+		-- The pivot is restored the moment the phase moves on.
+		if self.model and self.model.Parent then
+			local base = self.basePivot or self.model:GetPivot()
+			self.basePivot = base
+			task.spawn(function()
+				for _, yaw in ipairs({ -9, 9, 0 }) do
+					for _ = 1, 3 do
+						task.wait(0.14)
+						if self.phase ~= "watching" or not self.model.Parent then
+							self.model:PivotTo(base)
+							return
+						end
+					end
+					self.model:PivotTo(base * CFrame.Angles(0, math.rad(yaw), 0))
+				end
+			end)
+		end
 	elseif phase == "raising" then
 		setPistolVisible(self, false)
 		setAngry(self, false)

@@ -457,6 +457,7 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			if char then
 				char:SetAttribute("XBotMoves", "")
 				char:SetAttribute("Injured", false) -- 23.08.2026: the leg is over
+				char:SetAttribute("XBotRifle", false)
 				local mesh = char:FindFirstChild("Beta_Joints")
 				if mesh and mesh:IsA("BasePart") then mesh.Transparency = 0 end
 			end
@@ -646,6 +647,11 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 	-- two would drift apart under packet loss and make hits look wrong.
 	local turret = buildTurret(R.folder)
 	roundState.turret = turret
+	-- 24.08.2026 (user): the hunter holds the standing rifle pose while idle
+	-- (visible to anyone who can see the post; cleared with the leg).
+	if sniperSubject and sniperSubject.char then
+		sniperSubject.char:SetAttribute("XBotRifle", true)
+	end
 	aimTurret(turret, eye, baseAim)
 	-- Its own tick: the main loop runs at 0.2 s, and a gun that moves five
 	-- times a second reads as broken. Bounded by `stopped`, so it ends with

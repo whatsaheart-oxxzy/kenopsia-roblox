@@ -1414,6 +1414,23 @@ local function cpSetState(peas, forkLoad, eaten, total)
 			pip.BackgroundColor3 = (i <= forkLoad) and K.CP_SAFE or K.CP_PIP_EMPTY
 		end
 	end
+	-- 24.08.2026 (user): a full fork tells the player to swallow.
+	local prompt = hud.Panel:FindFirstChild("EatPrompt")
+	if not prompt then
+		prompt = Instance.new("TextLabel")
+		prompt.Name = "EatPrompt"
+		prompt.AnchorPoint = Vector2.new(0.5, 0)
+		prompt.Position = UDim2.new(0.5, 0, 0, 64)
+		prompt.Size = UDim2.new(0, 120, 0, 18)
+		prompt.BackgroundTransparency = 1
+		prompt.Font = Enum.Font.Code
+		prompt.Text = "EAT"
+		prompt.TextSize = 16
+		prompt.TextColor3 = K.CP_DANGER
+		prompt.ZIndex = 8
+		prompt.Parent = hud.Panel
+	end
+	prompt.Visible = forkLoad >= K.CP_FORK_CAPACITY
 end
 
 local function cpSetPhase(phaseName)
@@ -2589,6 +2606,17 @@ MachineState.OnClientEvent:Connect(function(p)
 	-- sets it, one without is the clear (Shared/Rules/MachineCam). Neither
 	-- reaches the screen funnel below: the audience view must NOT cancel the
 	-- bench card it is shown under, and the podium bumps `session` itself.
+	-- 24.08.2026 (user): the round-end blackout, before the standings card.
+	-- No session bump, no hideAll: the world simply goes dark for a beat.
+	if p.kind == "cover" then
+		faderFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+		faderFrame.BackgroundTransparency = 0
+		faderFrame.Visible = true
+		task.delay(tonumber(p.seconds) or 0.7, function()
+			faderFrame.Visible = false
+		end)
+		return
+	end
 	if p.kind == "podium" then
 		if setMachineCam("podium", p) then
 			session += 1

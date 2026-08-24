@@ -80,16 +80,28 @@ end
 
 local dead = false
 local speedNow = 0
+local danceOn = false
 local function update()
 	if dead then return end
 	local scale = char:GetScale()
 	local moving = speedNow > 0.5
 	-- 23.08.2026: the trial attributes pick the gait first; each falls through
 	-- to the plain choice when its clip is not available (track() -> nil).
+	if moving then danceOn = false end
 	if char:GetAttribute("XBotCrawl") == true and track("Crawl") then
 		play("Crawl", moving and speedNow / ((NATURAL.Crawl or 2.0) * scale) or 0)
 	elseif char:GetAttribute("Crouching") == true then
-		play("Crouch", moving and 1 or 0)
+		-- 24.08.2026 (user): the sneak walk replaces the crouch gait wherever
+		-- the clip is available; the Blender crouch stays the fallback.
+		if track("Sneak") then
+			play("Sneak", moving and speedNow / ((NATURAL.Sneak or 5.65) * scale) or 0)
+		else
+			play("Crouch", moving and 1 or 0)
+		end
+	elseif not moving and danceOn and track("Dance") then
+		play("Dance", 1)
+	elseif not moving and char:GetAttribute("XBotRifle") == true and track("RifleIdle") then
+		play("RifleIdle", 1)
 	elseif not moving then
 		play("Idle", 1)
 	elseif char:GetAttribute("Injured") == true and track("InjuredWalk") then
@@ -147,6 +159,41 @@ animator.AnimationPlayed:Connect(function(t)
 	if not isOurs(t) then t:Stop(0) end
 end)
 update()
+
+-- 24.08.2026 (user): a little dance, just for the players. G / DPadLeft (or
+-- the small touch button) toggles it; any movement or a trial gait cancels.
+do
+	local UserInputService = game:GetService("UserInputService")
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then return end
+		if input.KeyCode == Enum.KeyCode.G or input.KeyCode == Enum.KeyCode.DPadLeft then
+			danceOn = not danceOn
+			update()
+		end
+	end)
+	if UserInputService.TouchEnabled then
+		local gui = Instance.new("ScreenGui")
+		gui.Name = "KenopsiaEmote"
+		gui.ResetOnSpawn = false
+		gui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+		local b = Instance.new("TextButton")
+		b.AnchorPoint = Vector2.new(0, 1)
+		b.Position = UDim2.new(0, 16, 1, -110)
+		b.Size = UDim2.fromOffset(56, 56)
+		b.BackgroundColor3 = Color3.fromRGB(8, 18, 13)
+		b.BackgroundTransparency = 0.25
+		b.BorderColor3 = Color3.fromRGB(46, 107, 74)
+		b.Font = Enum.Font.Code
+		b.Text = "DANCE"
+		b.TextSize = 12
+		b.TextColor3 = Color3.fromRGB(140, 232, 174)
+		b.Parent = gui
+		b.Activated:Connect(function()
+			danceOn = not danceOn
+			update()
+		end)
+	end
+end
 
 -- 24.08.2026: ONE MINE takes the lower half. The rig is a single skinned mesh,
 -- so the legs cannot be detached -- instead, while `XBotLegless` is set, the

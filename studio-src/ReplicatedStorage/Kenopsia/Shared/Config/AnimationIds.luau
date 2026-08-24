@@ -45,6 +45,13 @@ AnimationIds.Player = {          -- rig: PS1Player (20 bones), loops in place, 3
 	DeathField  = 137420901214756,
 	Crawl       = 102977383488004,
 	InjuredWalk = 109198821545630,
+	-- 24.08.2026: three more retargeted Mixamo clips on Anim_FieldClips
+	-- (Sneak Walk -> Sneak replaces the crouch gait, Dancing -> Dance emote,
+	-- Rifle Aiming Idle -> RifleIdle for the hunter). 0 until the user
+	-- publishes them under the group; Studio plays the saved sequences.
+	Sneak       = 0,
+	Dance       = 0,
+	RifleIdle   = 0,
 }
 -- Clip start offsets in seconds: the Sweep Fall source opens with ~0.6 s of
 -- "hands to the head" before the body goes — the field death skips it.
@@ -52,7 +59,7 @@ AnimationIds.PlayerStart = { DeathField = 0.6 }
 -- for AdjustSpeed. Crawl / InjuredWalk (23.08.2026) are MEASURED from the
 -- Mixamo hips trend the retarget removed (8.50 studs / 3.77 s, 6.05 / 1.73 s
 -- at scale 1) -- the clips play in place, these are their natural speeds.
-AnimationIds.PlayerSpeeds = { Walk = 4.5, Run = 10.95, Push = 3.15, Crawl = 2.26, InjuredWalk = 3.49 }
+AnimationIds.PlayerSpeeds = { Walk = 4.5, Run = 10.95, Push = 3.15, Crawl = 2.26, InjuredWalk = 3.49, Sneak = 5.65 }
 AnimationIds.Boss = {            -- rig: CanteenBoss (19 bones)
 	-- 22.08.2026: re-published under the group; Reading is its own looping clip
 	-- (LookDown lands on the paper, CanteenBoss hands over to Reading from there).
@@ -107,6 +114,8 @@ AnimationIds.StudioSequences = {
 		-- Walking do not fit this skeleton and must not be referenced.
 		DeathField = { "Anim_FieldClips", "DeathField" }, Crawl = { "Anim_FieldClips", "Crawl" },
 		InjuredWalk = { "Anim_FieldClips", "InjuredWalk" },
+		Sneak = { "Anim_FieldClips", "Sneak" }, Dance = { "Anim_FieldClips", "Dance" },
+		RifleIdle = { "Anim_FieldClips", "RifleIdle" },
 	},
 	Boss = {
 		Idle = { "Anim_Idle", "Idle", 100 }, LookUp = { "Anim_LookUp", "LookingUp" },
