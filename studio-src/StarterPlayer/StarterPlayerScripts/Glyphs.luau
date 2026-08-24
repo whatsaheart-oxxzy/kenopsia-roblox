@@ -50,6 +50,10 @@ Glyphs.Actions = {
 	Load      = { Desktop = { text = "LMB" },                   Console = { key = "ButtonL2" },    Touch = { text = "PLATE" } },
 	Swallow   = { Desktop = { text = "RMB" },                   Console = { key = "ButtonR2" },    Touch = { text = "MOUTH" } },
 	Page      = { Desktop = { keys = { "Left", "Right" } },     Console = { keys = { "DPadLeft", "DPadRight" } }, Touch = { text = "ARROWS" } },
+	-- 25.08.2026: the main menu's vertical list. Separate from Page (which is
+	-- horizontal, for the briefing's arrows) and from Move (which drives a
+	-- character, not a cursor).
+	MenuNav   = { Desktop = { keys = { "W", "S" } },            Console = { keys = { "DPadUp", "DPadDown" } },   Touch = { text = "TAP" } },
 	LookLeft  = { Desktop = { key = "Left" },                   Console = { key = "DPadLeft" },    Touch = { text = "TAP BAR" } },
 	LookRight = { Desktop = { key = "Right" },                  Console = { key = "DPadRight" },   Touch = { text = "TAP BAR" } },
 }

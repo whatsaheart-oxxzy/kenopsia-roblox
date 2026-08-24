@@ -35,7 +35,27 @@ local BASE = {
 	quantise = true,
 }
 
+-- The id the MAIN MENU asks for. It is not a trial, but it wants exactly what
+-- a trial wants -- a graded, fogged, hard-lit world -- and Lighting must have
+-- ONE owner, so it goes through the same apply/restore path instead of a
+-- second script writing Lighting behind this one's back.
+local MENU_ID = "__menu"
+
 local PRESETS = {
+	-- outside the facility: cold, close fog, no sky at all (the menu diorama
+	-- carries its own shell, so nothing beyond it is ever meant to be seen).
+	[MENU_ID] = {
+		Ambient = Color3.fromRGB(18, 30, 38),
+		OutdoorAmbient = Color3.fromRGB(8, 16, 22),
+		Brightness = 1,
+		ClockTime = 0,
+		fog = { 18, 95, Color3.fromRGB(3, 9, 13) },
+		tint = Color3.fromRGB(196, 224, 240),
+		saturation = -0.55,
+		contrast = 0.22,
+		skyless = true,
+		skybox = false, -- no replacement sky: the shell is the backdrop
+	},
 	-- the Dead Zone: black void, cold floodlight raster (moved here from the
 	-- monolith's DZ-light block). The strip must read as a floor even where
 	-- local lights are not rendered at all (low quality level / weak phones),
@@ -206,12 +226,19 @@ local function apply(id)
 			savedSky = sky
 			sky.Parent = nil
 		end
+	end
+	if get(preset, "skyless") == true then
 		-- 24.08.2026 (user): the trial sky is a 128 px Bayer-dithered light
 		-- blue (uploaded asset), flat on all six faces -- a PS1 backdrop, not
 		-- a photograph. Swapped in per trial, restored with the snapshot.
+		--
+		-- `skybox = false` asks for a BLANK sky instead (the menu: its diorama
+		-- is enclosed, so any sky would only ever be seen as a mistake). It has
+		-- to be a Sky with no faces rather than no Sky at all -- removing the
+		-- object reverts Roblox to its own default blue.
 		local ps1 = Instance.new("Sky")
 		ps1.Name = "SimGrade_PS1Sky"
-		local face = "rbxassetid://131765931649272"
+		local face = preset.skybox == false and "" or "rbxassetid://131765931649272"
 		ps1.SkyboxBk, ps1.SkyboxFt, ps1.SkyboxLf, ps1.SkyboxRt, ps1.SkyboxUp, ps1.SkyboxDn =
 			face, face, face, face, face, face
 		ps1.CelestialBodiesShown = false
@@ -273,11 +300,19 @@ end
 local function update()
 	local id = player:GetAttribute("KenopsiaActiveTrial") or ""
 	local want = id ~= "" and filterOn()
+	-- A trial always wins: if one starts while the menu is still up, the menu
+	-- closes itself on the same attribute and the trial's grade takes over.
+	-- The menu's own look is NOT gated on SIMULATION FILTER -- that setting is
+	-- about how the trials look, and the front door is not a trial.
+	if not want and player:GetAttribute("KenopsiaMenuOpen") == true then
+		id, want = MENU_ID, true
+	end
 	if snapshot and (not want or id ~= activeId) then restore() end
 	if want and not snapshot then apply(id) end
 end
 
 player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(update)
 player:GetAttributeChangedSignal("KenopsiaSimFilter"):Connect(update)
+player:GetAttributeChangedSignal("KenopsiaMenuOpen"):Connect(update)
 player:GetAttributeChangedSignal("KenopsiaReduceFlicker"):Connect(publishQuant)
 task.defer(update)

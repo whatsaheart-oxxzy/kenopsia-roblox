@@ -21,7 +21,8 @@
             "GameConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/GameConfig.luau" },
             "AnimationIds": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/AnimationIds.luau" },
             "MachineVoice": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/MachineVoice.luau" },
-            "FeelConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/FeelConfig.luau" }
+            "FeelConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/FeelConfig.luau" },
+            "MenuConfig": { "$path": "studio-src/ReplicatedStorage/Kenopsia/Shared/Config/MenuConfig.luau" }
           },
           "Rules": {
             "$className": "Folder",
@@ -107,6 +108,7 @@
         "$className": "StarterPlayerScripts",
         "KenopsiaClient": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau" },
         "MachineLayout":  { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/MachineLayout.client.luau" },
+        "MainMenu":       { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/MainMenu.client.luau" },
         "UiFx":           { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/UiFx.client.luau" },
         "SimulationGrade": { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/SimulationGrade.client.luau" },
         "GoreClient":     { "$path": "studio-src/StarterPlayer/StarterPlayerScripts/GoreClient.client.luau" },

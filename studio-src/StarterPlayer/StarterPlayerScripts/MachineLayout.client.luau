@@ -515,6 +515,16 @@ local function apply()
 			cw.Size = UDim2.new(0, math.max(200, w), cw.Size.Y.Scale, cw.Size.Y.Offset)
 		end
 	end
+	-- 25.08.2026: the MAIN MENU lives in its own ScreenGui (KenopsiaMenu) so a
+	-- moving streak never re-rasterises the machine's 521 descendants -- but it
+	-- is authored against the same 710 px reference, so it is scaled here
+	-- rather than growing a second scaling rule inside MainMenu.
+	local menu = playerGui:FindFirstChild("KenopsiaMenu")
+	local menuRoot = menu and menu:FindFirstChild("Root")
+	if menuRoot then
+		scaleObject(menuRoot, s, true)
+		applyTextFloor(menuRoot, s)
+	end
 	applyControlsText()
 	applyButtonHints()
 	applyFocusRing()
@@ -554,6 +564,11 @@ bindCamera(workspace.CurrentCamera)
 workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 	bindCamera(workspace.CurrentCamera)
 	apply()
+end)
+-- StarterPlayerScripts start in no guaranteed order, so the menu's ScreenGui
+-- can arrive after the first apply(); scale it the moment it does.
+playerGui.ChildAdded:Connect(function(child)
+	if child.Name == "KenopsiaMenu" then task.defer(apply) end
 end)
 -- P2.4: one re-detect path. Leaving Console drops the gamepad selection so
 -- no phosphor ring is left on a mouse-driven screen; entering it re-focuses

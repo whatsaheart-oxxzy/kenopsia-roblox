@@ -162,6 +162,11 @@ end
 local LIVE_SCREENS = { "Selection", "Info", "Status", "Score" }
 local function liveOk()
 	if (player:GetAttribute("KenopsiaActiveTrial") or "") ~= "" then return false end
+	-- 25.08.2026: the main menu is glass too. Its own ScreenGui sits above this
+	-- overlay's DisplayOrder, so the band and the blip read through it and the
+	-- title terminal breathes like every other machine screen.
+	local menu = playerGui:FindFirstChild("KenopsiaMenu")
+	if menu and menu.Enabled then return true end
 	local machine = playerGui:FindFirstChild("KenopsiaMachine")
 	if not machine or not machine.Enabled then return false end
 	for _, n in ipairs(LIVE_SCREENS) do

@@ -130,6 +130,17 @@ task.spawn(function()
 		end
 		local selection = machineGui:FindFirstChild("Selection")
 		add(selection and selection:FindFirstChild("GrungeWash"))
+		-- 25.08.2026: the main menu is the FIRST thing after this bridge, and it
+		-- is five images deep. Preloading them here costs nothing extra (the
+		-- bridge is already holding) and stops the title terminal assembling
+		-- one plate at a time in front of the player.
+		local menuGui = playerGui:FindFirstChild("KenopsiaMenu")
+		local menuRoot = menuGui and menuGui:FindFirstChild("Root")
+		if menuRoot then
+			for _, d in ipairs(menuRoot:GetDescendants()) do
+				if d:IsA("ImageLabel") and d.Image ~= "" then add(d) end
+			end
+		end
 		local audio = SoundService:FindFirstChild("KenopsiaAudio")
 		local music = audio and audio:FindFirstChild("Music")
 		local sfx = audio and audio:FindFirstChild("SFX")
