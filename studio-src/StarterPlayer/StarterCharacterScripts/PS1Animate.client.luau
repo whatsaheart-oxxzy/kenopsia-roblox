@@ -142,14 +142,25 @@ hum.Died:Connect(function()
 	dead = true
 	if current then current:Stop(0.1) end
 	current = nil
-	-- 23.08.2026: the field death first; the execution Death stays the fallback
-	local d = track("DeathField") or track("Death")
+	-- 24.08.2026 (user): the canteen execution slumps onto the TABLE (the
+	-- Blender Death clip); every field trial falls with the Mixamo DeathField.
+	local inCanteen = localPlayer:GetAttribute("KenopsiaActiveTrial") == "canteen"
+	local d = inCanteen and (track("Death") or track("DeathField"))
+		or (track("DeathField") or track("Death"))
 	if d then
 		d.Looped = false
 		d:Play(0.05)
-		-- 23.08.2026: the published Sweep Fall starts with a 0.6 s wind-up.
-		local start = AnimationIds.PlayerStart and AnimationIds.PlayerStart[d == track("DeathField") and "DeathField" or "Death"]
-		if start and start > 0 then d.TimePosition = start end
+		local start = 0
+		if d == track("DeathField") and AnimationIds.PlayerStart then
+			start = AnimationIds.PlayerStart.DeathField or 0
+		end
+		if start > 0 then d.TimePosition = start end
+		-- 24.08.2026 (user): the body STAYS DOWN. A finished one-shot track
+		-- releases the rig back to its bind pose ("the animation comes back
+		-- alive"), so the clip is frozen a breath before its final keyframe.
+		task.delay(math.max(0.05, d.Length - start - 0.08), function()
+			if d.IsPlaying then d:AdjustSpeed(0) end
+		end)
 	end
 end)
 

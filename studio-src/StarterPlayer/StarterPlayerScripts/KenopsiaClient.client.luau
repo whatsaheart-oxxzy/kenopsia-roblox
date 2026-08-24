@@ -553,6 +553,65 @@ local function spectateRoot()
 	return nil
 end
 
+-- 24.08.2026 (user): VIEWER MODE controls. With two or more survivors on the
+-- watch list, Q / E (gamepad LB / RB, tap left / right screen half on touch)
+-- steps through them; a phosphor caption names the watched subject. The
+-- caption label rides the machine gui and hides itself with the mode.
+do
+	local caption = nil
+	local function ensureCaption()
+		if caption and caption.Parent then return caption end
+		caption = Instance.new("TextLabel")
+		caption.Name = "SpectateCaption"
+		caption.AnchorPoint = Vector2.new(0.5, 1)
+		caption.Position = UDim2.new(0.5, 0, 1, -46)
+		caption.Size = UDim2.new(0, 460, 0, 22)
+		caption.BackgroundColor3 = Color3.fromRGB(4, 10, 7)
+		caption.BackgroundTransparency = 0.35
+		caption.BorderSizePixel = 0
+		caption.Font = Enum.Font.Code
+		caption.TextSize = 15
+		caption.TextColor3 = PHOSPHOR
+		caption.ZIndex = 66
+		caption.Visible = false
+		caption.Parent = machine
+		return caption
+	end
+	local function cycle(dir)
+		if not spectateWatch or #spectateWatch < 2 then return end
+		spectateIndex = ((spectateIndex - 1 + dir) % #spectateWatch) + 1
+		spectateEye = nil
+		sfx("Click")
+	end
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed or not spectateWatch then return end
+		if input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonL1 then
+			cycle(-1)
+		elseif input.KeyCode == Enum.KeyCode.E or input.KeyCode == Enum.KeyCode.ButtonR1 then
+			cycle(1)
+		elseif input.UserInputType == Enum.UserInputType.Touch then
+			local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+			if vp then cycle(input.Position.X < vp.X / 2 and -1 or 1) end
+		end
+	end)
+	task.spawn(function()
+		while true do
+			task.wait(0.4)
+			local c = ensureCaption()
+			if spectateWatch and #spectateWatch > 0 then
+				local target = Players:GetPlayerByUserId(spectateWatch[spectateIndex] or 0)
+				local many = #spectateWatch > 1
+				c.Text = target
+					and ("VIEWER MODE - " .. string.upper(target.DisplayName) .. (many and "    [Q/E]" or ""))
+					or "VIEWER MODE"
+				c.Visible = true
+			elseif c.Visible then
+				c.Visible = false
+			end
+		end
+	end)
+end
+
 local function restoreCamera()
 	camera.CameraType = Enum.CameraType.Custom
 	local char = player.Character
@@ -789,9 +848,10 @@ local function buildViewmodel()
 	local lampHost = vm:FindFirstChild("Receiver") or vm:FindFirstChildWhichIsA("BasePart", true)
 	if lampHost then
 		local lamp = Instance.new("PointLight")
-		lamp.Brightness = 0.85
-		lamp.Range = 9
-		lamp.Color = Color3.fromRGB(220, 225, 235)
+		-- 24.08.2026 (user): the rifle read too dark against the dusk grade.
+		lamp.Brightness = 2.2
+		lamp.Range = 11
+		lamp.Color = Color3.fromRGB(255, 234, 196)
 		lamp.Shadows = false
 		lamp.Parent = lampHost
 	end
@@ -2450,7 +2510,14 @@ MachineState.OnClientEvent:Connect(function(p)
 		-- token whenever one is present, before the spectate early-return.
 		if p.roundToken ~= nil then trialRoundToken = p.roundToken end
 		if p.role == "spectate" then
-			-- toter Beobachter: feste Kamera ueber dem Feld
+			-- 24.08.2026 (user): death -> a black beat -> VIEWER MODE. The
+			-- camera switches while the screen is dark, so the cut is clean.
+			faderFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+			faderFrame.BackgroundTransparency = 0
+			faderFrame.Visible = true
+			task.delay(0.6, function()
+				faderFrame.Visible = false
+			end)
 			local pos = Vector3.new(p.pos[1], p.pos[2], p.pos[3])
 			local look = Vector3.new(p.look[1], p.look[2], p.look[3])
 			spectateCF = CFrame.lookAt(pos, look)

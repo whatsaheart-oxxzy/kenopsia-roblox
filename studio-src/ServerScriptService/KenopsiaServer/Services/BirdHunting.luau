@@ -704,23 +704,33 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			-- corpse clone and the runner is moved out later), so MachineFlow's
 			-- death tally cannot see it through Humanoid.Died. The attribute
 			-- bump is the one signal it watches instead.
-			plr:SetAttribute("KenopsiaProcessed", (tonumber(plr:GetAttribute("KenopsiaProcessed")) or 0) + 1)
-			-- Reference tone: one localized blood hit and one falling body, followed
-			-- by the shared black leg transition. No gib/fountain/screen-gore stack.
+			-- 24.08.2026 (evening, user): the runner FALLS where they stand --
+			-- Humanoid.Health = 0 lets PS1Animate play the field death and park
+			-- it on the last keyframe; no corpse clone, no fling. One localized
+			-- blood hit; the black beat + viewer mode follow from the spectate
+			-- packet below.
 			BloodFX.hit(hit.Position, audience)
 			BloodFX.sound(hit.Position, "ImpactBody", audience)
-			local corpse = BloodFX.corpse(char, dir * 18 + Vector3.new(0, 10, 0))
-			if corpse then table.insert(corpses, corpse) end
-
-			-- Freeze NOW -- they are dead and must not keep running -- but hold
-			-- the HUD reset and the move out for KILL_VIEW_TIME so the kill is
-			-- actually seen. st.done is already true, so nothing downstream is
-			-- waiting on this.
 			local downedHum = char and char:FindFirstChildOfClass("Humanoid")
 			if downedHum then
 				downedHum.WalkSpeed = 0
 				downedHum.Jump = false
+				downedHum.Health = 0
 			end
+			-- viewer mode for the dead: every LIVING RUNNER is watchable; the
+			-- sniper is NEVER on the list (user rule).
+			task.delay(2.0, function()
+				if not roundState.active then return end
+				local watch = {}
+				for wuid, wst in state do
+					if not wst.done and not wst.sniper then table.insert(watch, wuid) end
+				end
+				local camPos = eye + Vector3.new(0, 14, 0)
+				tellOne(plr.UserId, { kind = "role", role = "spectate",
+					watch = watch,
+					pos = { camPos.X, camPos.Y, camPos.Z },
+					look = { spawnPos.X, spawnPos.Y, spawnPos.Z } })
+			end)
 			local exitCFrame = CFrame.new(spawnPos
 				+ Vector3.new(math.random(-6, 6), 4, math.random(-6, 6)))
 			task.delay(KILL_VIEW_TIME, function()

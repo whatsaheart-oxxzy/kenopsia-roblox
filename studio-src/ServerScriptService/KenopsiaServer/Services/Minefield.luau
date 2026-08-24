@@ -500,21 +500,27 @@ local function runRoundInner(room, roundIndex, guard)
 				local s = livingOf(room)[uid]
 				if s then
 					local d = (Vector3.new(s.root.Position.X, 0, s.root.Position.Z) - Vector3.new(pos.X, 0, pos.Z)).Magnitude
-					if d <= KILL_RADIUS then
+					if d <= KILL_RADIUS and not ps.crawling then
+						-- 24.08.2026 (evening, user): EVERY first mine -- direct
+						-- step included, armed or not -- is the second chance:
+						-- the lower half goes, the runner crawls on. Only the
+						-- SECOND mine kills (branch below).
+						ps.crawling = true
+						s.char:SetAttribute("XBotCrawl", true)
+						s.char:SetAttribute("XBotLegless", true)
+						ps.walkBefore = s.hum.WalkSpeed
+						s.hum.WalkSpeed = CRAWL_SPEED
+						BloodFX.maim(s.char, audienceOf(room), roundState.roundToken)
+						tellOne(uid, { kind = "announce", style = "warn", text = "LEGS GONE. CRAWL." })
+					elseif d <= KILL_RADIUS then
 						ps.done = true
 						ps.cardAt = os.clock()
-						-- One localized burst, not a stack. kill() plus shatter() ran both
-						-- the blood hit AND the gib fountain on the same death, which is
-						-- the gore stack the plan rules out and a maturity problem besides.
-						-- 24.08.2026 (user): a DIRECT hit also takes the lower
-						-- half -- the corpse plays the field death with the leg
-						-- chains folded under the floor (PS1Animate keeps the
-						-- XBotLegless writer running on a dead character) and
-						-- the hip clot marks the cut. maim() carries the burst.
-						s.char:SetAttribute("XBotLegless", true)
-						BloodFX.maim(s.char, audienceOf(room), roundState.roundToken)
+						-- The second mine: nothing is left to crawl with. The
+						-- body goes entirely (shatter destroys it) -- no death
+						-- clip, no corpse.
+						BloodFX.shatter(s.char, nil, audienceOf(room))
 						s.hum.Health = 0
-						tellOne(uid, { kind = "announce", style = "death", text = "YOU STEPPED WRONG." })
+						tellOne(uid, { kind = "announce", style = "death", text = "YOU STEPPED WRONG. TWICE." })
 						if R.cam then
 							task.delay(3.2, function()
 								-- C1.d: never strand a lobby player's camera on

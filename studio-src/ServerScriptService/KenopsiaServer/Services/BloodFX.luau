@@ -76,11 +76,18 @@ function BloodFX.hit(pos, recipients) ev({ t = "hit", p = v(pos) }, recipients) 
 
 -- ZERSTUECKELUNG: Koerper verschwindet sofort, Clients rendern den Brockenregen
 function BloodFX.shatter(char, pos, recipients)
-	local mesh = char and char:FindFirstChild("Beta_Joints")
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	local p = pos or (root and root.Position)
 	if not p then return end
-	if mesh and mesh:IsA("BasePart") then mesh.Transparency = 1 end
+	-- 24.08.2026: hide EVERY skinned mesh of the body, not the X-Bot-era
+	-- "Beta_Joints" -- the PS1 rig carries Player_Body/Head/Bag MeshParts.
+	if char then
+		for _, d in char:GetDescendants() do
+			if d:IsA("MeshPart") or (d:IsA("BasePart") and d.Name == "Beta_Joints") then
+				d.Transparency = 1
+			end
+		end
+	end
 	ev({ t = "shatter", p = v(p) }, recipients)
 end
 
