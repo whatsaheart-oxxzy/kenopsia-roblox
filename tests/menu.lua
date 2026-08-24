@@ -166,15 +166,55 @@ check(Menu.Idle.DollyPeriod % Menu.Idle.ParallaxPeriod ~= 0,
 	"parallax and dolly periods do not fall in step",
 	string.format("%s / %s", tostring(Menu.Idle.DollyPeriod), tostring(Menu.Idle.ParallaxPeriod)))
 
-print("Diorama")
-local D = Menu.Diorama
-check(#D.Origin == 3 and D.Origin[2] > 1000, "the set sits far above the arenas",
-	table.concat({ tostring(D.Origin[1]), tostring(D.Origin[2]), tostring(D.Origin[3]) }, ","))
-check(D.Cam.dz > 0 and D.Cam.dy > 0, "the camera stands in front of and above the set")
-check(D.Shell.d > D.Cam.dz and D.Shell.w > D.Ground.w,
-	"the shell encloses the camera and the ground (no default sky can show)")
-check(D.Fov >= 40 and D.Fov <= 70, "field of view is sane", tostring(D.Fov))
-check(D.FenceCount + D.CrateCount + 8 <= 20, "the set stays inside its 20-part budget")
+print("Stage")
+-- The set is the user's own MenuStage, measured out of Kenopsia_DEV. These
+-- checks guard the transcription, not the taste.
+local S = Menu.Stage
+check(#S.Origin == 3 and S.Origin[2] > 1000, "the set sits far above the arenas",
+	table.concat({ tostring(S.Origin[1]), tostring(S.Origin[2]), tostring(S.Origin[3]) }, ","))
+check(#S.Parts + #S.Lights <= 20, "the set stays inside its 20-part budget",
+	tostring(#S.Parts + #S.Lights))
+check(#S.Lights >= 1 and #S.Lights <= 4, "one to four lamps", tostring(#S.Lights))
+for _, p in ipairs(S.Parts) do
+	check(#p.size == 3 and #p.pos == 3 and #p.rot == 3 and #p.color == 3,
+		"part " .. p.name .. " is fully specified")
+	check(type(p.material) == "string" and #p.material > 0, "part " .. p.name .. " names a material")
+end
+local blinkers = 0
+for _, l in ipairs(S.Lights) do
+	check(#l.pos == 3 and #l.color == 3 and l.brightness > 0 and l.range > 0,
+		"lamp " .. l.name .. " is fully specified")
+	if l.blink then blinkers = blinkers + 1 end
+end
+check(blinkers == 1, "exactly one lamp answers the selection", tostring(blinkers))
+check(#S.Cam.pos == 3 and #S.Cam.rot == 3, "the camera marker carries a position and an orientation")
+check(#S.CharacterAnchor == 3, "the figure has an anchor")
+check(S.Fov >= 40 and S.Fov <= 80, "field of view is sane", tostring(S.Fov))
+check(S.LampBlink > 0 and S.LampBlink < 0.5, "the lamp drop is a blink, not a fade",
+	tostring(S.LampBlink))
+
+-- The camera must not be able to see past the set: the back wall has to stand
+-- BEHIND the figure and span wider than the floor, or a skybox comes into frame.
+local floor, backmost = nil, nil
+for _, p in ipairs(S.Parts) do
+	if p.name == "Floor" then floor = p end
+	if p.name ~= "Floor" and (backmost == nil or p.pos[3] > backmost.pos[3]) then backmost = p end
+end
+check(floor ~= nil and backmost ~= nil, "the set has a floor and a wall")
+if floor and backmost then
+	local floorFar = floor.pos[3] + floor.size[3] / 2
+	check(backmost.pos[3] >= floorFar - 1, "the wall stands at or past the far edge of the floor",
+		string.format("wall z %.1f vs floor edge %.1f", backmost.pos[3], floorFar))
+	check(backmost.size[1] >= floor.size[1], "the wall is at least as wide as the floor",
+		string.format("%.0f vs %.0f", backmost.size[1], floor.size[1]))
+	check(S.CharacterAnchor[3] < backmost.pos[3] and S.CharacterAnchor[3] > S.Cam.pos[3],
+		"the figure stands between the camera and the wall")
+end
+
+print("stagePoint")
+local sx, sy, sz = Menu.stagePoint({ 1, 2, 3 })
+check(sx == 1 + S.Origin[1] and sy == 2 + S.Origin[2] and sz == 3 + S.Origin[3],
+	"stagePoint applies the origin", string.format("%s,%s,%s", tostring(sx), tostring(sy), tostring(sz)))
 
 print("Briefing")
 check(#Menu.Briefing == 2, "two pages", tostring(#Menu.Briefing))

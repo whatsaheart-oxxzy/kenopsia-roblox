@@ -37,12 +37,13 @@ Menu.Palette = {
 -- minified one just aliases. Sources: tools/menu-assets.py (original work).
 -- Ids are filled in on upload; an empty id renders as nothing, never as an
 -- error, so the menu still boots on a place that has not got them yet.
+-- Uploaded 25.08.2026 from tools/menu-assets.py output.
 Menu.Images = {
-	Wordmark = { id = "", w = 512, h = 97 },
-	Streak = { id = "", w = 256, h = 32 },
-	Shards = { id = "", w = 512, h = 384 },
-	Rain = { id = "", w = 256, h = 256 },
-	Dots = { id = "", w = 128, h = 128 },
+	Wordmark = { id = "88647754582283", w = 512, h = 97 },
+	Streak = { id = "134334042347021", w = 256, h = 32 },
+	Shards = { id = "120005853529594", w = 512, h = 384 },
+	Rain = { id = "105106540934647", w = 256, h = 256 },
+	Dots = { id = "85128683768553", w = 128, h = 128 },
 }
 
 -- LAYOUT --------------------------------------------------------------------
@@ -162,24 +163,71 @@ Menu.Idle = {
 	ParallaxPx = 3,      -- shards drift this far on X
 	ParallaxPyY = 2,     -- ... and this far on Y
 	ParallaxPeriod = 8,  -- seconds for one there-and-back
-	DollyStuds = 2,      -- camera travel on X in the diorama
+	DollyStuds = 2,      -- camera travel on X across the stage
 	DollyPeriod = 20,
 	ClockHz = 1,
 }
 
--- DIORAMA -------------------------------------------------------------------
--- Built client-side far above the arenas: no replication, no server cost, and
--- nothing to collide with. The shell guarantees a void behind it whatever the
--- place's Sky is doing, so the menu never shows Roblox's default blue.
-Menu.Diorama = {
+-- World position of a stage point ({x,y,z} local) with the Origin applied.
+-- Returns three numbers so the client can build a Vector3 without this module
+-- ever touching a Roblox type (it has to load under plain Lua for the tests).
+function Menu.stagePoint(p)
+	local o = Menu.Stage.Origin
+	return p[1] + o[1], p[2] + o[2], p[3] + o[3]
+end
+
+-- THE STAGE ------------------------------------------------------------------
+-- The set behind the menu is the user's OWN `workspace.MenuStage` from
+-- Kenopsia_DEV, measured out of that place on 25.08.2026 and transcribed here
+-- so the main game can rebuild it without the two places having to share a
+-- workspace. Coordinates are exactly the DEV ones; Origin is added to each, so
+-- the set lands far above the arenas -- no replication (it is built on the
+-- client), no collisions, nothing for a runner to find.
+--
+-- Its own geometry encloses the camera's view: the floor runs to z 25.4 and the
+-- four stepped wall slabs stand at z 25.9-28.9 across the full width, so no
+-- skybox is ever in frame and the menu needs no shell of its own. That is why
+-- the grade preset asks for a blank sky rather than a pretty one.
+--
+-- Dropped from the DEV set on purpose: `Wall` (behind the camera, never in
+-- frame), `SessionDisplay` and `SessionCamera` (markers for that prototype's
+-- session board, which this menu does not have).
+Menu.Stage = {
 	Origin = { 0, 3000, 0 },
-	Shell = { w = 260, h = 140, d = 200 },
-	Ground = { w = 60, d = 60 },
-	Cam = { dx = 0, dy = 6, dz = 26, lx = 0, ly = 4.5, lz = 0 },
-	Fov = 55,
-	FenceCount = 5,
-	CrateCount = 3,
-	LampBlink = 0.12, -- seconds the gate lamp drops when the selection moves
+	Parts = {
+		{ name = "Floor", size = { 109, 1, 33 }, pos = { 143.3, 0.5, 8.9 }, rot = { 0, 0, 0 },
+			color = { 237, 234, 234 }, material = "Asphalt" },
+		-- four slabs, each stepped one stud further back as it rises
+		{ name = "Wall_03", size = { 113, 1, 10 }, pos = { 145.3, 4, 25.9 }, rot = { 90, 0, 0 },
+			color = { 237, 234, 234 }, material = "Concrete" },
+		{ name = "Wall_01", size = { 113, 1, 10 }, pos = { 143.3, 12, 26.9 }, rot = { 90, 0, 0 },
+			color = { 237, 234, 234 }, material = "Concrete" },
+		{ name = "Wall_02", size = { 113, 1, 10 }, pos = { 143.3, 19, 27.9 }, rot = { 90, 0, 0 },
+			color = { 237, 234, 234 }, material = "Concrete" },
+		{ name = "Wall_04", size = { 113, 1, 10 }, pos = { 143.3, 27, 28.9 }, rot = { 90, 0, 0 },
+			color = { 237, 234, 234 }, material = "Concrete" },
+	},
+	-- Three lamps, the DEV values kept: a warm key on the landing, an amber one
+	-- on the figure, a cold one washing the back wall. `blink` marks the one
+	-- that acknowledges a selection move.
+	Lights = {
+		{ name = "Lamp_Landing", pos = { 139, 10, 14 }, brightness = 1.2, range = 18,
+			color = { 216, 208, 190 } },
+		{ name = "Lamp_Character", pos = { 131.5, 9.5, 14 }, brightness = 1.6, range = 24,
+			color = { 210, 169, 74 }, blink = true },
+		{ name = "Lamp_SessionWall", pos = { 139, 9, 23 }, brightness = 1.4, range = 20,
+			color = { 96, 114, 122 } },
+	},
+	-- LandingCamera: looks along +Z and 14 degrees down. The figure stands at
+	-- -X of it, which the camera sees on its RIGHT -- so the subject fills the
+	-- right of the screen and the menu column has the left to itself.
+	Cam = { pos = { 135.2, 8, 2.4 }, rot = { -14.289, 175.73, 0 } },
+	CharacterAnchor = { 129.6, 4, 15.1 },
+	-- The figure faces the camera rather than the way the anchor happens to
+	-- point (the marker's own rotation is identity).
+	CharacterFaceCam = true,
+	Fov = 70,
+	LampBlink = 0.12, -- seconds the character lamp drops when the selection moves
 }
 
 -- BRIEFING ------------------------------------------------------------------

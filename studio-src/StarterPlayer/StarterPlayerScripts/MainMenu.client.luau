@@ -37,6 +37,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local Config = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared"):WaitForChild("Config")
 local Menu = require(Config:WaitForChild("MenuConfig"))
 local Feel = require(Config:WaitForChild("FeelConfig"))
+local AnimationIds = require(Config:WaitForChild("AnimationIds"))
 
 -- Optional: the glyph module gives the hint bar this device's own key names
 -- and button images. A place without it keeps the authored desktop text.
@@ -62,7 +63,7 @@ local isOpen = false
 local bootToken = 0
 local subPanel = nil        -- "briefing" | "settings" | "personnel" | nil
 local releaseHold = nil     -- undo for the briefing visibility watchdog
-local diorama, dioLamp, dioLampLight, dioCamBase
+local diorama, dioLampLight, dioCamBase, lampBase
 local openedAt = 0
 local lampDropUntil = 0
 local machine = nil
@@ -598,75 +599,121 @@ local function part(parent, name, size, cf, colour, material)
 	return p
 end
 
+local function stageVector(p)
+	return Vector3.new(Menu.stagePoint(p))
+end
+
+-- The subject standing on the landing. It is a CLONE of the player's own
+-- character, never the character itself: moving the real one 3000 studs up to
+-- pose it would mean the menu can strand a player if anything goes wrong
+-- mid-transition. A clone is a prop -- inert, anchored, and thrown away with
+-- the rest of the set.
+--
+-- In the main game every character IS the PS1 rig, so this is the subject the
+-- player will actually be. The person's real Roblox avatar shows up in one
+-- place only, where it belongs: the mugshot on their personnel file.
+local function buildFigure(setModel)
+	local src = player.Character
+	if not (src and src.Parent) then return nil end
+	local ok, fig = pcall(function() return src:Clone() end)
+	if not (ok and fig) then return nil end
+
+	for _, d in ipairs(fig:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CastShadow = false
+		elseif d:IsA("LocalScript") or d:IsA("Script") or d:IsA("Sound") or d:IsA("BillboardGui") then
+			-- A LocalScript in a workspace model never runs anyway; dropping it
+			-- (and the character's sounds) keeps the prop from carrying anything
+			-- that could wake up.
+			d:Destroy()
+		end
+	end
+
+	local hum = fig:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+		-- Anchored parts already pin it, but a live state machine still burns
+		-- work every frame deciding it is falling.
+		pcall(function() hum.EvaluateStateMachine = false end)
+	end
+
+	local S = Menu.Stage
+	local at = stageVector(S.CharacterAnchor)
+	local face = CFrame.new(at)
+	if S.CharacterFaceCam then
+		local camAt = stageVector(S.Cam.pos)
+		-- level look: the figure turns to the camera without leaning back at it
+		face = CFrame.lookAt(at, Vector3.new(camAt.X, at.Y, camAt.Z))
+	end
+	fig.Name = "MenuFigure"
+	fig:PivotTo(face)
+	fig.Parent = setModel
+
+	-- Idle through the shared registry, so an unpublished id is simply no
+	-- animation rather than an error (AnimationIds.load handles the Studio
+	-- sequence fallback too).
+	task.spawn(function()
+		local animator = hum and hum:FindFirstChildOfClass("Animator")
+		if not animator then return end
+		local okLoad, track = pcall(function()
+			return AnimationIds.load(animator, "Player", "Idle")
+		end)
+		if okLoad and track then
+			track.Looped = true
+			track:Play(0)
+		end
+	end)
+	return fig
+end
+
 local function buildDiorama()
 	if diorama then return end
-	local D = Menu.Diorama
-	local o = Vector3.new(D.Origin[1], D.Origin[2], D.Origin[3])
+	local S = Menu.Stage
 	local m = Instance.new("Model")
 	m.Name = "KenopsiaMenuSet"
 
-	local dark = Color3.fromRGB(14, 22, 28)
-	local mid = Color3.fromRGB(22, 34, 42)
-	local cold = Color3.fromRGB(150, 226, 245)
-
-	part(m, "Ground", Vector3.new(D.Ground.w, 1, D.Ground.d), CFrame.new(o), mid)
-	-- shell: back, two sides, ceiling. The camera sits at +Z, so the back wall
-	-- is at -Z and the shell is deeper than the camera's own offset.
-	local S = D.Shell
-	part(m, "ShellBack", Vector3.new(S.w, S.h, 2), CFrame.new(o + Vector3.new(0, S.h / 2, -S.d / 2)), dark,
-		Enum.Material.SmoothPlastic)
-	part(m, "ShellLeft", Vector3.new(2, S.h, S.d), CFrame.new(o + Vector3.new(-S.w / 2, S.h / 2, 0)), dark,
-		Enum.Material.SmoothPlastic)
-	part(m, "ShellRight", Vector3.new(2, S.h, S.d), CFrame.new(o + Vector3.new(S.w / 2, S.h / 2, 0)), dark,
-		Enum.Material.SmoothPlastic)
-	part(m, "ShellTop", Vector3.new(S.w, 2, S.d), CFrame.new(o + Vector3.new(0, S.h, 0)), dark,
-		Enum.Material.SmoothPlastic)
-
-	-- the gate the subject is standing in front of
-	part(m, "GatePostL", Vector3.new(2, 16, 2), CFrame.new(o + Vector3.new(-7, 8, -14)), mid)
-	part(m, "GatePostR", Vector3.new(2, 16, 2), CFrame.new(o + Vector3.new(7, 8, -14)), mid)
-	part(m, "GateLintel", Vector3.new(18, 2, 2), CFrame.new(o + Vector3.new(0, 16, -14)), mid)
-	part(m, "LampHousing", Vector3.new(3, 1.4, 2), CFrame.new(o + Vector3.new(0, 14.6, -12.6)), dark)
-	dioLamp = part(m, "Lamp", Vector3.new(2.2, 0.5, 1.4), CFrame.new(o + Vector3.new(0, 14.1, -12.6)),
-		cold, Enum.Material.Neon)
-	dioLampLight = Instance.new("PointLight")
-	dioLampLight.Brightness = 2.1
-	dioLampLight.Range = 34
-	dioLampLight.Color = cold
-	dioLampLight.Shadows = false
-	dioLampLight.Parent = dioLamp
-
-	-- a fence line running off to one side, and a fill light behind it so the
-	-- posts read as silhouettes rather than as black sticks
-	part(m, "FenceRail", Vector3.new(44, 0.4, 0.4), CFrame.new(o + Vector3.new(20, 6, -10)), mid,
-		Enum.Material.Metal)
-	local posts = math.max(2, Menu.Diorama.FenceCount)
-	for i = 1, posts do
-		local x = 20 - 22 + (i - 1) * (44 / (posts - 1))
-		part(m, "FencePost" .. i, Vector3.new(0.5, 7, 0.5), CFrame.new(o + Vector3.new(x, 3.5, -10)), mid,
-			Enum.Material.Metal)
+	for _, spec in ipairs(S.Parts) do
+		local cf = CFrame.new(stageVector(spec.pos))
+			* CFrame.Angles(math.rad(spec.rot[1]), math.rad(spec.rot[2]), math.rad(spec.rot[3]))
+		part(m, spec.name, Vector3.new(spec.size[1], spec.size[2], spec.size[3]), cf,
+			Color3.fromRGB(spec.color[1], spec.color[2], spec.color[3]),
+			Enum.Material[spec.material] or Enum.Material.Concrete)
 	end
-	local fill = Instance.new("PointLight")
-	fill.Brightness = 0.9
-	fill.Range = 60
-	fill.Color = Color3.fromRGB(90, 150, 190)
-	fill.Shadows = false
-	fill.Parent = m:FindFirstChild("ShellBack")
 
-	for i = 1, Menu.Diorama.CrateCount do
-		local x = -18 + (i - 1) * 5
-		local z = -4 - (i % 2) * 3
-		part(m, "Crate" .. i, Vector3.new(3.4, 3.4, 3.4),
-			CFrame.new(o + Vector3.new(x, 1.7, z)) * CFrame.Angles(0, math.rad(i * 17), 0), mid,
-			Enum.Material.WoodPlanks)
+	for _, spec in ipairs(S.Lights) do
+		local holder = part(m, spec.name, Vector3.new(0.5, 0.5, 0.5), CFrame.new(stageVector(spec.pos)),
+			Color3.fromRGB(163, 162, 165))
+		holder.Transparency = 1
+		local light = Instance.new("PointLight")
+		light.Brightness = spec.brightness
+		light.Range = spec.range
+		light.Color = Color3.fromRGB(spec.color[1], spec.color[2], spec.color[3])
+		light.Shadows = false
+		light.Parent = holder
+		if spec.blink then
+			dioLampLight = light
+			lampBase = { brightness = spec.brightness, color = light.Color }
+		end
 	end
 
 	m.Parent = workspace
 	diorama = m
-	local c = Menu.Diorama.Cam
+	buildFigure(m)
+
+	local c = S.Cam
+	local eye = stageVector(c.pos)
 	dioCamBase = {
-		eye = o + Vector3.new(c.dx, c.dy, c.dz),
-		look = o + Vector3.new(c.lx, c.ly, c.lz),
+		eye = eye,
+		-- The marker carries an orientation, not a look target, so the base
+		-- CFrame is rebuilt from its own angles and the dolly slides it
+		-- sideways in its own right-vector rather than along world X.
+		cf = CFrame.new(eye)
+			* CFrame.fromOrientation(math.rad(c.rot[1]), math.rad(c.rot[2]), math.rad(c.rot[3])),
 	}
 end
 
@@ -675,7 +722,7 @@ local function destroyDiorama()
 		diorama:Destroy()
 		diorama = nil
 	end
-	dioLamp, dioLampLight, dioCamBase = nil, nil, nil
+	dioLampLight, dioCamBase, lampBase = nil, nil, nil
 end
 
 -- SELECTION ------------------------------------------------------------------
@@ -765,7 +812,7 @@ local function setSelected(i, animate, quiet)
 		if not quiet then sfx("Hover") end
 		glitchRow(i)
 		-- the set acknowledges the move: the gate lamp drops for one beat
-		lampDropUntil = os.clock() + Menu.Diorama.LampBlink
+		lampDropUntil = os.clock() + Menu.Stage.LampBlink
 	end
 	if platform() == "Console" and GuiService.SelectedObject ~= rowButtons[i] then
 		GuiService.SelectedObject = rowButtons[i]
@@ -1301,7 +1348,6 @@ task.spawn(function()
 					local I = Menu.Idle
 					local ph = (t % I.DollyPeriod) / I.DollyPeriod
 					local offset = math.sin(ph * 2 * math.pi) * I.DollyStuds
-					local eye = dioCamBase.eye + Vector3.new(offset, 0, 0)
 					-- Assert ownership every step (read first, write only if it
 					-- actually drifted): a respawn recreates the camera and
 					-- resets CameraType, and the dolly stalls for several
@@ -1311,25 +1357,27 @@ task.spawn(function()
 						cam.CameraType = Enum.CameraType.Scriptable
 						lastCam = nil
 					end
-					if cam.FieldOfView ~= Menu.Diorama.Fov then
-						cam.FieldOfView = Menu.Diorama.Fov
+					if cam.FieldOfView ~= Menu.Stage.Fov then
+						cam.FieldOfView = Menu.Stage.Fov
 					end
 					local key = math.floor(offset * 100)
 					if lastCam ~= key then
 						lastCam = key
-						cam.CFrame = CFrame.lookAt(eye, dioCamBase.look)
+						-- slide along the camera's OWN right vector, so the dolly
+						-- stays square to the set whatever the marker's yaw is
+						cam.CFrame = dioCamBase.cf * CFrame.new(offset, 0, 0)
 					end
 				end
 			end
 
-			if dioLampLight then
+			-- The lamp on the figure drops for one beat whenever the selection
+			-- moves: the set acknowledges the press. Its rest values come from
+			-- the stage data, so retuning the lamp in MenuConfig retunes this.
+			if dioLampLight and lampBase then
 				local want = now >= lampDropUntil
 				if want ~= lampOn then
 					lampOn = want
-					dioLampLight.Brightness = want and 2.1 or 0.4
-					if dioLamp then
-						dioLamp.Color = want and Color3.fromRGB(150, 226, 245) or Color3.fromRGB(40, 66, 78)
-					end
+					dioLampLight.Brightness = want and lampBase.brightness or lampBase.brightness * 0.25
 				end
 			end
 
@@ -1399,6 +1447,25 @@ GuiService:GetPropertyChangedSignal("SelectedObject"):Connect(function()
 end)
 
 -- FLOW -----------------------------------------------------------------------
+
+-- At join the menu is usually up BEFORE the character finishes replicating, so
+-- the stage would stand empty for the first few seconds. Build the figure the
+-- moment the character exists, and again after every respawn (the old clone
+-- goes with it, so this never stacks two subjects on one landing).
+local function refreshFigure()
+	if not (isOpen and diorama) then return end
+	local old = diorama:FindFirstChild("MenuFigure")
+	if old then old:Destroy() end
+	buildFigure(diorama)
+end
+player.CharacterAdded:Connect(function(char)
+	if not char:FindFirstChild("HumanoidRootPart") then
+		char:WaitForChild("HumanoidRootPart", 10)
+	end
+	-- one beat for the rig's parts and bones to land before it is cloned
+	task.wait(0.4)
+	refreshFigure()
+end)
 
 -- A trial running means the player joined mid-cycle (or the room moved on
 -- while they read the menu). The menu is not a wall: it gets out of the way

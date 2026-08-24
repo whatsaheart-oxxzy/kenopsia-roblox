@@ -218,14 +218,14 @@ palette, not copies of them.
 
 | Asset | Source file | Authored size | Asset id | Status |
 |---|---|---|---|---|
-| Menu wordmark | `menu_wordmark_512.png` | 512×97 | *(pending upload)* | OK — own work |
-| Selection streak | `menu_streak_256.png` | 256×32 | *(pending upload)* | OK — own work |
-| Debris shards | `menu_shards_512.png` | 512×384 | *(pending upload)* | OK — own work |
-| Rain/static plate | `menu_rain_256.png` | 256×256 | *(pending upload)* | OK — own work |
-| Dot matrix | `menu_dots_128.png` | 128×128 | *(pending upload)* | OK — own work |
+| Menu wordmark | `menu_wordmark_512.png` | 512×97 | `88647754582283` | OK — own work |
+| Selection streak | `menu_streak_256.png` | 256×32 | `134334042347021` | OK — own work |
+| Debris shards | `menu_shards_512.png` | 512×384 | `120005853529594` | OK — own work |
+| Rain/static plate | `menu_rain_256.png` | 256×256 | `105106540934647` | OK — own work |
+| Dot matrix | `menu_dots_128.png` | 128×128 | `85128683768553` | OK — own work |
 
-Ids go into `Shared/Config/MenuConfig.luau` (`Menu.Images`) on upload; an empty id renders nothing
-rather than erroring, so the menu boots either way. Same provenance class as the grid tiles
+Ids uploaded 25.08.2026 and written into `Shared/Config/MenuConfig.luau` (`Menu.Images`).
+An empty id would render nothing rather than erroring, so the menu boots either way. Same provenance class as the grid tiles
 (`grid_black_256`, `grid_soft_256`), the Bayer dither tiles and `ps1_sky_128`.
 
 ## 4. Models, meshes and textures — not yet enumerated
