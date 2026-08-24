@@ -22,6 +22,7 @@ local UI = script.Parent.Parent.UI
 local Theme = require(UI.Theme)
 local Motion = require(UI.Motion)
 local SoundBank = require(UI.SoundBank)
+local GlitchTitle = require(UI.GlitchTitle)
 
 local player = Players.LocalPlayer
 
@@ -204,17 +205,14 @@ function MenuOverlayController:buildLanding()
 	panel.Parent = self.root
 	self.panels.Landing = panel
 
-	local title = Instance.new("TextLabel")
-	title.Name = "Title"
-	title.BackgroundTransparency = 1
-	title.Font = Theme.TitleFont
-	title.Text = "KENOPSIA"
-	title.TextSize = 72
-	title.TextColor3 = Theme.Street.OffWhite
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Position = UDim2.fromScale(0, 0)
-	title.Size = UDim2.new(0, 520, 0, 84)
-	title.Parent = panel
+	-- The wordmark, not a TextLabel: an authored mark that tears every few
+	-- seconds (UI/GlitchTitle). Its height follows the image's aspect, so the
+	-- 520 here is the only number that decides how big the title reads.
+	self.title = GlitchTitle.build(panel, {
+		name = "Title",
+		width = 520,
+		position = UDim2.fromScale(0, 0),
+	})
 
 	local menu = Instance.new("Frame")
 	menu.Name = "Actions"
@@ -647,6 +645,12 @@ function MenuOverlayController:destroy()
 		if conn.Disconnect then conn:Disconnect() end
 	end
 	table.clear(self.conns)
+	-- The wordmark owns a sleeping thread; destroying the gui alone would
+	-- leave it waking every few seconds for a frame that no longer exists.
+	if self.title then
+		self.title.destroy()
+		self.title = nil
+	end
 	if self.gui then self.gui:Destroy() end
 end
 
