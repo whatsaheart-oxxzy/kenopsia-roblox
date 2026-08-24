@@ -13,20 +13,40 @@ Theme.Color = {
 	White      = Color3.fromHex("D8FFE8"),
 }
 
--- STREET RETRO (Gate M1 §3).
--- The palette for the new 3D main menu. Deliberately separate from Theme.Color
--- above: the old CRT screens still render until the §3 removal pass, and
--- overwriting the phosphor palette in place would restyle them mid-flight.
--- No decorative red anywhere -- Error is burnt orange, and it is the only warm
--- signal besides Amber.
-Theme.Street = {
-	Ink      = Color3.fromHex("171A18"), -- deepest ground
-	Asphalt  = Color3.fromHex("292C2A"), -- raised surface
-	OffWhite = Color3.fromHex("D8D0BE"), -- primary text
-	Sage     = Color3.fromHex("6F8870"), -- secondary text, rules
-	Amber    = Color3.fromHex("D2A94A"), -- focus / active
-	Denim    = Color3.fromHex("60727A"), -- cool accent, disabled
+-- COLD TERMINAL (25.08.2026).
+-- The main menu's palette. It replaces the warm "street retro" set that stood
+-- here before: outside the facility is cold, and the phosphor green of the
+-- machine screens is what you get once you are inside it. That break is the
+-- point, so the two palettes never share a value.
+--
+-- White is RESERVED for the selection streak, the way #FF1818 is reserved for
+-- FIRE/PUNCH elsewhere: if anything else goes pure white the bar stops reading
+-- as the brightest thing on screen. Error stays burnt orange -- the only warm
+-- signal in the whole menu, which is exactly why it carries.
+Theme.Cold = {
+	Ground   = Color3.fromHex("020609"), -- deepest ground
+	Panel    = Color3.fromHex("06121A"), -- raised surface, boxed cells
+	Text     = Color3.fromHex("BFE9F5"), -- primary text
+	Bright   = Color3.fromHex("E8FBFF"), -- headings, values
+	Dim      = Color3.fromHex("4E7C8A"), -- secondary text, rules, disabled
+	Focus    = Color3.fromHex("6FD8F0"), -- focus / active
+	Streak   = Color3.fromHex("FFFFFF"), -- THE SELECTION BAR ONLY
+	OnStreak = Color3.fromHex("04121A"), -- text sitting on the bar
 	Error    = Color3.fromHex("B56A45"), -- burnt orange, never red
+}
+
+-- The role slots the menu modules already reference, re-pointed at the cold
+-- set. Kept as an alias rather than renamed at ~90 call sites: the KEYS here
+-- are role names now, not colour names, so read `Amber` as "focus" and `Sage`
+-- as "dim". New code should use Theme.Cold directly.
+Theme.Street = {
+	Ink      = Theme.Cold.Ground,
+	Asphalt  = Theme.Cold.Panel,
+	OffWhite = Theme.Cold.Text,
+	Sage     = Theme.Cold.Dim,
+	Amber    = Theme.Cold.Focus,
+	Denim    = Theme.Cold.Dim,
+	Error    = Theme.Cold.Error,
 }
 
 -- Hard, flat surfaces: minimal rounding, crisp outlines, offset drop shadows.

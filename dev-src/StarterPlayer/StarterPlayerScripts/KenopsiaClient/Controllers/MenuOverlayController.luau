@@ -76,50 +76,208 @@ local function dropShadow(target, offset)
 	return sh
 end
 
-local function actionButton(parent, name, text, order)
+-- House style: machine labels are letter-spaced. A run of spaces stays a run,
+-- so "PRIVATE ROOM" keeps its word break instead of closing up.
+local function spaced(s)
+	local out = {}
+	for i = 1, #s do out[#out + 1] = string.sub(s, i, i) end
+	return table.concat(out, " ")
+end
+
+-- The landing's entries have no boxes any more: the selected one is lit by a
+-- torn white bar that travels between them (see buildStreak). A button is
+-- therefore just a label plus a hit area, and `onActive` tells the owner which
+-- row the bar belongs on.
+local function actionButton(parent, name, text, order, onActive)
 	local b = Instance.new("TextButton")
 	b.Name = name
 	b.AutoButtonColor = false
-	b.BackgroundColor3 = Theme.Street.Asphalt
+	b.BackgroundTransparency = 1
 	b.BorderSizePixel = 0
 	b.Size = UDim2.new(1, 0, 0, Theme.Touch.Action)
 	b.LayoutOrder = order
+	-- above the selection bar (ZIndex 1) -- with Sibling z-behaviour a tie
+	-- would let the bar paint over its own label
+	b.ZIndex = 3
 	b.Font = Theme.TitleFont
-	b.Text = text
-	b.TextSize = 30
-	b.TextColor3 = Theme.Street.OffWhite
+	b.Text = spaced(text)
+	b.TextSize = 26
+	b.TextColor3 = Theme.Cold.Text
+	b.TextTransparency = 0.15
 	b.TextXAlignment = Enum.TextXAlignment.Left
 	b.Parent = parent
 
 	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft = UDim.new(0, 18)
+	pad.PaddingLeft = UDim.new(0, 34)
 	pad.PaddingRight = UDim.new(0, 18)
 	pad.Parent = b
 
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, Theme.StreetRadius.Soft)
-	c.Parent = b
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Theme.Street.Sage
-	stroke.Thickness = Theme.StreetStroke.Normal
-	stroke.Transparency = 0.5
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.Parent = b
+	-- the small mark that sits inside the bar, left of the label
+	local bullet = Instance.new("Frame")
+	bullet.Name = "Bullet"
+	bullet.AnchorPoint = Vector2.new(0, 0.5)
+	bullet.Position = UDim2.new(0, -22, 0.5, 0)
+	bullet.Size = UDim2.fromOffset(8, 8)
+	bullet.BackgroundColor3 = Theme.Cold.OnStreak
+	bullet.BorderSizePixel = 0
+	bullet.ZIndex = 4
+	bullet.Visible = false
+	bullet.Parent = b
 
 	-- Focus and hover share one visual language so gamepad users get exactly the
 	-- affordance mouse users get.
 	local function setActive(on)
-		Motion.hover(b, { BackgroundColor3 = on and Theme.Street.Ink or Theme.Street.Asphalt })
-		Motion.hover(stroke, { Color = on and Theme.Street.Amber or Theme.Street.Sage,
-			Transparency = on and 0 or 0.5 })
-		b.TextColor3 = on and Theme.Street.Amber or Theme.Street.OffWhite
+		b.TextColor3 = on and Theme.Cold.OnStreak or Theme.Cold.Text
+		b.TextTransparency = on and 0 or 0.15
+		bullet.Visible = on
+		if on and onActive then onActive(b) end
 	end
 	b.MouseEnter:Connect(function() setActive(true) SoundBank.hover() end)
 	b.MouseLeave:Connect(function() setActive(false) end)
 	b.SelectionGained:Connect(function() setActive(true) SoundBank.hover() end)
 	b.SelectionLost:Connect(function() setActive(false) end)
 	return b
+end
+
+-- The uploaded plates (tools/menu-assets.py, 25.08.2026). All white on
+-- transparent so they can be tinted, all authored small so they magnify with
+-- hard pixel edges instead of going soft.
+local PLATE = {
+	Streak = "rbxassetid://134334042347021",
+	Shards = "rbxassetid://120005853529594",
+	Rain = "rbxassetid://105106540934647",
+	Dots = "rbxassetid://85128683768553",
+}
+
+-- The layers that sit between the 3D scene and the menu text. They are held
+-- deliberately faint: the scene behind them (the wall, the subject standing on
+-- the landing) has to stay legible, so these are a veil, not a background.
+local function buildBackdrop(gui)
+	local back = Instance.new("Frame")
+	back.Name = "Backdrop"
+	back.BackgroundTransparency = 1
+	back.BorderSizePixel = 0
+	back.Size = UDim2.fromScale(1, 1)
+	back.ZIndex = 0
+	back.Parent = gui
+
+	local function tile(name, image, px, alpha, colour)
+		local i = Instance.new("ImageLabel")
+		i.Name = name
+		i.BackgroundTransparency = 1
+		i.BorderSizePixel = 0
+		i.Image = image
+		i.ImageColor3 = colour
+		i.ImageTransparency = alpha
+		i.ScaleType = Enum.ScaleType.Tile
+		i.TileSize = UDim2.fromOffset(px, px)
+		i.ResampleMode = Enum.ResamplerMode.Pixelated
+		i.Size = UDim2.fromScale(1, 1)
+		i.ZIndex = 0
+		i.Parent = back
+		return i
+	end
+	tile("Rain", PLATE.Rain, 256, 0.9, Theme.Cold.Focus)
+	tile("Dots", PLATE.Dots, 128, 0.86, Theme.Cold.Focus)
+
+	local shards = Instance.new("ImageLabel")
+	shards.Name = "Shards"
+	shards.BackgroundTransparency = 1
+	shards.BorderSizePixel = 0
+	shards.Image = PLATE.Shards
+	shards.ImageColor3 = Theme.Cold.Bright
+	shards.ImageTransparency = 0.82
+	shards.ResampleMode = Enum.ResamplerMode.Pixelated
+	shards.Size = UDim2.fromScale(0.68, 0.95)
+	shards.Position = UDim2.fromScale(0.36, 0.05)
+	shards.ZIndex = 0
+	shards.Parent = back
+	return back
+end
+
+-- Corner ticks, a build tag and a row of boxed status cells: the furniture that
+-- makes the screen read as a terminal rather than as a title card. All static
+-- except the cell values, which a 1 Hz loop writes only when they change.
+local function buildChrome(panel)
+	local chrome = Instance.new("Frame")
+	chrome.Name = "Chrome"
+	chrome.BackgroundTransparency = 1
+	chrome.BorderSizePixel = 0
+	chrome.Size = UDim2.fromScale(1, 1)
+	chrome.ZIndex = 1
+	chrome.Parent = panel
+
+	for _, c in ipairs({ { 0, 0, 1, 1 }, { 1, 0, -1, 1 }, { 0, 1, 1, -1 }, { 1, 1, -1, -1 } }) do
+		for _, seg in ipairs({ { 14, 2 }, { 2, 14 } }) do
+			local f = Instance.new("Frame")
+			f.Name = "Tick"
+			f.AnchorPoint = Vector2.new(c[1], c[2])
+			f.Position = UDim2.new(c[1], 0, c[2], 0)
+			f.Size = UDim2.fromOffset(seg[1], seg[2])
+			f.BackgroundColor3 = Theme.Cold.Dim
+			f.BorderSizePixel = 0
+			f.ZIndex = 1
+			f.Parent = chrome
+		end
+	end
+
+	local tag = Instance.new("TextLabel")
+	tag.Name = "BuildTag"
+	tag.BackgroundTransparency = 1
+	tag.Font = Theme.MonoFont
+	tag.Text = "BUILD 2026.08.25"
+	tag.TextSize = 12
+	tag.TextColor3 = Theme.Cold.Dim
+	tag.TextXAlignment = Enum.TextXAlignment.Right
+	tag.AnchorPoint = Vector2.new(1, 0)
+	tag.Position = UDim2.new(1, -22, 0, 2)
+	tag.Size = UDim2.fromOffset(240, 14)
+	tag.ZIndex = 1
+	tag.Parent = chrome
+
+	local cells = {}
+	local row = Instance.new("Frame")
+	row.Name = "Cells"
+	row.BackgroundTransparency = 1
+	row.AnchorPoint = Vector2.new(1, 1)
+	row.Position = UDim2.new(1, -22, 1, -8)
+	row.Size = UDim2.fromOffset(3 * 116 - 10, 38)
+	row.ZIndex = 1
+	row.Parent = chrome
+	for i, head in ipairs({ "SUBJECTS", "SESSION", "LINK" }) do
+		local box = Instance.new("Frame")
+		box.Name = "Cell" .. i
+		box.Position = UDim2.fromOffset((i - 1) * 116, 0)
+		box.Size = UDim2.fromOffset(106, 38)
+		box.BackgroundColor3 = Theme.Cold.Panel
+		box.BackgroundTransparency = 0.25
+		box.BorderSizePixel = 0
+		box.ZIndex = 1
+		box.Parent = row
+		local st = Instance.new("UIStroke")
+		st.Color = Theme.Cold.Dim
+		st.Thickness = 1
+		st.Parent = box
+		local h = Instance.new("TextLabel")
+		h.BackgroundTransparency = 1
+		h.Font = Theme.MonoFont
+		h.Text = head
+		h.TextSize = 11
+		h.TextColor3 = Theme.Cold.Focus
+		h.TextXAlignment = Enum.TextXAlignment.Left
+		h.Position = UDim2.fromOffset(7, 4)
+		h.Size = UDim2.new(1, -14, 0, 12)
+		h.ZIndex = 2
+		h.Parent = box
+		local v = h:Clone()
+		v.Name = "Value"
+		v.Text = "--"
+		v.TextColor3 = Theme.Cold.Dim
+		v.Position = UDim2.fromOffset(7, 19)
+		v.Parent = box
+		cells[i] = v
+	end
+	return chrome, cells
 end
 
 -- CONSTRUCTION ---------------------------------------------------------------
@@ -175,10 +333,39 @@ function MenuOverlayController.new(deps)
 		end))
 	end
 
+	-- The veil sits UNDER Root (which carries the safe-area padding) so the
+	-- plates run edge to edge while the text stays inside the notch.
+	buildBackdrop(gui)
+	root.ZIndex = 1
+
 	self:buildLanding()
 	self:buildCredits()
 	self:buildSettings()
 	self:bindBack()
+
+	-- Status cells: 1 Hz, and every value is compared before it is written, so
+	-- a menu nobody touches costs one wake-up a second and no property traffic.
+	self.statusAlive = true
+	task.spawn(function()
+		local last = {}
+		local t0 = os.clock()
+		while self.statusAlive do
+			local values = {
+				tostring(#Players:GetPlayers()),
+				string.format("%02d:%02d", math.floor((os.clock() - t0) / 60) % 60,
+					math.floor(os.clock() - t0) % 60),
+				"STABLE",
+			}
+			for i, v in ipairs(values) do
+				local cell = self.cells and self.cells[i]
+				if cell and last[i] ~= v then
+					last[i] = v
+					cell.Text = v
+				end
+			end
+			task.wait(1)
+		end
+	end)
 
 	self:go("Landing", { replace = true })
 	return self
@@ -220,6 +407,10 @@ function MenuOverlayController:buildLanding()
 	menu.AnchorPoint = Vector2.new(0, 1)
 	menu.Position = UDim2.new(0, 0, 1, -46)
 	menu.Size = UDim2.new(0, 340, 0, Theme.Touch.Action * 3 + 24)
+	-- Above StreakLayer (1). Sibling z-behaviour sorts whole SUBTREES by the
+	-- sibling's own ZIndex, so leaving both at the default 1 let the bar paint
+	-- over the very label it is meant to light up (measured live 25.08.2026).
+	menu.ZIndex = 3
 	menu.Parent = panel
 
 	local list = Instance.new("UIListLayout")
@@ -228,9 +419,81 @@ function MenuOverlayController:buildLanding()
 	list.SortOrder = Enum.SortOrder.LayoutOrder
 	list.Parent = menu
 
-	self.btnStart = actionButton(menu, "Btn_START", "START", 1)
-	self.btnSettings = actionButton(menu, "Btn_SETTINGS", "SETTINGS", 2)
-	self.btnCredits = actionButton(menu, "Btn_CREDITS", "CREDITS", 3)
+	-- THE SELECTION BAR. One instance for the whole list: it travels to
+	-- whichever entry is active instead of every entry carrying its own
+	-- highlight. It overhangs the row so its torn ends show past the label.
+	-- The bar lives in a SIBLING of the list, not inside it. A UIListLayout lays
+	-- out every GuiObject child it has, so a layer parented to `menu` was given
+	-- a full-height row of its own and pushed all three entries off the bottom
+	-- of the screen (measured live, 25.08.2026). Same geometry as `menu`, so
+	-- the two rectangles coincide exactly.
+	local streakLayer = Instance.new("Frame")
+	streakLayer.Name = "StreakLayer"
+	streakLayer.BackgroundTransparency = 1
+	streakLayer.BorderSizePixel = 0
+	streakLayer.AnchorPoint = menu.AnchorPoint
+	streakLayer.Position = menu.Position
+	streakLayer.Size = menu.Size
+	streakLayer.ZIndex = 1
+	streakLayer.Parent = panel
+
+	-- The engine draws a blue selection rectangle on the focused button by
+	-- default; on this menu the bar already says which row is live, and the
+	-- rectangle lands on top of it.
+	local noFocusRing = Instance.new("Frame")
+	noFocusRing.Name = "NoFocusRing"
+	noFocusRing.BackgroundTransparency = 1
+	noFocusRing.BorderSizePixel = 0
+	noFocusRing.Size = UDim2.fromScale(1, 1)
+	noFocusRing.Parent = streakLayer
+
+	local streak = Instance.new("ImageLabel")
+	streak.Name = "Streak"
+	streak.BackgroundTransparency = 1
+	streak.BorderSizePixel = 0
+	streak.Image = PLATE.Streak
+	streak.ImageColor3 = Theme.Cold.Streak
+	streak.ResampleMode = Enum.ResamplerMode.Pixelated
+	streak.Size = UDim2.new(1, 44, 0, math.floor(Theme.Touch.Action * 1.12))
+	streak.Position = UDim2.fromOffset(-22, 0)
+	streak.ZIndex = 1
+	streak.Visible = false
+	streak.Parent = streakLayer
+	self.streak = streak
+
+	-- Stepped travel on the 12 fps grid with one frame of overshoot, then the
+	-- settle: the bar SNAPS between entries, it never slides.
+	local moveToken = 0
+	local function moveStreak(target)
+		moveToken = moveToken + 1
+		local token = moveToken
+		local toY = target.AbsolutePosition.Y - streakLayer.AbsolutePosition.Y
+			- math.floor((streak.AbsoluteSize.Y - target.AbsoluteSize.Y) / 2)
+		streak.Visible = true
+		if not Motion.isEnabled() then
+			streak.Position = UDim2.fromOffset(-22, toY)
+			return
+		end
+		local fromY = streak.Position.Y.Offset
+		task.spawn(function()
+			local dir = toY >= fromY and 1 or -1
+			for s = 1, 2 do
+				if token ~= moveToken then return end
+				local y = (s == 2) and (toY + dir * 6) or (fromY + (toY - fromY) * 0.5)
+				streak.Position = UDim2.fromOffset(-22, math.floor(y + 0.5))
+				task.wait(1 / 12)
+			end
+			if token ~= moveToken then return end
+			streak.Position = UDim2.fromOffset(-22, toY)
+		end)
+	end
+
+	self.btnStart = actionButton(menu, "Btn_START", "START", 1, moveStreak)
+	self.btnSettings = actionButton(menu, "Btn_SETTINGS", "SETTINGS", 2, moveStreak)
+	self.btnCredits = actionButton(menu, "Btn_CREDITS", "CREDITS", 3, moveStreak)
+	for _, b in ipairs({ self.btnStart, self.btnSettings, self.btnCredits }) do
+		b.SelectionImageObject = noFocusRing
+	end
 
 	local notice = Instance.new("TextLabel")
 	notice.Name = "ContentNotice"
@@ -238,12 +501,17 @@ function MenuOverlayController:buildLanding()
 	notice.Font = Theme.MonoFont
 	notice.Text = CONTENT_NOTICE
 	notice.TextSize = 16
-	notice.TextColor3 = Theme.Street.Sage
+	notice.TextColor3 = Theme.Cold.Dim
 	notice.TextXAlignment = Enum.TextXAlignment.Left
 	notice.AnchorPoint = Vector2.new(0, 1)
 	notice.Position = UDim2.new(0, 0, 1, -8)
 	notice.Size = UDim2.new(0, 520, 0, 22)
 	notice.Parent = panel
+
+	-- Terminal furniture. On the landing only: the Settings and Credits cards
+	-- would collide with the status row at the bottom right.
+	local _, cells = buildChrome(panel)
+	self.cells = cells
 
 	self.btnStart.Activated:Connect(function()
 		SoundBank.click()
@@ -645,6 +913,7 @@ function MenuOverlayController:destroy()
 		if conn.Disconnect then conn:Disconnect() end
 	end
 	table.clear(self.conns)
+	self.statusAlive = false
 	-- The wordmark owns a sleeping thread; destroying the gui alone would
 	-- leave it waking every few seconds for a frame that no longer exists.
 	if self.title then

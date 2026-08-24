@@ -63,11 +63,13 @@ function GlitchTitle.build(parent, opts)
 	opts = opts or {}
 	local width = opts.width or 520
 	local height = math.floor(width / GlitchTitle.Aspect + 0.5)
-	local colour = opts.color or Theme.Street.OffWhite
-	-- The split uses the palette's own two signals. A red/cyan fringe is the
-	-- cliche and it does not exist anywhere else in this menu.
-	local chromaA = opts.chromaA or Theme.Street.Amber
-	local chromaB = opts.chromaB or Theme.Street.Sage
+	local colour = opts.color or Theme.Cold.Bright
+	-- The split needs two DIFFERENT hues or it reads as a blur rather than as a
+	-- signal fault. In the cold set that is the focus cyan against the one warm
+	-- value in the whole menu, the burnt orange -- which is a real complementary
+	-- split without being the red/cyan cliche.
+	local chromaA = opts.chromaA or Theme.Cold.Focus
+	local chromaB = opts.chromaB or Theme.Cold.Error
 
 	local frame = Instance.new("Frame")
 	frame.Name = opts.name or "Title"
