@@ -1,9 +1,14 @@
 --!nonstrict
+-- Current-server party authority for Kenopsia_DEV.
+-- PartyRegistry intentionally remains dormant: browsing, codes and approval
+-- requests live only for the lifetime of this menu server.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local Config = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("GameConfig"))
+local Config = require(
+	ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("GameConfig")
+)
 
 local RoomService = {}
 
@@ -13,31 +18,50 @@ RoomService.RunRequested = runRequested.Event
 local rooms = {}
 local byCode = {}
 local byPlayer = {}
+local pendingByPlayer = {}
 local nextRoomId = 0
+local nextRequestToken = 0
 local Remotes
 
+-- Per-player buckets disappear on PlayerRemoving; no UserId-keyed residue.
 local buckets = {}
 local function allow(player, key, perSecond)
 	local now = os.clock()
-	local id = player.UserId .. ":" .. key
-	local b = buckets[id]
-	if not b or now - b.stamp >= 1 then
-		buckets[id] = { stamp = now, count = 1 }
+	local playerBuckets = buckets[player]
+	if not playerBuckets then
+		playerBuckets = {}
+		buckets[player] = playerBuckets
+	end
+	local bucket = playerBuckets[key]
+	if not bucket or now - bucket.stamp >= 1 then
+		playerBuckets[key] = { stamp = now, count = 1 }
 		return true
 	end
-	if b.count >= perSecond then return false end
-	b.count += 1
+	if bucket.count >= perSecond then
+		return false
+	end
+	bucket.count += 1
 	return true
 end
 
 local function fail(player, message)
-	Remotes.LobbyError:FireClient(player, message)
+	if player and player.Parent == Players then
+		Remotes.LobbyError:FireClient(player, message)
+	end
 end
 
--- One rule everywhere. This used to return Players.StudioTestMinimum (1) inside
--- Studio so the room flow could be exercised solo, which meant Studio and
--- production disagreed about when READY is legal -- and Studio is precisely
--- where that rule gets tested, so the divergence hid rather than surfaced.
+local function exactKeys(payload, allowed)
+	if type(payload) ~= "table" then
+		return false
+	end
+	for key in payload do
+		if not allowed[key] then
+			return false
+		end
+	end
+	return true
+end
+
 local function minPlayers()
 	return Config.Room.MinPlayers
 end
@@ -51,104 +75,252 @@ local function generateCode()
 			chars[i] = string.sub(alphabet, n, n)
 		end
 		local code = table.concat(chars)
-		if not byCode[code] then return code end
+		if not byCode[code] then
+			return code
+		end
 	end
 	return nil
 end
 
 local function publicState(room)
 	local members = {}
-	for _, m in room.members do
-		table.insert(members, { userId = m.userId, displayName = m.displayName, ready = m.ready })
+	for _, member in room.members do
+		table.insert(members, {
+			userId = member.userId,
+			displayName = member.displayName,
+			ready = member.ready,
+		})
 	end
 	return {
-		code = room.code,
+		roomId = room.id,
+		-- Codes are a private-party join instrument. Members of a public party do
+		-- not need one, so it is not replicated there.
+		code = room.isPublic and nil or room.code,
 		isPublic = room.isPublic,
+		joinPolicy = room.joinPolicy,
 		hostUserId = room.hostUserId,
 		phase = room.phase,
 		countdown = room.countdown,
+		memberCount = #room.members,
 		maxPlayers = Config.Room.MaxPlayers,
-		-- Sent rather than hardcoded client-side, so the button and the rule it
-		-- represents cannot drift apart.
 		minPlayers = minPlayers(),
 		members = members,
 	}
 end
 
-local function broadcast(room)
+local function broadcastRoom(room)
 	local state = publicState(room)
-	for _, m in room.members do
-		local plr = Players:GetPlayerByUserId(m.userId)
-		if plr then
-			Remotes.RoomState:FireClient(plr, state)
+	for _, member in room.members do
+		local target = Players:GetPlayerByUserId(member.userId)
+		if target then
+			Remotes.RoomState:FireClient(target, state)
 		end
+	end
+end
+
+local function browseRows()
+	local rows = {}
+	for _, room in rooms do
+		if room.isPublic and room.phase == "Waiting" and #room.members < Config.Room.MaxPlayers then
+			local host = Players:GetPlayerByUserId(room.hostUserId)
+			local hostName = host and host.DisplayName or room.members[1] and room.members[1].displayName or "UNKNOWN"
+			table.insert(rows, {
+				roomId = room.id,
+				hostDisplayName = string.sub(tostring(hostName), 1, 32),
+				memberCount = #room.members,
+				maxPlayers = Config.Room.MaxPlayers,
+				joinPolicy = room.joinPolicy,
+				_createdAt = room.createdAt,
+			})
+		end
+	end
+	table.sort(rows, function(a, b)
+		if a.memberCount ~= b.memberCount then
+			return a.memberCount > b.memberCount
+		end
+		if a._createdAt ~= b._createdAt then
+			return a._createdAt < b._createdAt
+		end
+		return a.roomId < b.roomId
+	end)
+	local limit = math.min(#rows, Config.Room.BrowseLimit or 15)
+	local sanitized = table.create(limit)
+	for i = 1, limit do
+		local row = rows[i]
+		sanitized[i] = {
+			roomId = row.roomId,
+			hostDisplayName = row.hostDisplayName,
+			memberCount = row.memberCount,
+			maxPlayers = Config.Room.MaxPlayers,
+			joinPolicy = row.joinPolicy,
+		}
+	end
+	return sanitized
+end
+
+local function sendBrowse(player)
+	if player and player.Parent == Players then
+		Remotes.RoomBrowseState:FireClient(player, { rooms = browseRows() })
+	end
+end
+
+local function broadcastBrowse()
+	local payload = { rooms = browseRows() }
+	for _, player in Players:GetPlayers() do
+		Remotes.RoomBrowseState:FireClient(player, payload)
+	end
+end
+
+local function pendingCount(room)
+	local count = 0
+	for _ in room.pending do
+		count += 1
+	end
+	return count
+end
+
+local function sendPending(room)
+	local host = Players:GetPlayerByUserId(room.hostUserId)
+	if not host then
+		return
+	end
+	local requests = {}
+	for _, request in room.pending do
+		table.insert(requests, {
+			userId = request.userId,
+			displayName = request.displayName,
+			expiresAt = request.expiresAt,
+			requestedAt = request.requestedAt,
+		})
+	end
+	table.sort(requests, function(a, b)
+		if a.requestedAt ~= b.requestedAt then
+			return a.requestedAt < b.requestedAt
+		end
+		return a.userId < b.userId
+	end)
+	Remotes.RoomPendingState:FireClient(host, { roomId = room.id, requests = requests })
+end
+
+local function joinStatus(player, status, room, message)
+	if player and player.Parent == Players then
+		Remotes.RoomJoinStatus:FireClient(player, {
+			status = status,
+			roomId = room and room.id or nil,
+			message = message,
+		})
+	end
+end
+
+local function clearPending(request, status, message, suppressHostUpdate)
+	if not request then
+		return
+	end
+	local room = request.room
+	if room.pending[request.userId] == request then
+		room.pending[request.userId] = nil
+	end
+	if pendingByPlayer[request.userId] == request then
+		pendingByPlayer[request.userId] = nil
+	end
+	if status then
+		joinStatus(Players:GetPlayerByUserId(request.userId), status, room, message)
+	end
+	if not suppressHostUpdate and rooms[room.id] == room then
+		sendPending(room)
+	end
+end
+
+local function cancelAllPending(room, status, message)
+	local requests = {}
+	for _, request in room.pending do
+		table.insert(requests, request)
+	end
+	for _, request in requests do
+		clearPending(request, status, message, true)
+	end
+	if rooms[room.id] == room then
+		sendPending(room)
 	end
 end
 
 local function destroyRoom(room)
+	cancelAllPending(room, "Declined", "PARTY CLOSED")
 	rooms[room.id] = nil
 	byCode[room.code] = nil
+	broadcastBrowse()
 end
 
 local function abortCountdown(room, reason)
-	if room.phase ~= "Starting" then return end
+	if room.phase ~= "Starting" then
+		return
+	end
 	room.token += 1
 	room.phase = "Waiting"
 	room.countdown = nil
 	if reason then
-		for _, m in room.members do
-			local plr = Players:GetPlayerByUserId(m.userId)
-			if plr then fail(plr, reason) end
+		for _, member in room.members do
+			fail(Players:GetPlayerByUserId(member.userId), reason)
 		end
 	end
-	broadcast(room)
+	broadcastRoom(room)
+	broadcastBrowse()
 end
 
 local function beginCountdown(room)
-	if room.phase ~= "Waiting" then return end
+	if room.phase ~= "Waiting" then
+		return
+	end
+	-- Once a party starts, nobody can be approved into a moving target.
+	cancelAllPending(room, "Declined", "PARTY STARTED")
 	room.phase = "Starting"
 	room.token += 1
 	local token = room.token
+	broadcastBrowse()
 	task.spawn(function()
-		for n = 5, 1, -1 do
-			if room.token ~= token or room.phase ~= "Starting" then return end
-			room.countdown = n
-			broadcast(room)
+		for number = 5, 1, -1 do
+			if room.token ~= token or room.phase ~= "Starting" then
+				return
+			end
+			room.countdown = number
+			broadcastRoom(room)
 			task.wait(1)
 		end
-		if room.token ~= token or room.phase ~= "Starting" then return end
+		if room.token ~= token or room.phase ~= "Starting" then
+			return
+		end
 		room.countdown = nil
 		room.phase = "Playing"
-		broadcast(room)
-		-- Fire the id, not the table: BindableEvents deep-copy table arguments,
-		-- and the playlist must operate on the live room, not a snapshot.
+		broadcastRoom(room)
+		broadcastBrowse()
+		-- Fire the id, not the table: the playlist must resolve the live room.
 		runRequested:Fire(room.id)
 	end)
 end
 
 local function allReady(room)
-	for _, m in room.members do
-		if not m.ready then return false end
+	for _, member in room.members do
+		if not member.ready then
+			return false
+		end
 	end
 	return true
 end
 
--- internal starters (practice runs) skip the ready gate
-function RoomService.forceStart(room)
-	beginCountdown(room)
-end
-
 local function maybeAutoStart(room)
-	if Config.Room.RequireAllReady and room.phase == "Waiting"
-		and #room.members >= minPlayers() and allReady(room) then
+	if Config.Room.RequireAllReady and room.phase == "Waiting" and #room.members >= minPlayers() and allReady(room) then
 		beginCountdown(room)
 	end
 end
 
+function RoomService.forceStart(room)
+	beginCountdown(room)
+end
+
 local function removeMember(room, userId)
-	for i, m in room.members do
-		if m.userId == userId then
-			table.remove(room.members, i)
+	for index, member in room.members do
+		if member.userId == userId then
+			table.remove(room.members, index)
 			break
 		end
 	end
@@ -157,32 +329,62 @@ local function removeMember(room, userId)
 		destroyRoom(room)
 		return
 	end
+	local hostChanged = room.hostUserId == userId
+	if hostChanged then
+		room.hostUserId = room.members[1].userId
+	end
 	if room.phase == "Starting" then
 		abortCountdown(room, "PARTICIPANT LOST - COUNTDOWN ABORTED")
 	end
-	if room.hostUserId == userId then
-		room.hostUserId = room.members[1].userId
+	broadcastRoom(room)
+	if hostChanged then
+		-- Approval requests survive host migration and are immediately shown to
+		-- the successor rather than being owned by the departed client.
+		sendPending(room)
 	end
-	broadcast(room)
+	broadcastBrowse()
 end
 
 local function leave(player)
+	local request = pendingByPlayer[player.UserId]
+	if request then
+		clearPending(request, "Cancelled", "REQUEST CANCELLED")
+	end
 	local room = byPlayer[player.UserId]
-	if room then removeMember(room, player.UserId) end
+	if room then
+		removeMember(room, player.UserId)
+	end
 end
 
 local function addMember(room, player)
+	local request = pendingByPlayer[player.UserId]
+	if request then
+		clearPending(request, nil, nil, true)
+	end
 	table.insert(room.members, {
 		userId = player.UserId,
-		displayName = player.DisplayName,
+		displayName = string.sub(player.DisplayName, 1, 32),
 		ready = false,
 	})
 	byPlayer[player.UserId] = room
-	broadcast(room)
+	if #room.members >= Config.Room.MaxPlayers then
+		cancelAllPending(room, "Declined", "PARTY FULL")
+	else
+		sendPending(room)
+	end
+	broadcastRoom(room)
+	broadcastBrowse()
 end
 
-local function createRoom(player, isPublic)
-	leave(player)
+local function createRoom(player, isPublic, joinPolicy)
+	if byPlayer[player.UserId] then
+		fail(player, "LEAVE YOUR CURRENT PARTY FIRST")
+		return
+	end
+	if pendingByPlayer[player.UserId] then
+		fail(player, "CANCEL YOUR JOIN REQUEST FIRST")
+		return
+	end
 	local code = generateCode()
 	if not code then
 		fail(player, "NO CODES AVAILABLE - TRY AGAIN")
@@ -192,97 +394,230 @@ local function createRoom(player, isPublic)
 	local room = {
 		id = nextRoomId,
 		code = code,
-		isPublic = isPublic == true,
+		isPublic = isPublic,
+		joinPolicy = joinPolicy,
 		hostUserId = player.UserId,
 		phase = "Waiting",
 		countdown = nil,
 		members = {},
+		pending = {},
 		token = 0,
+		createdAt = os.clock(),
 	}
 	rooms[room.id] = room
 	byCode[code] = room
 	addMember(room, player)
 end
 
-local function joinByCode(player, code)
-	if type(code) ~= "string" then return end
-	code = string.upper(code)
-	local room = byCode[code]
-	if not room then
-		fail(player, "UNKNOWN CODE")
-		return
-	end
-	if byPlayer[player.UserId] == room then
-		broadcast(room)
-		return
-	end
-	if #room.members >= Config.Room.MaxPlayers then
-		fail(player, "ROOM FULL")
-		return
-	end
-	if room.phase ~= "Waiting" then
-		fail(player, "RUN IN PROGRESS")
-		return
-	end
-	leave(player)
-	addMember(room, player)
+local function roomCanAccept(room)
+	return room and rooms[room.id] == room and room.phase == "Waiting" and #room.members < Config.Room.MaxPlayers
 end
 
+local function requestJoin(player, room, publicOnly)
+	if not room then
+		fail(player, publicOnly and "PUBLIC PARTY NOT FOUND" or "UNKNOWN CODE")
+		return
+	end
+	if publicOnly and not room.isPublic then
+		fail(player, "PUBLIC PARTY NOT FOUND")
+		return
+	end
+	local current = byPlayer[player.UserId]
+	if current then
+		if current == room then
+			broadcastRoom(room)
+			joinStatus(player, "Accepted", room, "ALREADY IN PARTY")
+		else
+			fail(player, "LEAVE YOUR CURRENT PARTY FIRST")
+		end
+		return
+	end
+	local existing = pendingByPlayer[player.UserId]
+	if existing then
+		if existing.room == room then
+			joinStatus(player, "Pending", room, "WAITING FOR HOST APPROVAL")
+		else
+			fail(player, "CANCEL YOUR JOIN REQUEST FIRST")
+		end
+		return
+	end
+	if not roomCanAccept(room) then
+		if room.phase ~= "Waiting" then
+			fail(player, "PARTY ALREADY STARTED")
+		else
+			fail(player, "PARTY FULL")
+		end
+		return
+	end
+
+	if room.joinPolicy == "Open" then
+		addMember(room, player)
+		joinStatus(player, "Accepted", room, "JOINED PARTY")
+		return
+	end
+	if pendingCount(room) >= (Config.Room.MaxPendingJoinRequests or 8) then
+		fail(player, "PARTY REQUEST QUEUE FULL")
+		return
+	end
+
+	nextRequestToken += 1
+	local now = os.clock()
+	local request = {
+		room = room,
+		userId = player.UserId,
+		displayName = string.sub(player.DisplayName, 1, 32),
+		requestedAt = now,
+		expiresAt = now + (Config.Room.JoinRequestLifetimeSeconds or 45),
+		token = nextRequestToken,
+	}
+	room.pending[player.UserId] = request
+	pendingByPlayer[player.UserId] = request
+	joinStatus(player, "Pending", room, "WAITING FOR HOST APPROVAL")
+	sendPending(room)
+
+	task.delay(Config.Room.JoinRequestLifetimeSeconds or 45, function()
+		local live = pendingByPlayer[request.userId]
+		if live ~= request or live.token ~= request.token then
+			return
+		end
+		clearPending(request, "Expired", "REQUEST EXPIRED")
+	end)
+end
+
+local function validCode(code)
+	if type(code) ~= "string" or #code ~= Config.Room.CodeLength then
+		return nil
+	end
+	local upper = string.upper(code)
+	for i = 1, #upper do
+		if not string.find(Config.Room.CodeAlphabet, string.sub(upper, i, i), 1, true) then
+			return nil
+		end
+	end
+	return upper
+end
+
+local function joinByCode(player, code)
+	local clean = validCode(code)
+	if not clean then
+		fail(player, "INVALID PARTY CODE")
+		return
+	end
+	requestJoin(player, byCode[clean], false)
+end
+
+local function joinPublic(player, roomId)
+	if type(roomId) ~= "number" or roomId ~= roomId or roomId % 1 ~= 0 or roomId < 1 then
+		return
+	end
+	requestJoin(player, rooms[roomId], true)
+end
+
+-- Backwards-compatible route for any older client still present during a
+-- rolling publish. New UI always browses and joins a chosen roomId.
 local function quickJoin(player)
 	local best
 	for _, room in rooms do
-		if room.isPublic and room.phase == "Waiting"
-			and #room.members < Config.Room.MaxPlayers
-			and byPlayer[player.UserId] ~= room then
-			if not best or #room.members > #best.members then
+		if room.isPublic and roomCanAccept(room) then
+			if
+				not best
+				or #room.members > #best.members
+				or (#room.members == #best.members and room.createdAt < best.createdAt)
+			then
 				best = room
 			end
 		end
 	end
 	if best then
-		leave(player)
-		addMember(best, player)
+		requestJoin(player, best, true)
 	else
-		-- Quick join must NOT silently host on a miss. Creating a room here made
-		-- "join something that exists" and "create something new" the same
-		-- action, so the client could never report an empty result honestly.
-		-- HOST SESSION -> PUBLIC ROOM is the explicit create path; this one only
-		-- ever joins.
-		fail(player, "NO OPEN ROOM IN THIS SERVER")
+		fail(player, "NO PUBLIC PARTIES IN THIS SERVER")
+	end
+end
+
+local function decideJoin(player, payload)
+	if not exactKeys(payload, { requestUserId = true, accept = true }) then
+		return
+	end
+	local userId = payload.requestUserId
+	local accept = payload.accept
+	if type(userId) ~= "number" or userId ~= userId or userId % 1 ~= 0 or userId < 1 then
+		return
+	end
+	if type(accept) ~= "boolean" then
+		return
+	end
+	local room = byPlayer[player.UserId]
+	if not room or room.hostUserId ~= player.UserId then
+		fail(player, "HOST ONLY")
+		return
+	end
+	local request = room.pending[userId]
+	if not request or pendingByPlayer[userId] ~= request then
+		return
+	end
+	if os.clock() >= request.expiresAt then
+		clearPending(request, "Expired", "REQUEST EXPIRED")
+		return
+	end
+	if not accept then
+		clearPending(request, "Declined", "HOST DECLINED")
+		return
+	end
+	if not roomCanAccept(room) then
+		clearPending(request, "Declined", room.phase == "Waiting" and "PARTY FULL" or "PARTY STARTED")
+		return
+	end
+	local target = Players:GetPlayerByUserId(userId)
+	if not target then
+		clearPending(request, "Cancelled", "PLAYER LEFT")
+		return
+	end
+	clearPending(request, nil, nil, true)
+	addMember(room, target)
+	joinStatus(target, "Accepted", room, "HOST ACCEPTED")
+end
+
+local function cancelJoin(player)
+	local request = pendingByPlayer[player.UserId]
+	if request then
+		clearPending(request, "Cancelled", "REQUEST CANCELLED")
+	else
+		joinStatus(player, "Cancelled", nil, "NO OPEN REQUEST")
 	end
 end
 
 local function setReady(player, ready)
 	local room = byPlayer[player.UserId]
-	if not room then return end
-
-	-- Readying up below the minimum used to be accepted in silence: the flag was
-	-- set, maybeAutoStart declined because the room was too small, and the player
-	-- was told nothing at all. The client now disables the button, but the remote
-	-- is still reachable, so the rule is enforced here as well -- and unlike
-	-- before, it answers. Standing down is always allowed.
-	if ready == true and #room.members < minPlayers() then
+	if not room then
+		return
+	end
+	if room.phase ~= "Waiting" and room.phase ~= "Starting" then
+		return
+	end
+	if ready and #room.members < minPlayers() then
 		fail(player, string.format("MINIMUM %d PLAYERS", minPlayers()))
 		return
 	end
-
-	for _, m in room.members do
-		if m.userId == player.UserId then
-			m.ready = ready == true
+	for _, member in room.members do
+		if member.userId == player.UserId then
+			member.ready = ready
 			break
 		end
 	end
-	if room.phase == "Starting" and ready ~= true then
+	if room.phase == "Starting" and not ready then
 		abortCountdown(room, "READY REVOKED - COUNTDOWN ABORTED")
 		return
 	end
-	broadcast(room)
+	broadcastRoom(room)
 	maybeAutoStart(room)
 end
 
 local function startRun(player)
 	local room = byPlayer[player.UserId]
-	if not room then return end
+	if not room then
+		return
+	end
 	if room.hostUserId ~= player.UserId then
 		fail(player, "HOST ONLY")
 		return
@@ -307,74 +642,151 @@ function RoomService.getRoom(id)
 end
 
 function RoomService.finishRun(room)
-	if rooms[room.id] ~= room then return end
+	if not room or rooms[room.id] ~= room then
+		return
+	end
 	room.phase = "Waiting"
 	room.countdown = nil
-	for _, m in room.members do m.ready = false end
-	broadcast(room)
+	for _, member in room.members do
+		member.ready = false
+	end
+	broadcastRoom(room)
+	broadcastBrowse()
 end
 
 local function ensureRemotes()
-	local k = ReplicatedStorage:FindFirstChild("Kenopsia")
-	if not k then
-		k = Instance.new("Folder")
-		k.Name = "Kenopsia"
-		k.Parent = ReplicatedStorage
+	local kenopsia = ReplicatedStorage:FindFirstChild("Kenopsia")
+	if not kenopsia then
+		kenopsia = Instance.new("Folder")
+		kenopsia.Name = "Kenopsia"
+		kenopsia.Parent = ReplicatedStorage
 	end
-	local folder = k:FindFirstChild("Remotes")
+	local folder = kenopsia:FindFirstChild("Remotes")
 	if not folder then
 		folder = Instance.new("Folder")
 		folder.Name = "Remotes"
-		folder.Parent = k
+		folder.Parent = kenopsia
 	end
 	local names = {
-		"RoomState", "LobbyError", "RoomCreateRequest", "RoomJoinRequest",
-		"RoomQuickJoinRequest", "RoomLeaveRequest", "RoomReadyRequest", "RoomStartRequest",
+		"RoomState",
+		"RoomBrowseState",
+		"RoomJoinStatus",
+		"RoomPendingState",
+		"LobbyError",
+		"RoomCreateRequest",
+		"RoomJoinRequest",
+		"RoomBrowseRequest",
+		"RoomPublicJoinRequest",
+		"RoomJoinDecisionRequest",
+		"RoomJoinCancelRequest",
+		"RoomQuickJoinRequest",
+		"RoomLeaveRequest",
+		"RoomReadyRequest",
+		"RoomStartRequest",
 	}
 	Remotes = {}
-	for _, n in names do
-		local r = folder:FindFirstChild(n)
-		if not r then
-			r = Instance.new("RemoteEvent")
-			r.Name = n
-			r.Parent = folder
+	for _, name in names do
+		local remote = folder:FindFirstChild(name)
+		if not remote then
+			remote = Instance.new("RemoteEvent")
+			remote.Name = name
+			remote.Parent = folder
 		end
-		Remotes[n] = r
+		Remotes[name] = remote
 	end
 end
 
 function RoomService.start()
 	ensureRemotes()
 
-	Remotes.RoomCreateRequest.OnServerEvent:Connect(function(player, payload)
-		if not allow(player, "create", 2) then return end
-		local isPublic = type(payload) == "table" and payload.public == true
-		createRoom(player, isPublic)
+	Remotes.RoomCreateRequest.OnServerEvent:Connect(function(player, payload, ...)
+		if select("#", ...) > 0 or not allow(player, "create", 2) then
+			return
+		end
+		if
+			not exactKeys(payload, { public = true, joinPolicy = true })
+			or type(payload.public) ~= "boolean"
+			or (payload.joinPolicy ~= "Open" and payload.joinPolicy ~= "Approval")
+		then
+			fail(player, "INVALID CREATE REQUEST")
+			return
+		end
+		createRoom(player, payload.public, payload.joinPolicy)
 	end)
-	Remotes.RoomJoinRequest.OnServerEvent:Connect(function(player, code)
-		if not allow(player, "join", 3) then return end
+	Remotes.RoomJoinRequest.OnServerEvent:Connect(function(player, code, ...)
+		if select("#", ...) > 0 or not allow(player, "join", 2) then
+			return
+		end
 		joinByCode(player, code)
 	end)
-	Remotes.RoomQuickJoinRequest.OnServerEvent:Connect(function(player)
-		if not allow(player, "quick", 2) then return end
+	Remotes.RoomBrowseRequest.OnServerEvent:Connect(function(player, ...)
+		if select("#", ...) > 0 or not allow(player, "browse", 2) then
+			return
+		end
+		sendBrowse(player)
+	end)
+	Remotes.RoomPublicJoinRequest.OnServerEvent:Connect(function(player, roomId, ...)
+		if select("#", ...) > 0 or not allow(player, "join", 2) then
+			return
+		end
+		joinPublic(player, roomId)
+	end)
+	Remotes.RoomJoinDecisionRequest.OnServerEvent:Connect(function(player, payload, ...)
+		if select("#", ...) > 0 or not allow(player, "decision", 5) then
+			return
+		end
+		decideJoin(player, payload)
+	end)
+	Remotes.RoomJoinCancelRequest.OnServerEvent:Connect(function(player, ...)
+		if select("#", ...) > 0 or not allow(player, "cancel", 2) then
+			return
+		end
+		cancelJoin(player)
+	end)
+	Remotes.RoomQuickJoinRequest.OnServerEvent:Connect(function(player, ...)
+		if select("#", ...) > 0 or not allow(player, "join", 2) then
+			return
+		end
 		quickJoin(player)
 	end)
-	Remotes.RoomLeaveRequest.OnServerEvent:Connect(function(player)
-		if not allow(player, "leave", 3) then return end
+	Remotes.RoomLeaveRequest.OnServerEvent:Connect(function(player, ...)
+		if select("#", ...) > 0 or not allow(player, "leave", 3) then
+			return
+		end
 		leave(player)
 	end)
-	Remotes.RoomReadyRequest.OnServerEvent:Connect(function(player, ready)
-		if not allow(player, "ready", 5) then return end
+	Remotes.RoomReadyRequest.OnServerEvent:Connect(function(player, ready, ...)
+		if select("#", ...) > 0 or not allow(player, "ready", 5) then
+			return
+		end
+		if type(ready) ~= "boolean" then
+			return
+		end
 		setReady(player, ready)
 	end)
-	Remotes.RoomStartRequest.OnServerEvent:Connect(function(player)
-		if not allow(player, "start", 2) then return end
+	Remotes.RoomStartRequest.OnServerEvent:Connect(function(player, ...)
+		if select("#", ...) > 0 or not allow(player, "start", 2) then
+			return
+		end
 		startRun(player)
 	end)
 
-	Players.PlayerRemoving:Connect(leave)
+	Players.PlayerAdded:Connect(function(player)
+		task.defer(function()
+			sendBrowse(player)
+		end)
+	end)
+	Players.PlayerRemoving:Connect(function(player)
+		leave(player)
+		buckets[player] = nil
+	end)
+	for _, player in Players:GetPlayers() do
+		task.defer(function()
+			sendBrowse(player)
+		end)
+	end
 
-	print("[RoomService] online - in-place rooms" .. (RunService:IsStudio() and " (studio)" or ""))
+	print("[RoomService] online - current-server parties" .. (RunService:IsStudio() and " (studio)" or ""))
 end
 
 return RoomService

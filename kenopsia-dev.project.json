@@ -52,11 +52,14 @@
             "MenuController":  { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuController.luau" },
             "MenuOverlayController": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuOverlayController.luau" },
             "MenuSceneController": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/MenuSceneController.luau" },
+            "PartyWallView": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/PartyWallView.luau" },
             "SessionWallController": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/SessionWallController.luau" },
             "TrialController": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/Controllers/TrialController.luau" }
           },
           "UI": {
             "$className": "Folder",
+            "Cursor":    { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Cursor.luau" },
+            "GlitchTitle": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/GlitchTitle.luau" },
             "Motion":    { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Motion.luau" },
             "SoundBank": { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/SoundBank.luau" },
             "Theme":     { "$path": "dev-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient/UI/Theme.luau" }

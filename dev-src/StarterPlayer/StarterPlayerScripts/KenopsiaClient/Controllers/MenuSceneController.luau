@@ -483,10 +483,14 @@ local function showCharacter(character)
 	end
 end
 
--- 25.08.2026: this used to skip the local player so the subject could stand on
--- the landing. The menu shows a painted background now and the subject is gone
--- from it, so every character is hidden -- including this client's own.
 local function trackOther(other)
+	-- The local R6 rig is the landing subject. It remains visible and keeps the
+	-- existing cursor-driven neck tracking; only other players are hidden on
+	-- this client so four people can share the same menu anchor without stacking.
+	if other == player then
+		showCharacter(other.Character)
+		return
+	end
 	local function bind(character)
 		if not state.active then return end
 		hideCharacter(character)

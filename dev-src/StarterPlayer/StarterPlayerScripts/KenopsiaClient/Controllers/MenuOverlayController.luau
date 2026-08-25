@@ -143,7 +143,6 @@ end
 -- transparent so they can be tinted, all authored small so they magnify with
 -- hard pixel edges instead of going soft.
 local PLATE = {
-	Background = "rbxassetid://99925228392956",
 	Streak = "rbxassetid://134334042347021",
 	Shards = "rbxassetid://120005853529594",
 	Rain = "rbxassetid://105106540934647",
@@ -161,24 +160,6 @@ local function buildBackdrop(gui)
 	back.Size = UDim2.fromScale(1, 1)
 	back.ZIndex = 0
 	back.Parent = gui
-
-	-- THE BACKGROUND. An opaque plate rather than the live 3D view: with the
-	-- subject gone and walking disabled there was nothing left for the scene to
-	-- do, and a painted plate gives full control of the mood. Crop, not Stretch
-	-- -- the image must never be distorted to fit an aspect it was not drawn
-	-- for; it is authored at 960x540, exactly half of 1080p, so Pixelated
-	-- magnifies it 2x with crisp grain.
-	local plate = Instance.new("ImageLabel")
-	plate.Name = "Plate"
-	plate.BackgroundColor3 = Theme.Cold.Ground
-	plate.BackgroundTransparency = 0
-	plate.BorderSizePixel = 0
-	plate.Image = PLATE.Background
-	plate.ScaleType = Enum.ScaleType.Crop
-	plate.ResampleMode = Enum.ResamplerMode.Pixelated
-	plate.Size = UDim2.fromScale(1, 1)
-	plate.ZIndex = 0
-	plate.Parent = back
 
 	-- SCRIM. The menu's whole text column lives on the left, and a UI must not
 	-- depend on what happens to be behind it -- the scene changes, the subject
@@ -229,8 +210,12 @@ local function buildBackdrop(gui)
 		i.Parent = back
 		return i
 	end
-	tile("Rain", PLATE.Rain, 256, 0.86, Theme.Cold.Focus)
-	tile("Dots", PLATE.Dots, 128, 0.8, Theme.Cold.Focus)
+	-- Static, very light texture only. Nothing here covers the street or runs a
+	-- per-frame updater; the 3D scene and local character remain the background.
+	tile("Scanlines", Theme.Asset.Scanlines, 128, 0.91, Theme.Cold.Text)
+	tile("Noise", Theme.Asset.Noise, 256, 0.96, Theme.Cold.Text)
+	tile("Rain", PLATE.Rain, 256, 0.94, Theme.Cold.Focus)
+	tile("Dots", PLATE.Dots, 128, 0.93, Theme.Cold.Focus)
 
 	local shards = Instance.new("ImageLabel")
 	shards.Name = "Shards"
@@ -238,12 +223,24 @@ local function buildBackdrop(gui)
 	shards.BorderSizePixel = 0
 	shards.Image = PLATE.Shards
 	shards.ImageColor3 = Theme.Cold.Bright
-	shards.ImageTransparency = 0.88
+	shards.ImageTransparency = 0.95
 	shards.ResampleMode = Enum.ResamplerMode.Pixelated
 	shards.Size = UDim2.fromScale(0.68, 0.95)
 	shards.Position = UDim2.fromScale(0.36, 0.05)
 	shards.ZIndex = 0
 	shards.Parent = back
+
+	local vignette = Instance.new("ImageLabel")
+	vignette.Name = "Vignette"
+	vignette.BackgroundTransparency = 1
+	vignette.BorderSizePixel = 0
+	vignette.Image = Theme.Asset.Vignette
+	vignette.ImageColor3 = Theme.Cold.Ground
+	vignette.ImageTransparency = 0.90
+	vignette.ScaleType = Enum.ScaleType.Stretch
+	vignette.Size = UDim2.fromScale(1, 1)
+	vignette.ZIndex = 0
+	vignette.Parent = back
 	return back
 end
 

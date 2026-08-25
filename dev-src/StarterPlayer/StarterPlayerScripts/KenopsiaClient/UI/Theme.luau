@@ -59,6 +59,19 @@ Theme.StreetShadow = { Offset = 3, OffsetLarge = 4 }
 -- and primary actions to 56-64.
 Theme.Touch = { Min = 48, Action = 56, ActionLarge = 64 }
 
+-- Diegetic party wall. The 8 x 5.4 stud display has this exact aspect ratio,
+-- so a fixed canvas stays sharp while the physical screen and camera remain
+-- untouched. All selectable rows clear the 48 px cross-platform input floor.
+Theme.Party = {
+	Canvas = Vector2.new(960, 648),
+	PanelTransparency = 0.12,
+	RowHeight = 56,
+	RowGap = 8,
+	Marker = Color3.fromHex("B56A45"),
+	RuleTransparency = 0.42,
+	InactiveTransparency = 0.18,
+}
+
 -- Denk One for display type, Code for status lines and room codes.
 Theme.TitleFont = Enum.Font.DenkOne
 Theme.MonoFont = Enum.Font.Code
@@ -80,6 +93,7 @@ Theme.Asset = {
 	Scanlines  = "rbxassetid://85404279414801",
 	Noise      = "rbxassetid://99955208110383",
 	Vignette   = "rbxassetid://122512397007287",
+	SelectionStreak = "rbxassetid://134334042347021",
 }
 -- Back-compat for the CRT module's existing lookups.
 Theme.CRT = {
