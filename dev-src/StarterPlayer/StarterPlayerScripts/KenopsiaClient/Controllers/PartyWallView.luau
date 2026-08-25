@@ -142,6 +142,7 @@ local function selectionRow(self, parent, pageName, name, text, description, ord
 	button.TextTransparency = Theme.Party.InactiveTransparency
 	button.TextXAlignment = Enum.TextXAlignment.Center
 	button.ZIndex = 3
+	button.SelectionImageObject = self.selectionImage
 	button.Parent = parent
 
 	local bar = Instance.new("Frame")
@@ -276,6 +277,18 @@ function PartyWallView.new(gui, callbacks, options)
 	root.ClipsDescendants = true
 	root.Parent = gui
 	self.root = root
+
+	-- Roblox's default gamepad/keyboard selection ring adds a bright blue
+	-- outline around our authored cyan streak. A transparent shared image keeps
+	-- mouse, keyboard and gamepad on the exact same focus treatment.
+	local selectionImage = Instance.new("ImageLabel")
+	selectionImage.Name = "SelectionSuppressor"
+	selectionImage.BackgroundTransparency = 1
+	selectionImage.ImageTransparency = 1
+	selectionImage.Size = UDim2.fromOffset(1, 1)
+	selectionImage.Visible = false
+	selectionImage.Parent = root
+	self.selectionImage = selectionImage
 
 	local outline = Instance.new("UIStroke")
 	outline.Color = Theme.Cold.Dim
