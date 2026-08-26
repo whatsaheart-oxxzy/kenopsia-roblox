@@ -468,7 +468,15 @@ local function applyMovement()
 		-- Dead Zone (Move-Set "scan"): NUR Gehen - der Compactor ist knapp langsamer.
 		-- Ueberall sonst wird sofort gerannt (kein Anlauf mehr).
 		local moves = char:GetAttribute("XBotMoves") or ""
-		hum.WalkSpeed = string.find(moves, "scan") and 7 or 14
+		-- MP-08 B-09 (26.08.2026, user): der Server schreibt CRAWL_SPEED auf den
+		-- Humanoid, sobald XBotCrawl latcht (Minefield). Diese Zeile schrieb hart
+		-- 7 zurueck und haette ihn damit ueberschrieben -- heute faellt das nicht
+		-- auf, weil waehrend einer Dead-Zone-Runde kein weiteres role-Paket kommt,
+		-- aber es ist trotzdem falsch herum. Ein Krabbler behaelt jetzt, was der
+		-- Server gesetzt hat; die Ramp-Schleife unten faehrt ihn wie jeden anderen.
+		if char:GetAttribute("XBotCrawl") ~= true then
+			hum.WalkSpeed = string.find(moves, "scan") and 7 or 14
+		end
 	elseif moveState == "trial" then
 		-- MP-05: a TrialClients module set this through kit.movement.set.
 		hum.WalkSpeed = trialWalkSpeed
@@ -503,7 +511,10 @@ do
 		if not hum then return end
 		local moves = char:GetAttribute("XBotMoves") or ""
 		if not string.find(moves, "scan") then return end
-		if char:GetAttribute("XBotCrawl") == true then runT = 0 return end
+		-- 26.08.2026 (user, MP-08 S8): der Krabbler wurde hier ausgenommen, weil
+		-- CRAWL_SPEED (4.2) unter dem Rampenfuss (7) lag und die Rampe ihn sonst
+		-- beschleunigt haette. Krabbeln IST jetzt Laufen -- also faehrt er
+		-- dieselbe 7 -> 10 Rampe wie jeder andere, und die Ausnahme faellt weg.
 		if char:GetAttribute("XBotScanning") == true or hum.MoveDirection.Magnitude < 0.2 then
 			runT = 0
 		else
@@ -563,26 +574,124 @@ end
 -- watch list, Q / E (gamepad LB / RB, tap left / right screen half on touch)
 -- steps through them; a phosphor caption names the watched subject. The
 -- caption label rides the machine gui and hides itself with the mode.
+--
+-- 26.08.2026 (user, MP-08 S6): the one-line caption became the OBSERVATION
+-- DECK -- the same information, but in the machine's own register (clinical,
+-- phosphor, no sports broadcast), plus a viewfinder frame around the picture
+-- so that "I am watching" is distinguishable from "I am playing" at a glance:
+--
+--   +- OBSERVATION DECK --------------------------+
+--   |  SUBJECT 03 // TAMEM         [Q] <   > [E]  |
+--   |  STATUS     ALIVE                           |
+--   |  REMAINING  2 OF 4                          |
+--   +---------------------------------------------+
+--
+-- REMAINING counts the entries of the server's own `watch` list that have a
+-- living figure right now, against the length of the list as it was sent. It
+-- is the answer to "why is this round still going".
 do
-	local caption = nil
-	local function ensureCaption()
-		if caption and caption.Parent then return caption end
-		caption = Instance.new("TextLabel")
-		caption.Name = "SpectateCaption"
-		caption.AnchorPoint = Vector2.new(0.5, 1)
-		caption.Position = UDim2.new(0.5, 0, 1, -46)
-		caption.Size = UDim2.new(0, 460, 0, 22)
-		caption.BackgroundColor3 = Color3.fromRGB(4, 10, 7)
-		caption.BackgroundTransparency = 0.35
-		caption.BorderSizePixel = 0
-		caption.Font = Enum.Font.Code
-		caption.TextSize = 15
-		caption.TextColor3 = PHOSPHOR
-		caption.ZIndex = 66
-		caption.Visible = false
-		caption.Parent = machine
-		return caption
+	local deck = nil
+	local function ensureDeck()
+		if deck and deck.frame.Parent then return deck end
+		local frame = Instance.new("Frame")
+		frame.Name = "SpectateDeck"
+		frame.AnchorPoint = Vector2.new(0.5, 1)
+		frame.Position = UDim2.new(0.5, 0, 1, -38)
+		frame.Size = UDim2.new(0, 468, 0, 82)
+		frame.BackgroundColor3 = Color3.fromRGB(4, 10, 7)
+		frame.BackgroundTransparency = 0.28
+		frame.BorderSizePixel = 0
+		frame.ZIndex = 66
+		frame.Visible = false
+		frame.Parent = machine
+		local edge = Instance.new("UIStroke")
+		edge.Color = PHOSPHOR
+		edge.Thickness = 1
+		edge.Transparency = 0.4
+		edge.Parent = frame
+		-- The title sits ON the top edge, the way the machine labels its other
+		-- panels; the opaque background is what cuts the stroke behind it.
+		local head = Instance.new("TextLabel")
+		head.Name = "Head"
+		head.BackgroundColor3 = Color3.fromRGB(4, 10, 7)
+		head.BackgroundTransparency = 0
+		head.BorderSizePixel = 0
+		head.Position = UDim2.new(0, 12, 0, -8)
+		head.Size = UDim2.new(0, 158, 0, 16)
+		head.Font = Enum.Font.Code
+		head.TextSize = 12
+		head.TextColor3 = PHOSPHOR
+		head.TextXAlignment = Enum.TextXAlignment.Left
+		head.Text = " OBSERVATION DECK "
+		head.ZIndex = 67
+		head.Parent = frame
+		local function row(name, y, size, colour)
+			local l = Instance.new("TextLabel")
+			l.Name = name
+			l.BackgroundTransparency = 1
+			l.BorderSizePixel = 0
+			l.Position = UDim2.new(0, 14, 0, y)
+			l.Size = UDim2.new(1, -28, 0, size + 5)
+			l.Font = Enum.Font.Code
+			l.TextSize = size
+			l.TextColor3 = colour
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextYAlignment = Enum.TextYAlignment.Center
+			l.Text = ""
+			l.ZIndex = 67
+			l.Parent = frame
+			return l
+		end
+		local keys = row("Keys", 12, 14, DIM)
+		keys.TextXAlignment = Enum.TextXAlignment.Right
+		deck = {
+			frame = frame,
+			subject = row("Subject", 12, 15, PHOSPHOR),
+			status = row("Status", 36, 13, DIM),
+			remaining = row("Remaining", 56, 13, DIM),
+			keys = keys,
+		}
+		return deck
 	end
+
+	-- The viewfinder: a hairline border with four corner brackets, in the same
+	-- language as the CRT overlays. It is the frame around the picture that
+	-- says the picture is not yours.
+	local scan = nil
+	local function ensureScan()
+		if scan and scan.Parent then return scan end
+		scan = Instance.new("Frame")
+		scan.Name = "SpectateFrame"
+		scan.Size = UDim2.fromScale(1, 1)
+		scan.BackgroundTransparency = 1
+		scan.BorderSizePixel = 0
+		scan.ZIndex = 65
+		scan.Visible = false
+		scan.Parent = machine
+		local edge = Instance.new("UIStroke")
+		edge.Color = PHOSPHOR
+		edge.Thickness = 1
+		edge.Transparency = 0.72
+		edge.Parent = scan
+		-- Eight thin bars: two arms on each of the four corners. Built once.
+		for _, cx in { 0, 1 } do
+			for _, cy in { 0, 1 } do
+				for _, horizontal in { true, false } do
+					local bar = Instance.new("Frame")
+					bar.BackgroundColor3 = PHOSPHOR
+					bar.BackgroundTransparency = 0.35
+					bar.BorderSizePixel = 0
+					bar.AnchorPoint = Vector2.new(cx, cy)
+					bar.Position = UDim2.new(cx, cx == 0 and 14 or -14, cy, cy == 0 and 14 or -14)
+					bar.Size = horizontal and UDim2.new(0, 26, 0, 2) or UDim2.new(0, 2, 0, 26)
+					bar.ZIndex = 65
+					bar.Parent = scan
+				end
+			end
+		end
+		return scan
+	end
+
 	local function cycle(dir)
 		if not spectateWatch or #spectateWatch < 2 then return end
 		spectateIndex = ((spectateIndex - 1 + dir) % #spectateWatch) + 1
@@ -600,22 +709,113 @@ do
 			if vp then cycle(input.Position.X < vp.X / 2 and -1 or 1) end
 		end
 	end)
+	-- Same 0.4 s cadence as before -- it only writes more fields now.
 	task.spawn(function()
 		while true do
 			task.wait(0.4)
-			local c = ensureCaption()
+			local d = ensureDeck()
+			local s = ensureScan()
 			if spectateWatch and #spectateWatch > 0 then
+				local total = #spectateWatch
+				local alive = 0
+				for _, uid in ipairs(spectateWatch) do
+					local other = Players:GetPlayerByUserId(uid)
+					local ochar = other and other.Character
+					local ohum = ochar and ochar:FindFirstChildOfClass("Humanoid")
+					if ohum and ohum.Health > 0 then alive += 1 end
+				end
 				local target = Players:GetPlayerByUserId(spectateWatch[spectateIndex] or 0)
-				local many = #spectateWatch > 1
-				c.Text = target
-					and ("VIEWER MODE - " .. string.upper(target.DisplayName) .. (many and "    [Q/E]" or ""))
-					or "VIEWER MODE"
-				c.Visible = true
-			elseif c.Visible then
-				c.Visible = false
+				local tchar = target and target.Character
+				local thum = tchar and tchar:FindFirstChildOfClass("Humanoid")
+				local up = thum and thum.Health > 0
+				d.subject.Text = target
+					and ("SUBJECT %02d // %s"):format(spectateIndex, string.upper(target.DisplayName))
+					or "SUBJECT --  // SIGNAL LOST"
+				d.status.Text = "STATUS     " .. (up and "ALIVE" or "NO SIGNAL")
+				d.status.TextColor3 = up and PHOSPHOR or Color3.fromRGB(255, 48, 32)
+				d.remaining.Text = ("REMAINING  %d OF %d"):format(alive, total)
+				d.keys.Text = total > 1 and "[Q] <   > [E]" or ""
+				d.frame.Visible = true
+				s.Visible = true
+			else
+				if d.frame.Visible then d.frame.Visible = false end
+				if s.Visible then s.Visible = false end
 			end
 		end
 	end)
+end
+
+-- MP-08 S3 (user): KILL FEED. A death in the room used to be a full-screen
+-- card broadcast to everyone -- which meant everyone lost the picture they
+-- needed (the Canteen observer above all, B-02). The room gets this instead:
+-- one line, top right, four seconds, gone. The full-screen card stays, but
+-- only for the subject it is about.
+--
+-- Deliberately NOT part of K.KNOWN_KINDS: the dispatch catches `feed` BEFORE
+-- the screen funnel, so it must not bump `session` -- a feed line arriving
+-- mid-card would otherwise cancel a running typewriter.
+local pushFeed
+do
+	local list = nil
+	local rows = {}
+	-- Monotonic, so two lines in the same second still sort newest-last.
+	local seq = 0
+	pushFeed = function(text, style)
+		if not text or text == "" then return end
+		if not (list and list.Parent) then
+			list = Instance.new("Frame")
+			list.Name = "KillFeed"
+			list.AnchorPoint = Vector2.new(1, 0)
+			list.Position = UDim2.new(1, -18, 0, 18)
+			list.Size = UDim2.new(0, 380, 0, 4 * 22)
+			list.BackgroundTransparency = 1
+			list.BorderSizePixel = 0
+			list.ZIndex = 66
+			list.Parent = machine
+			local layout = Instance.new("UIListLayout")
+			layout.FillDirection = Enum.FillDirection.Vertical
+			layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+			layout.VerticalAlignment = Enum.VerticalAlignment.Top
+			layout.SortOrder = Enum.SortOrder.LayoutOrder
+			layout.Padding = UDim.new(0, 3)
+			layout.Parent = list
+		end
+		-- Four lines maximum: the oldest goes the moment a fifth arrives, so a
+		-- chain of mines cannot paper over the arena.
+		while #rows >= 4 do
+			local oldest = table.remove(rows, 1)
+			if oldest and oldest.Parent then oldest:Destroy() end
+		end
+		local line = Instance.new("TextLabel")
+		line.Name = "FeedLine"
+		line.BackgroundColor3 = Color3.fromRGB(4, 10, 7)
+		line.BackgroundTransparency = 0.35
+		line.BorderSizePixel = 0
+		line.Size = UDim2.new(1, 0, 0, 19)
+		line.Font = Enum.Font.Code
+		line.TextSize = 13
+		line.TextColor3 = style == "death" and Color3.fromRGB(255, 48, 32) or PHOSPHOR
+		line.TextXAlignment = Enum.TextXAlignment.Right
+		line.Text = string.upper(tostring(text)) .. "  "
+		line.ZIndex = 66
+		seq += 1
+		line.LayoutOrder = seq
+		line.Parent = list
+		table.insert(rows, line)
+		task.delay(4, function()
+			if not (line and line.Parent) then return end
+			TweenService:Create(line, TweenInfo.new(Feel.Fade.HitMark or 0.4), {
+				TextTransparency = 1,
+				BackgroundTransparency = 1,
+			}):Play()
+			task.delay((Feel.Fade.HitMark or 0.4) + 0.05, function()
+				for i, r in ipairs(rows) do
+					if r == line then table.remove(rows, i) break end
+				end
+				if line and line.Parent then line:Destroy() end
+			end)
+		end)
+	end
 end
 
 local function restoreCamera()
@@ -2356,6 +2556,17 @@ local function showAnnounce(p, token)
 	end
 	announceScreen.Visible = true
 	announceScreen.Line.Text = ""
+	-- MP-08 B-08: showRoleCard und showPodium raeumen sich selbst ab,
+	-- showAnnounce war die einzige Ausnahme -- eine Karte blieb stehen, bis
+	-- irgendwann ein anderes Paket hideAll() ausloeste. Ein Sender, der weiss
+	-- wie lange sie stehen soll, sagt es jetzt. Gegen `token` gesichert, damit
+	-- ein spaeterer Screen nicht von diesem Timer abgeraeumt wird.
+	local secs = tonumber(p.seconds)
+	if secs and secs > 0 then
+		task.delay(secs, function()
+			if session == token then hideAll() end
+		end)
+	end
 	task.spawn(function()
 		task.wait(Feel.Typewriter.LeadIn)
 		if session ~= token then return end
@@ -2542,6 +2753,13 @@ MachineState.OnClientEvent:Connect(function(p)
 		showMines(p.list or {})
 		return
 	end
+	-- MP-08 S3: caught HERE, before the screen funnel below. A feed line is an
+	-- overlay, not a screen: it must not bump `session` (that would cancel a
+	-- typewriter still running under it) and it must not call hideAll().
+	if p.kind == "feed" then
+		pushFeed(p.text, p.style)
+		return
+	end
 	if p.kind == "role" then
 		-- F-1 (MP-05 D14): Canteen delivers the round token INSIDE its spectate
 		-- role packet, and this handler used to return before adopting it, so
@@ -2549,6 +2767,16 @@ MachineState.OnClientEvent:Connect(function(p)
 		-- token whenever one is present, before the spectate early-return.
 		if p.roundToken ~= nil then trialRoundToken = p.roundToken end
 		if p.role == "spectate" then
+			-- 26.08.2026 (user, MP-08 B-01): DIE SCHEIBE ZUERST FREIRAEUMEN. Dieser
+			-- Zweig kehrt vor der Screen-Weiche am Ende des Dispatch zurueck, also
+			-- ruft fuer ihn nie jemand hideAll() -- und die Karte, die den Tod
+			-- angekuendigt hat, steht noch. showAnnounce("death") zieht bei
+			-- Feel.Death.Hold (2.5 s) auf BackgroundTransparency 0, das
+			-- spectate-Paket kommt bei 3.2 s: der Zuschauermodus lief die ganze
+			-- Zeit hinter schwarzem Glas. Gilt genauso fuer die
+			-- "SECTOR CLEARED."-Karte (B-07) und den Krabbel-Hinweis, der
+			-- ueberhaupt keinen Timer hatte.
+			hideAll()
 			-- 24.08.2026 (user): death -> a black beat -> VIEWER MODE. The
 			-- camera switches while the screen is dark, so the cut is clean.
 			faderFrame.BackgroundColor3 = Color3.new(0, 0, 0)
@@ -2564,6 +2792,14 @@ MachineState.OnClientEvent:Connect(function(p)
 			spectateIndex = 1
 			spectateEye = nil
 			runnerCam = false
+			-- MP-08 S7 companion: a spectator is not a runner. This branch used
+			-- to return before the moveState line further down, so moveState
+			-- stayed "runner" -- harmless only because role="none" arrived a few
+			-- seconds later and froze them. Now that the mode lasts until the
+			-- next round (B-03), the respawned body would otherwise be walking
+			-- around at full speed under a camera pointed somewhere else.
+			moveState = "frozen"
+			applyMovement()
 			return
 		end
 		spectateCF = nil

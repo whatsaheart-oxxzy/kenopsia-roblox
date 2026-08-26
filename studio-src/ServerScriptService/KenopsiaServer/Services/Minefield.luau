@@ -36,16 +36,26 @@ Minefield._guard = nil :: { cleanup: (() -> ())? }?
 --   under the runner's walk speed (7)  -> escaping on foot stays possible
 --   over the crawl speed (4.2)         -> being maimed still costs the round
 local MAX_SHRED_SPEED = 6.5   -- runner walks at 7
-local MIN_SHRED_SPEED = 4.6   -- runner crawls at 4.2
+local MIN_SHRED_SPEED = 4.6   -- was: "runner crawls at 4.2" -- see CRAWL_SPEED
 -- 23.08.2026: the crawl speed was only ever a number in the comment above.
 -- The client owns WalkSpeed (KenopsiaClient applyMovement: 7 in "scan") and
 -- nothing told it a runner had been maimed, so the attribute played the
--- crawl clip over a runner still walking at 7 -- faster than the machine,
--- which is the "no consequence" case the clamps exist to rule out. The
--- server now writes this onto the humanoid the moment XBotCrawl latches;
--- it replicates down, and the client does not rewrite WalkSpeed again until
--- the next role packet. MUST stay under MIN_SHRED_SPEED.
-local CRAWL_SPEED = 4.2
+-- crawl clip over a runner still walking at 7. The server now writes this
+-- onto the humanoid the moment XBotCrawl latches; it replicates down.
+--
+-- 26.08.2026 (user, MP-08 S8): das Krabbeln ist so schnell wie das Rennen.
+-- Der Client rampt einen Laeufer von 7 auf 10 (KenopsiaClient applyMovement +
+-- die Ramp-Schleife daneben); der Krabbler bekommt jetzt denselben Endwert und
+-- faehrt dieselbe Rampe.
+--
+-- FOLGE, BEWUSST UND BEAUFTRAGT: MIN_SHRED_SPEED (4.6) ist die untere Schranke
+-- der Compactor-Geschwindigkeit. Mit CRAWL_SPEED = 10 holt der Compactor einen
+-- Krabbler NIE MEHR ein -- die Beinamputation kostet ab hier Optik, keine Zeit.
+-- Der Kommentar oben ("over the crawl speed -> being maimed still costs the
+-- round") beschreibt damit nicht mehr das Verhalten, sondern die Absicht, die
+-- hier bewusst aufgegeben wurde. Hier notiert, damit es nicht spaeter als Bug
+-- zurueckkommt.
+local CRAWL_SPEED = 10
 -- Seconds allowed for the APPROACH -- the stretch from the marker to the
 -- players' line, where the machine is behind everyone and threatens nobody.
 -- Spending gameplay seconds there is what made the round 88 s. Lower this to
@@ -500,19 +510,7 @@ local function runRoundInner(room, roundIndex, guard)
 				local s = livingOf(room)[uid]
 				if s then
 					local d = (Vector3.new(s.root.Position.X, 0, s.root.Position.Z) - Vector3.new(pos.X, 0, pos.Z)).Magnitude
-					if d <= KILL_RADIUS and not ps.crawling then
-						-- 24.08.2026 (evening, user): EVERY first mine -- direct
-						-- step included, armed or not -- is the second chance:
-						-- the lower half goes, the runner crawls on. Only the
-						-- SECOND mine kills (branch below).
-						ps.crawling = true
-						s.char:SetAttribute("XBotCrawl", true)
-						s.char:SetAttribute("XBotLegless", true)
-						ps.walkBefore = s.hum.WalkSpeed
-						s.hum.WalkSpeed = CRAWL_SPEED
-						BloodFX.maim(s.char, audienceOf(room), roundState.roundToken)
-						tellOne(uid, { kind = "announce", style = "warn", text = "LEGS GONE. CRAWL." })
-					elseif d <= KILL_RADIUS then
+					if d <= KILL_RADIUS and ps.crawling then
 						ps.done = true
 						ps.cardAt = os.clock()
 						-- The second mine: nothing is left to crawl with. The
@@ -520,7 +518,12 @@ local function runRoundInner(room, roundIndex, guard)
 						-- clip, no corpse.
 						BloodFX.shatter(s.char, nil, audienceOf(room))
 						s.hum.Health = 0
-						tellOne(uid, { kind = "announce", style = "death", text = "YOU STEPPED WRONG. TWICE." })
+						-- MP-08 S5: seconds = 3.0 -- 2.5 s Stand (Feel.Death.Hold),
+						-- 0.5 s Zug auf Schwarz, dann raeumt die Karte sich selbst
+						-- ab (S2). Das spectate-Paket kommt 3.2 s spaeter und
+						-- findet die Scheibe frei vor.
+						tellOne(uid, { kind = "announce", style = "death", seconds = 3.0,
+							text = "YOU STEPPED WRONG. TWICE." })
 						if R.cam then
 							task.delay(3.2, function()
 								-- C1.d: never strand a lobby player's camera on
@@ -533,15 +536,28 @@ local function runRoundInner(room, roundIndex, guard)
 							end)
 						end
 					elseif d <= KNOCK_RADIUS and not ps.crawling then
-						-- Survived the outer ring: from here on, crawl.
+						-- BEIDE RINGE, EINE VERZWEIGUNG.
 						--
-						-- LATCHED. Without ps.crawling a second blast re-applied the
-						-- whole effect to someone already crawling -- another bleed
-						-- stacked on the first, and the attribute rewritten under an
-						-- animation that had already started.
+						-- Das waren bis MP-08 zwei Zweige: der innere (KILL_RADIUS,
+						-- noch nicht krabbelnd) und der aeussere (KNOCK_RADIUS). Sie
+						-- fuehrten schon vorher dieselben sechs Anweisungen aus, und
+						-- mit der Feed-Zeile aus B-06 -- der aeussere Ring setzte das
+						-- Krabbeln, sagte es aber nie -- waren sie Zeichen fuer
+						-- Zeichen gleich. Zusammengelegt, statt die Zeile zweimal zu
+						-- pflegen: die Reihenfolge bleibt erhalten, weil der Todesfall
+						-- oben jetzt auf `ps.crawling` prueft und dieser Zweig auf
+						-- `not ps.crawling` -- die vier Faelle (innen/aussen x
+						-- krabbelnd/nicht) treffen damit exakt wie vorher.
 						--
-						-- bleed(), not maim(): maim is the leg-severing effect, and the
-						-- outer ring is crawl plus glitch with no severing.
+						-- 24.08.2026 (evening, user): JEDE erste Mine -- direkter
+						-- Tritt eingeschlossen, scharf oder nicht -- ist die zweite
+						-- Chance: die untere Haelfte geht, der Laeufer krabbelt
+						-- weiter. Erst die ZWEITE Mine toetet (Zweig oben).
+						--
+						-- LATCHED. Ohne ps.crawling legte eine zweite Explosion den
+						-- ganzen Effekt erneut auf jemanden, der schon krabbelt --
+						-- noch ein Bleed auf dem ersten, und das Attribut unter eine
+						-- bereits laufende Animation geschrieben.
 						ps.crawling = true
 						s.char:SetAttribute("XBotCrawl", true)
 						-- 24.08.2026 (user): one mine takes the LOWER HALF. The
@@ -554,6 +570,14 @@ local function runRoundInner(room, roundIndex, guard)
 						ps.walkBefore = s.hum.WalkSpeed
 						s.hum.WalkSpeed = CRAWL_SPEED
 						BloodFX.maim(s.char, audienceOf(room), roundState.roundToken)
+						-- MP-08 B-01/B-06: war fuer den inneren Ring eine Vollbild-
+						-- karte OHNE Timer (style ~= "death" heisst sofort deckendes
+						-- Schwarz, und danach schickte niemand ein `hide` -- der
+						-- Krabbler war ab hier blind bis zum Rundenende, ganz ohne
+						-- gestorben zu sein: die "eingefrorene UI"), und fuer den
+						-- aeusseren gar nichts. Als Feed-Zeile sagt sie beiden
+						-- dasselbe, ohne das Bild zu nehmen.
+						tellOne(uid, { kind = "feed", style = "warn", text = "LEGS GONE. CRAWL." })
 					end
 				end
 			end
@@ -582,7 +606,10 @@ local function runRoundInner(room, roundIndex, guard)
 		ps.cardAt = os.clock()
 		local s = livingOf(room)[plr.UserId]
 		if s then s.hum.WalkSpeed = 0 end
-		tellOne(plr.UserId, { kind = "announce", style = "win", text = "SECTOR CLEARED." })
+		-- MP-08 B-07: auch die Siegkarte deckte sofort zu und hatte keinen Timer.
+		-- 1.2 s, passend zum spectate-Paket unten -- der Sieger sah bis dahin
+		-- denselben schwarzen Schirm wie der Tote.
+		tellOne(plr.UserId, { kind = "announce", style = "win", seconds = 1.2, text = "SECTOR CLEARED." })
 		if R.cam then
 			task.delay(1.2, function()
 				if not active() then return end
@@ -899,7 +926,12 @@ local function runRoundInner(room, roundIndex, guard)
 						BloodFX.shatter(s.char, nil, audienceOf(room))
 						announce(room, { kind = "gorefx", pos = { pos.X, pos.Y, pos.Z }, power = 1.6 })
 						s.hum.Health = 0
-						tellOne(uid, { kind = "announce", style = "death", text = "PROCESSED." })
+						-- MP-08 S5: der Compactor-Tod ist byteweise dieselbe Figur wie
+						-- die zweite Mine oben -- Todeskarte, 3.2 s spaeter das
+						-- spectate-Paket. Der Plan nennt nur die Minenzeile, aber es
+						-- ist derselbe Fehler (B-01/B-08), also derselbe Timer.
+						tellOne(uid, { kind = "announce", style = "death", seconds = 3.0,
+							text = "PROCESSED." })
 						if R.cam then
 							task.delay(3.2, function()
 								-- C1.d: never strand a lobby player's camera on

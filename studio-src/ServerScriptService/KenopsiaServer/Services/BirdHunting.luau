@@ -389,6 +389,19 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 			if plr then MachineState:FireClient(plr, payload) end
 		end
 	end
+	-- MP-08 (26.08.2026): this helper did not exist. dropRunner called tellOne()
+	-- anyway -- an undefined GLOBAL, so the spectate packet for a killed runner
+	-- raised "attempt to call a nil value" inside its task.delay thread and was
+	-- never delivered. Viewer mode in Bird Hunting has therefore never once run;
+	-- what the dead player saw was their own body at spawn, which is also why
+	-- B-03 (role="none" ending the mode too early) could never be observed.
+	-- Named and shaped like Minefield's and CanteenProtocol's, so the three
+	-- trials send single-player packets the same way.
+	local function tellOne(userId, payload)
+		if not MachineState then return end
+		local plr = Players:GetPlayerByUserId(userId)
+		if plr then MachineState:FireClient(plr, payload) end
+	end
 
 	local state = {}
 	local roundState
@@ -399,7 +412,9 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 	local stopped = false
 	local cleaned = false
 
-	local function clearParticipant(uid, subject)
+	-- keepCamera: leave the client's spectate camera alone. See MP-08 B-03 at
+	-- the role packet below.
+	local function clearParticipant(uid, subject, keepCamera)
 		local function clearCharacter(char)
 			if not char then return end
 			local hum = char:FindFirstChildOfClass("Humanoid")
@@ -414,7 +429,16 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 		local player = Players:GetPlayerByUserId(uid)
 		if player then
 			if not subject or player.Character ~= subject.char then clearCharacter(player.Character) end
-			if MachineState then MachineState:FireClient(player, { kind = "role", role = "none" }) end
+			-- MP-08 B-03 (26.08.2026, user): role="none" raeumt spectateCF im
+			-- Client ab -- fuer einen Toten ist das das Ende des Zuschauermodus
+			-- mitten im Leg, KILL_VIEW_TIME (3.5 s) nach dem Schuss. Die Kamera
+			-- sprang zurueck auf den eigenen Koerper am Spawn, und der Tote sah
+			-- den Rest des Legs sich selbst zu. Der Zuschauermodus laeuft jetzt
+			-- bis zur neuen Runde: cleanupRound schickt role="none" ohnehin an
+			-- jeden im Raum -- das ist die Stelle, an der es hingehoert.
+			if MachineState and not keepCamera then
+				MachineState:FireClient(player, { kind = "role", role = "none" })
+			end
 		end
 	end
 
@@ -738,7 +762,9 @@ local function runLeg(room, roundIndex, forcedHunterUserId, legIndex, legTotal, 
 				-- hold is already torn down by stopRound, and re-freezing someone
 				-- who is back in the lobby would strand them at WalkSpeed 0.
 				if not roundState.active then return end
-				clearParticipant(plr.UserId, s)
+				-- keepCamera: the body is parked and frozen, but the view stays
+				-- on the living runners until the leg ends (MP-08 B-03).
+				clearParticipant(plr.UserId, s, true)
 				if s.root and s.root.Parent then s.root.CFrame = exitCFrame end
 			end)
 		end

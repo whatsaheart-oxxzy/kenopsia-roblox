@@ -356,25 +356,20 @@ local function setActiveTrial(ctx, trialId)
 end
 
 -- SELECTING ------------------------------------------------------------------
-local function runSelection(room)
-	local pool = enabledTrials()
-	if #pool == 0 then
-		warn("[MachineFlow] no ready trials - cannot select")
-		return nil
-	end
-	-- 22.08.2026 (P1.1): the lobby reveal IS the first trial of the session it
-	-- precedes. The seed is minted here and runMatch consumes it, so the
-	-- roulette can no longer contradict what starts ten seconds later.
-	local seed = math.random(1, 2147483647)
-	room.pendingSeed = seed
-	local enabledById = {}
-	for _, t in pool do enabledById[t.id] = t end
-	local firstId = Playlist.arrange(Playlist.session(Playlist.order(seed), enabledById, Config.Playlist.PerSession))[1]
-	local trial = enabledById[firstId] or pool[math.random(#pool)]
-	room.trialId = trial.id
 
+-- MP-08 S9 (26.08.2026, user): der Icon-/Koeder-Aufbau steckte in runSelection
+-- fest, und runSelection lief genau einmal pro Session -- in preFlow, vor dem
+-- Match. Damit gab es zwischen zwei Trials kein Roulette, obwohl der Client es
+-- laengst kann (showSelection) und nur `icons` (3 Namen) und `chosen` (1-3)
+-- braucht. Herausgezogen, damit die Trial-Schleife dieselbe Praesentation
+-- schicken kann, mit der die Lobby die erste Wahl zeigt.
+--
+-- Rueckgabe: die drei Icon-Namen und der Index (1-3), auf dem das Roulette
+-- stehen bleibt. Das Ziel ist IMMER dabei; die anderen zwei sind echte
+-- Mitbewerber, aufgefuellt aus DECOY_ICONS, wenn nicht genug Trials ready sind.
+local function iconsFor(trial)
 	local others = {}
-	for _, t in pool do
+	for _, t in enabledTrials() do
 		if t.id ~= trial.id then table.insert(others, t.icon) end
 	end
 	local decoys = {}
@@ -397,6 +392,27 @@ local function runSelection(room)
 			icons[i] = table.remove(others, 1)
 		end
 	end
+	return icons, chosenIdx
+end
+
+local function runSelection(room)
+	local pool = enabledTrials()
+	if #pool == 0 then
+		warn("[MachineFlow] no ready trials - cannot select")
+		return nil
+	end
+	-- 22.08.2026 (P1.1): the lobby reveal IS the first trial of the session it
+	-- precedes. The seed is minted here and runMatch consumes it, so the
+	-- roulette can no longer contradict what starts ten seconds later.
+	local seed = math.random(1, 2147483647)
+	room.pendingSeed = seed
+	local enabledById = {}
+	for _, t in pool do enabledById[t.id] = t end
+	local firstId = Playlist.arrange(Playlist.session(Playlist.order(seed), enabledById, Config.Playlist.PerSession))[1]
+	local trial = enabledById[firstId] or pool[math.random(#pool)]
+	room.trialId = trial.id
+
+	local icons, chosenIdx = iconsFor(trial)
 	room.chosenTile = chosenIdx
 	return trial, icons, chosenIdx
 end
@@ -831,6 +847,25 @@ local function runMatch(room)
 				legIndex = RoomServiceRef.CLEAR,
 				legCount = RoomServiceRef.CLEAR,
 			})
+			-- MP-08 S9 (26.08.2026, user): das Roulette lief nur EINMAL pro
+			-- Session, in preFlow vor dem Match. Jeder Trial-Wechsel bekommt es
+			-- jetzt auch -- dieselbe Praesentation, mit der die Lobby die erste
+			-- Wahl zeigt, statt eines stummen Sprungs auf die naechste Infokarte.
+			--
+			-- Der erste Trial ueberspringt es: preFlow hat sein Roulette schon
+			-- gezeigt (room.preShown, und der Seed von dort ist derselbe, den
+			-- runMatch verbraucht -- die Lobby kann der Schleife also nicht
+			-- widersprechen). Zweimal dasselbe Rad waere hier nur Wartezeit.
+			--
+			-- Kosten: Pacing.Timing.TrialReveal (6.4 s) pro Wechsel, bei drei
+			-- Trials also +12.8 s pro Session.
+			if not (trialIndex == 1 and room.preShown) then
+				local icons, chosenIdx = iconsFor(trial)
+				tell(ctx, { kind = "selection", icons = icons, chosen = chosenIdx,
+					name = trial.displayName })
+				if not hold(ctx, Pacing.Timing.TrialReveal) then return end
+			end
+
 			-- "info", NOT a new kind. The client dispatches on a fixed set --
 			-- selection / info / status / round / score / announce / hide -- and
 			-- an unknown kind renders NOTHING. The first cut of this loop sent

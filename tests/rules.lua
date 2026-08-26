@@ -87,6 +87,14 @@ check(Pacing.Timing.FinalScore == 6 and Pacing.Timing.Podium == 8, "verdict beat
 	tostring(Pacing.Timing.FinalScore) .. " + " .. tostring(Pacing.Timing.Podium))
 -- P1.4: the role card beat ("<NAME> IS THE HUNTER.") is 1.6 s, MASTERPLAN section 2.
 check(Pacing.Timing.RoleCard == 1.6, "role card beat is 1.6 s", tostring(Pacing.Timing.RoleCard))
+-- MP-08 S10/S11 (26.08.2026): the roulette between two trials. Its own row, so
+-- the price of that beat can be tuned without moving the lobby's. It must not
+-- fall UNDER the lobby hold: the client plays the identical animation on both,
+-- so a shorter hold here would cut the wheel off mid-spin.
+check(Pacing.Timing.TrialReveal == 6.4, "Pacing.Timing.TrialReveal is 6.4 s (the between-trials roulette hold)",
+	tostring(Pacing.Timing.TrialReveal))
+check(Pacing.Timing.TrialReveal >= Pacing.Timing.LobbyReveal,
+	"the between-trials hold is never shorter than the lobby's")
 
 -- MP-05 D8: one RoundSeconds number per new trial, section A values.
 local expectedSeconds = {
@@ -305,6 +313,129 @@ do
 		string.format("mapped %d", mapped))
 	check(#unreadable == 0, "every mapped path exists", table.concat(unreadable, ", "))
 	check(#dirty == 0, "REQ-IP-01: no forbidden token in any shipped file", table.concat(dirty, ", "))
+end
+
+-- 2b. MP-08 FEED CONTRACT ------------------------------------------------------
+--
+-- 26.08.2026 (user, MP-08 S11). Nothing here can be proved by loading a pure
+-- module: the promise lives in the wiring between a server that SENDS
+-- kind="feed" and a client that HANDLES it. So this reads the shipped source
+-- the same way the REQ-IP-01 block above does.
+--
+-- The promise being kept: a death belongs to the person who died. The full
+-- screen card goes to them alone (tellOne), everyone else gets a feed line that
+-- takes nothing away from the picture. Before MP-08, CanteenProtocol broadcast
+-- that card to the whole room -- and since showAnnounce("death") pulls to solid
+-- black after 2.5 s, every survivor lost sight of the observer they had to
+-- watch, mid-round.
+
+print("\nMP-08 -- the feed contract between server and client")
+
+do
+	local function read(path)
+		local fh = io.open(path, "r")
+		if not fh then return nil end
+		local body = fh:read("*a")
+		fh:close()
+		return body
+	end
+	local SERVER = "studio-src/ServerScriptService/KenopsiaServer/Services/"
+	local client = read("studio-src/StarterPlayer/StarterPlayerScripts/KenopsiaClient.client.luau")
+	local canteen = read(SERVER .. "CanteenProtocol.luau")
+	local minefield = read(SERVER .. "Minefield.luau")
+	local machineFlow = read(SERVER .. "MachineFlow.luau")
+
+	check(client ~= nil and canteen ~= nil and minefield ~= nil and machineFlow ~= nil,
+		"MP-08: all four touched files are readable")
+
+	if client and canteen and minefield and machineFlow then
+		-- The client handles it, and does so BEFORE the screen funnel. A feed
+		-- line is an overlay, not a screen: routing it through the funnel would
+		-- bump `session` and cancel whatever typewriter is running under it.
+		local feedAt = string.find(client, 'p.kind == "feed"', 1, true)
+		local funnelAt = string.find(client, "if not K.KNOWN_KINDS[p.kind] then", 1, true)
+		check(feedAt ~= nil, 'client dispatches kind="feed"')
+		check(feedAt ~= nil and funnelAt ~= nil and feedAt < funnelAt,
+			'the feed branch is caught BEFORE the screen funnel (no session bump)')
+		check(not string.find(client, "KNOWN_KINDS = {[^}]*feed"),
+			"feed stays OUT of K.KNOWN_KINDS -- it is not a screen")
+
+		-- B-02: the death card is no longer broadcast to the whole canteen.
+		check(not string.find(canteen, 'announce%(st%.room, { kind = "announce", style = "death"'),
+			"CanteenProtocol no longer broadcasts the death card to the room")
+		check(string.find(canteen, 'tellOne%(userId, { kind = "announce", style = "death"') ~= nil,
+			"CanteenProtocol sends the death card to the dead subject alone")
+		check(string.find(canteen, 'kind = "feed"', 1, true) ~= nil,
+			"CanteenProtocol tells the rest of the room by feed line")
+
+		-- B-01 / B-06: nobody starts crawling without being told, and being told
+		-- costs them no picture. The two rings were separate branches running
+		-- identical statements; MP-08 merged them, so the invariant is stated as
+		-- "every latch of ps.crawling is paired with a crawl feed line" rather
+		-- than as a branch count -- that survives the next restructure.
+		local latches, crawlLines = 0, 0
+		for _ in string.gmatch(minefield, "ps%.crawling = true") do latches = latches + 1 end
+		for _ in string.gmatch(minefield, 'kind = "feed", style = "warn", text = "LEGS GONE') do
+			crawlLines = crawlLines + 1
+		end
+		check(latches >= 1 and crawlLines == latches,
+			"every crawl latch in Minefield is announced by a feed line",
+			string.format("%d latches, %d feed lines", latches, crawlLines))
+		check(not string.find(minefield, 'kind = "announce", style = "warn"'),
+			"the crawl hint is no longer a full-screen card")
+		-- B-03 companion: BirdHunting called tellOne() without ever defining it,
+		-- so the spectate packet for a killed runner died as an undefined global
+		-- and viewer mode there never ran at all.
+		check(string.find(minefield, "local function tellOne", 1, true) ~= nil,
+			"Minefield defines tellOne")
+
+		-- B-08: showAnnounce was the only screen function that never took itself
+		-- down. Every STYLED card -- death, win, warn -- now says how long it
+		-- stands, because those are the ones that interrupt a running round and
+		-- have nothing following them to clear the glass.
+		--
+		-- Deliberately not every card: the plain ones ("MARK THE GROUND...",
+		-- "EAT EVERYTHING...") open a round and are cleared by the 3-2-1 that
+		-- follows them, which calls hideAll() on n == 3. A seconds field there
+		-- would only be a second, competing timer.
+		local styled, timed, untimed = 0, 0, {}
+		for _, body in ipairs({ canteen, minefield }) do
+			for call in string.gmatch(body, 'kind = "announce", style = [^}]*') do
+				styled = styled + 1
+				if string.find(call, "seconds =", 1, true) then
+					timed = timed + 1
+				else
+					untimed[#untimed + 1] = string.sub(call, 1, 46)
+				end
+			end
+		end
+		check(styled > 0 and styled == timed,
+			"every styled announce card in Canteen/Minefield carries seconds (self-teardown)",
+			string.format("%d of %d timed: %s", timed, styled, table.concat(untimed, " | ")))
+		check(string.find(client, "local secs = tonumber(p.seconds)", 1, true) ~= nil,
+			"showAnnounce honours p.seconds")
+
+		-- B-01: the spectate branch clears the glass before taking the camera.
+		local specAt = string.find(client, 'if p.role == "spectate" then', 1, true)
+		local hideAt = specAt and string.find(client, "hideAll()", specAt, true)
+		local faderAt = specAt and string.find(client, "faderFrame.BackgroundColor3", specAt, true)
+		check(specAt ~= nil and hideAt ~= nil and faderAt ~= nil and hideAt < faderAt,
+			"the spectate branch calls hideAll() before it sets the camera")
+
+		-- B-03: a dead runner keeps the spectate camera until the leg ends --
+		-- and, first of all, actually receives it.
+		local bird = read(SERVER .. "BirdHunting.luau")
+		check(bird ~= nil and string.find(bird, "clearParticipant(plr.UserId, s, true)", 1, true) ~= nil,
+			"BirdHunting drops a killed runner without ending their viewer mode")
+		check(bird ~= nil and string.find(bird, "local function tellOne", 1, true) ~= nil,
+			"BirdHunting defines the tellOne its spectate packet calls")
+
+		-- S9: the roulette runs between trials, on the shared icon builder.
+		check(string.find(machineFlow, "local function iconsFor(trial)", 1, true) ~= nil,
+			"MachineFlow exposes iconsFor(trial)")
+		check(string.find(machineFlow, "Pacing.Timing.TrialReveal", 1, true) ~= nil,
+			"the trial loop holds on Pacing.Timing.TrialReveal")
+	end
 end
 
 -- 3. SCORING -----------------------------------------------------------------

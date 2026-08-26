@@ -136,6 +136,18 @@ Pacing.Timing = {
 	-- client spins the icon strip and lands on the chosen trial in this time;
 	-- MachineFlow.preFlow used to hard-code `task.wait(6.4)` next to it.
 	LobbyReveal  = 6.4,
+	-- 26.08.2026 (user, MP-08 S10): derselbe Halt, aber ZWISCHEN den Trials.
+	-- MachineFlow schickt bei jedem Trial-Wechsel jetzt auch ein
+	-- kind="selection" (S9), und der Client spielt darauf dasselbe Roulette wie
+	-- in der Lobby ab. Der Halt muss ueber Feel.rouletteSeconds(3) liegen
+	-- (~5.9 s), sonst schneidet die Infokarte das Rad ab -- daher derselbe Wert
+	-- wie LobbyReveal und NICHT weniger.
+	--
+	-- Eigener Eintrag statt LobbyReveal wiederzuverwenden, damit der Preis
+	-- dieses Beats (6.4 s pro Wechsel, +12.8 s in einer Session mit drei
+	-- Trials) an einer Stelle steht, an der man ihn drehen kann, ohne die
+	-- Lobby mitzudrehen.
+	TrialReveal  = 6.4,
 }
 
 -- The scoring pool a completed trial distributes. Kept here rather than in

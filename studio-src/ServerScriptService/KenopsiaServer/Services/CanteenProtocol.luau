@@ -385,10 +385,26 @@ local function eliminate(st, userId, reason)
 	ps.eliminatedAt = os.clock() - st.startedAt
 	ps.fork = 0
 
+	-- MP-08 B-02 (26.08.2026, user): die Vollbildkarte gehoert dem Gestorbenen.
+	-- announce() feuerte sie an JEDEN im Raum, und showAnnounce("death") zieht
+	-- nach Feel.Death.Hold auf volles Schwarz -- mitten in einer Runde, in der
+	-- man den Observer sehen MUSS, und in der ohnehin jeder auf der festen
+	-- Tischkamera sitzt. Der Raum bekommt jetzt eine Feed-Zeile, die nichts
+	-- zudeckt; die Karte geht nur noch an den, um den es geht.
+	--
+	-- seconds = 3.0: 2.5 s Stand (Feel.Death.Hold) + 0.5 s Zug auf Schwarz,
+	-- dann raeumt sie sich selbst ab (S2) und gibt das Bild wieder frei.
+	local who = Players:GetPlayerByUserId(userId)
+	local name = (who and who.DisplayName) or "SUBJECT"
 	tellOne(userId, { kind = "cpout", reason = reason })
-	announce(st.room, { kind = "announce", style = "death",
-		text = ("PROTOCOL VIOLATION - %s"):format(
-			(Players:GetPlayerByUserId(userId) and Players:GetPlayerByUserId(userId).DisplayName) or "SUBJECT") })
+	tellOne(userId, { kind = "announce", style = "death", seconds = 3.0,
+		text = ("PROTOCOL VIOLATION - %s"):format(name) })
+	for _, mm in st.room.members do
+		if mm.userId ~= userId then
+			tellOne(mm.userId, { kind = "feed", style = "death",
+				text = ("%s - PROTOCOL VIOLATION"):format(string.upper(name)) })
+		end
+	end
 
 	-- Logical elimination happens immediately, but the body and blood wait for
 	-- the boss's first visible muzzle event. Simultaneous catches are queued by
