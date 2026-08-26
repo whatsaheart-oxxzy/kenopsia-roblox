@@ -398,20 +398,59 @@ room.preShown` überspringt es).
 
 ---
 
-## 4. Blockiert
+## 4. Ausgeführt — 26.08.2026
 
-Diese Session hat keinerlei Schreibrecht:
+S1–S11 umgesetzt, offline geprüft und per `.Source` ins Place
+110672791536316 geschrieben. Der Abschnitt hier hielt vorher fest, dass die
+Planungs-Session keinerlei Schreibrecht hatte; das ist erledigt und wird
+durch das Ergebnis ersetzt.
 
-| Werkzeug | Status |
-|---|---|
-| `Bash` / `PowerShell` | **denied** — kein Commit, keine Offline-Tests |
-| `Write` / `Edit` auf das Repo | **denied** |
-| `mcp__Roblox_Studio__*` | **denied** — kein `.Source`-Push ins Place |
-| `EnterWorktree` | schlägt fehl (cwd `C:\Users\Asus` ist kein Git-Repo) |
+**Alle sechs Skripte in place, byte-identisch zu `studio-src/`, `debugId`
+unverändert** (vor dem ersten Schreiben abgelesen, danach gegengeprüft):
 
-Zum Freischalten in einer **neuen** Session (Regeln werden nur beim Start
-gelesen) genügt in `.claude/settings.local.json` unter `permissions.allow`:
-`Bash`, `Write`, `Edit` und `mcp__Roblox_Studio__execute_luau`,
-`mcp__Roblox_Studio__script_read`, `mcp__Roblox_Studio__script_grep`,
-`mcp__Roblox_Studio__list_roblox_studios`, `mcp__Roblox_Studio__multi_edit`,
-`mcp__Roblox_Studio__inspect_instance`, `mcp__Roblox_Studio__get_console_output`.
+| Instanz | debugId | Bytes |
+|---|---|---|
+| `ReplicatedStorage.Kenopsia.Shared.Rules.Pacing` | `1_20730` | 7 113 |
+| `…Services.MachineFlow` | `1_20749` | 47 154 |
+| `…Services.BirdHunting` | `1_20750` | 39 615 |
+| `…Services.Minefield` | `1_20751` | 44 490 |
+| `…Services.CanteenProtocol` | `1_20754` | 38 787 |
+| `StarterPlayer.StarterPlayerScripts.KenopsiaClient` | `1_18793` | 125 262 |
+
+Geschrieben mit `execute_luau` + exakten Splices unter
+`ChangeHistoryService:TryBeginRecording` — nie löschen/neu anlegen. Die
+Splice-Funktion bricht ab, wenn ein Anker fehlt **oder zweimal vorkommt**,
+also wird nie geraten. Verifiziert über Länge + Rolling-Hash gegen die
+lokalen Dateien; `.gitattributes` verlangt Byte-Gleichheit, und genau die
+hat den einen Unterschied gefunden, der sonst durchgerutscht wäre (eine
+verschluckte Leerzeile vor `local function cycle`).
+
+10/10 Offline-Suites grün. selene: **3 Fehler statt 4** vor der Änderung,
+0 parse errors.
+
+### Zwei Funde, die der neue Test in S11 aufgedeckt hat
+
+* **`BirdHunting` rief in `dropRunner` ein `tellOne()`, das dort nie
+  definiert war** — ein undefiniertes Global. Das spectate-Paket für einen
+  erschossenen Läufer lief also in „attempt to call a nil value" und kam nie
+  an: **der Zuschauermodus hat in BIRD HUNTING noch nie funktioniert.**
+  Deshalb war B-03 (role="none" beendet ihn zu früh) auch gar nicht
+  beobachtbar — es gab nichts zu beenden. Ohne diesen Helfer wäre S7
+  wirkungslos geblieben.
+* **Der Compactor-Tod („PROCESSED.", `Minefield`)** ist dieselbe Figur wie
+  die zweite Mine — Todeskarte, 3.2 s später `spectate`. Der Plan nennt nur
+  die Minenzeile; gleicher Fehler (B-01/B-08), also derselbe Timer.
+
+### Abweichung vom Plan
+
+Die beiden Minen-Ringe führten schon vorher dieselben sechs Anweisungen aus
+und waren mit der Feed-Zeile aus B-06 Zeichen für Zeichen gleich (selene:
+`if_same_then_else`). Zusammengelegt, statt die Zeile zweimal zu pflegen:
+der Todeszweig prüft jetzt auf `ps.crawling`, der Maim-Zweig auf
+`not ps.crawling`. Die vier Fälle (innen/außen × krabbelnd/nicht) treffen
+exakt wie vorher.
+
+S10 hängt an einer eigenen `Pacing.Timing`-Zeile (`TrialReveal`), damit der
+Preis des Beats drehbar ist, ohne die Lobby mitzudrehen. Die Untergrenze ist
+die Laufzeit des Rads im Client (`Feel.rouletteSeconds(3)` ≈ 5.9 s) — das
+sichert `tests/feel.lua` ab, nicht ein Vergleich gegen `LobbyReveal`.
