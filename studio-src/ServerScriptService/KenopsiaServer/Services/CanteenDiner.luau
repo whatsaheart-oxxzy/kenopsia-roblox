@@ -32,28 +32,12 @@ local CanteenDiner = {}
 --   DinerSeated true  fold the legs 90 degrees at hip and knee
 local SCALE_LIMITS = { min = 0.4, max = 3.0 }
 
--- 26.08.2026 (user): DIE DINER SIND GROESSER ALS DIE ARENA VERLANGT.
---
--- Der Death-Clip ist in Ordnung und bleibt -- der Koerper soll aber auf dem
--- Tisch landen und nicht darunter, und der Weg dahin ist eine groessere Figur.
---
--- NUR DIE DINER. Der Boss bekommt seine Skalierung direkt als `worldScale` von
--- CanteenProps (CanteenBoss.spawn) und kennt diesen Faktor nicht -- er bleibt
--- also exakt so gross wie bisher. Genau deshalb steht der Faktor hier und nicht
--- in CanteenProps: dort waere er derselbe Wert fuer beide Rigs.
---
--- PREIS, bewusst: CanteenDiner.scaleFor loest die Skalierung so auf, dass das
--- Becken auf der Sitzflaeche UND der Mund am MouthTarget landet -- zwei Anker,
--- eine Unbekannte. Dieser Faktor bricht den zweiten: das Becken bleibt auf dem
--- Stuhl (PivotTo rechnet mit pelvisHeight * scale), der Mund steigt aber ueber
--- den MouthTarget. Die Gabel ist an die Hand geskinnt und faehrt mit der Figur
--- mit, der Versatz ist also kosmetisch und keine Regelaenderung -- aber er ist
--- da, und bei zu grossen Werten sieht man ihn.
---
--- Pro Sitz weiter feinjustierbar ueber das Marker-Attribut DinerScale, das auf
--- diesen Faktor NOCH multipliziert. Ein Sitz, der zu gross geraet, wird also in
--- Studio zurueckgedreht, ohne dass der Code angefasst werden muss.
-local DINER_SCALE_BOOST = 1.25
+-- 26.08.2026 (user): hier stand kurzzeitig ein DINER_SCALE_BOOST von 1.25, der
+-- die Figur groesser machen sollte, damit der Death-Clip sie auf dem Tisch
+-- ablegt statt darunter. Zurueckgenommen: es gibt keinen Death-Clip mehr, der
+-- Koerper wird zerlegt (siehe die()), und damit ist die Groesse wieder das,
+-- was die Arena selbst verlangt -- Becken auf der Sitzflaeche, Mund am
+-- MouthTarget, beide Anker wieder exakt getroffen.
 
 local function findTemplate()
 	local assets = ServerStorage:FindFirstChild("KenopsiaAssets")
@@ -211,9 +195,7 @@ function CanteenDiner.spawn(marker, parent, seatIndex, opts)
 	-- ratio has to be read at 1.
 	local metrics = CanteenDiner.metrics()
 	local scale = math.clamp(
-		(tonumber(opts.scale) or 1)
-			* DINER_SCALE_BOOST
-			* (tonumber(marker:GetAttribute("DinerScale")) or 1),
+		(tonumber(opts.scale) or 1) * (tonumber(marker:GetAttribute("DinerScale")) or 1),
 		SCALE_LIMITS.min, SCALE_LIMITS.max)
 	if math.abs(scale - 1) > 0.001 then model:ScaleTo(scale) end
 
@@ -257,7 +239,10 @@ function CanteenDiner.spawn(marker, parent, seatIndex, opts)
 			-- bite, so the honest placeholder is no motion at all.
 			Eat = AnimationIds.load(animator, "Player", "Eat"),
 			Stab = AnimationIds.load(animator, "Player", "Stab"),
-			Death = AnimationIds.load(animator, "Player", "Death"),
+			-- 26.08.2026 (user): kein Death-Clip mehr -- der Diner wird zerlegt,
+			-- nicht hingelegt. Siehe die() weiter unten. AnimationIds.Player.Death
+			-- bleibt deklariert und ist weiter im Studio-Fallback registriert;
+			-- der Clip ist also nicht verloren, er wird hier nur nicht gebraucht.
 		},
 		scale = scale,
 		-- The fork rig's own cutlery (nil on the bare PS1Player template).
@@ -393,68 +378,49 @@ function CanteenDiner.eat(self, duration)
 	end)
 end
 
--- One-shot, then frozen on the last frame so the body stays down.
+-- 26.08.2026 (user): ES GIBT KEINE LEICHE MEHR.
 --
--- The hold must survive a slow frame. Parking the track with AdjustSpeed(0)
--- shortly before its end only works if the thread wakes while the track is
--- still playing: task.wait resumes on the first Heartbeat past the deadline,
--- and the animator has already stepped that frame -- so on any frame longer
--- than the margin the non-looped track reaches its end, auto-stops, and the
--- body springs back to the seated bind pose and STAYS there (Idle was stopped
--- and `dead` blocks every other play). Hence both belts: a generous margin
--- AND a Stopped handler that re-parks the pose if the track ends anyway.
-local DEATH_HOLD_MARGIN = 0.1
-
-local function parkAtEnd(self, death)
-	if not (self.alive and self.dead) then return end
-	local length = death.Length
-	if length <= 0 then return end
-	if not death.IsPlaying then death:Play(0, 1, 0) end
-	death:AdjustSpeed(0)
-	death.TimePosition = math.max(0, length - 0.03)
-end
-
+-- Hier stand der Death-Clip mit seiner ganzen Halte-Mechanik: einmal abspielen,
+-- kurz vor Schluss auf Geschwindigkeit 0 parken, dazu ein Stopped-Handler als
+-- zweiter Guertel, falls der Track auf einem langsamen Frame doch auslaeuft.
+-- Das hat sauber funktioniert -- nur war das Ergebnis nie brauchbar: der Clip
+-- ist ein STEHENDER Tod und legte die Figur auf Root-Hoehe ab, also unter den
+-- Tisch. Der Versuch, das mit einer gerechneten Pose zu ersetzen, hat das Rig
+-- verknotet (rotateBoneWorld dreht um Welt-Achsen; auf einer Bone-Kette mit
+-- unterschiedlich ausgerichteten Gliedern ergeben grosse Winkel keine Haltung,
+-- sondern einen Knoten). Eine sitzende Leiche an einem Tisch ist eine POSE, und
+-- die gehoert in ein Animationsprogramm.
+--
+-- Der Diner verschwindet jetzt einfach. CanteenProtocol legt den Brockenregen,
+-- das Blut und den Shake darueber (BloodFX.shatter + gorefx), genau wie die
+-- zweite Mine in der Dead Zone. Damit gibt es kein Endframe mehr, das halten
+-- muss, keinen Koerper, der irgendwo landen kann, und keine Pose, die stimmen
+-- muss -- das Problem ist weg statt geloest.
+--
+-- Selbstgenuegsam: wer hier stirbt, ist unsichtbar, egal ob der Aufrufer
+-- danach noch Effekte legt (der "kein lebendes Subjekt"-Pfad in
+-- CanteenProtocol.eliminate tut das nicht).
 function CanteenDiner.die(self)
 	if not self.alive or self.dead then return end
 	self.dead = true
 	self.generation += 1
-	self:express("Hurt")
-	local death = self.tracks.Death
-	stopAll(self, death, 0.05)
-	if not death then return end
-	death.Looped = false
-	death.Priority = Enum.AnimationPriority.Action4
-	-- Fires whether the clip ran out or something stopped it. Either way the
-	-- corpse must not stand back up.
-	self.deathStopped = death.Stopped:Connect(function()
-		task.defer(parkAtEnd, self, death)
-	end)
-	death:Play(0.05, 1, 1)
-	task.spawn(function()
-		-- Wait for the length to resolve, then park just before the end. A clip
-		-- that resolves later still ends held, because Stopped catches it.
-		local deadline = os.clock() + 4
-		while self.alive and death.Length <= 0 and os.clock() < deadline do task.wait(0.05) end
-		if not self.alive or death.Length <= 0 then return end
-		task.wait(math.max(0, death.Length - DEATH_HOLD_MARGIN - death.TimePosition))
-		if not (self.alive and self.dead) then return end
-		if death.IsPlaying then
-			death:AdjustSpeed(0)
-			death.TimePosition = math.max(0, death.Length - 0.03)
-		else
-			parkAtEnd(self, death)
-		end
-	end)
+	-- Ohne Ausblendzeit: ein Schuss ist ein Schnitt. Ein auslaufender Bissen
+	-- wuerde sonst noch einen Sekundenbruchteil weiterkauen, waehrend der
+	-- Koerper schon zerlegt ist.
+	stopAll(self, nil, 0)
+	-- Jedes Teil, nicht nur die MeshParts: Gabel und Bohnen gehoeren mit dem
+	-- Koerper weg, sonst schwebt das Besteck ueber einem leeren Stuhl.
+	for _, d in self.model:GetDescendants() do
+		if d:IsA("BasePart") then d.Transparency = 1 end
+	end
 end
 
 function CanteenDiner.destroy(self)
 	if not self.alive then return end
 	self.alive = false
 	self.generation += 1
-	if self.deathStopped then
-		self.deathStopped:Disconnect()
-		self.deathStopped = nil
-	end
+	-- Kein Death-Handler mehr abzuraeumen: der Tod ist kein Clip, der auslaufen
+	-- und zurueckfedern koennte, sondern ein Ausblenden (siehe die()).
 	for _, track in self.tracks do pcall(track.Stop, track, 0) end
 	if self.model.Parent then self.model:Destroy() end
 end

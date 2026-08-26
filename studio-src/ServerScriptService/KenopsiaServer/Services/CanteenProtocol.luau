@@ -434,32 +434,60 @@ local function eliminate(st, userId, reason)
 		if not subject.char.Parent or not subject.hum.Parent or subject.hum.Health <= 0 then return end
 
 		-- Keep the R15 body intact instead of exploding into Roblox body parts.
-		-- The avatar is invisible at the table; the PS1 diner is what falls.
+		-- The avatar is invisible at the table; the PS1 diner is what is hit.
 		subject.hum.BreakJointsOnDeath = false
 		local diner = st.props and st.props.diner and ps.seat and st.props.diner(ps.seat)
-		if diner then st.props.dinerDie(ps.seat) end
 		local hitPart = subject.char:FindFirstChild("Head") or subject.root
 		local at = diner and diner:headPosition() or (hitPart and hitPart:IsA("BasePart") and hitPart.Position)
-		if at then BloodFX.hit(at, st.audience) end
 
-		-- 26.08.2026 (user): DIE LEICHE BLEIBT SITZEN, BIS DIE RUNDE VORBEI IST.
+		-- 26.08.2026 (user): KEINE LEICHE MEHR. DER KOERPER GEHT GANZ.
 		--
-		-- Hier stand `subject.hum.Health = 0`. CanteenDiner.die parkt den PS1-
-		-- Koerper korrekt auf dem letzten Frame des Death-Clips (parkAtEnd,
-		-- AdjustSpeed(0)) -- aber der Humanoid-Tod loeste Roblox' eigenen Respawn
-		-- aus (Players.CharacterAutoLoads ist an, RespawnTime 5 s). Nach fuenf
-		-- Sekunden war der Avatar weg und wurde am SpawnLocation neu geladen: das
-		-- ist das "die Animation bleibt nicht lange, dann verschwindet der
-		-- Character".
+		-- Drei Anlaeufe hat die Leiche gekostet -- Clip laeuft aus und der Koerper
+		-- verschwindet per Respawn, Clip legt ihn unter den Tisch, gerechnete Pose
+		-- verknotet das Rig. Alle drei scheiterten am selben Punkt: eine sitzende
+		-- Leiche an einem Tisch ist eine Pose, und die gehoert in ein
+		-- Animationsprogramm, nicht in Laufzeitcode.
+		--
+		-- Also gibt es sie nicht mehr. Der Schuss ZERLEGT den Diner, genau wie die
+		-- zweite Mine in der DEAD ZONE (Minefield: "The body goes entirely --
+		-- shatter destroys it -- no death clip, no corpse"). Damit faellt das ganze
+		-- Problem weg statt geloest zu werden: kein Endframe, der halten muss, kein
+		-- Koerper, der irgendwo landen kann, keine Pose, die stimmen muss.
+		--
+		-- Die Reihenfolge ist die Choreografie:
+		--   1. Treffer am Kopf -- der rote Punkt, bevor irgendetwas fliegt
+		--   2. der Diner verschwindet (dinerDie blendet jedes Teil aus)
+		--   3. shatter -- der Brockenregen an derselben Stelle
+		--   4. Fontaene und Lache -- was am Platz bleibt, bleibt auf dem Tisch
+		--   5. gorefx an den ganzen Raum -- Schirm-Blut und Shake wie in Dead Zone
+		-- Der Teller mit den restlichen Erbsen bleibt stehen. Das ist der Punkt:
+		-- gedeckt fuer jemanden, der nicht mehr da ist.
+		if at then BloodFX.hit(at, st.audience) end
+		if diner then st.props.dinerDie(ps.seat) end
+		if at then
+			BloodFX.shatter(diner and diner.model or nil, at, st.audience)
+			BloodFX.fountain(at, st.audience)
+			BloodFX.pool(at - Vector3.new(0, 0.4, 0), 3.2, st.audience)
+			BloodFX.sound(at, "ImpactBody", st.audience)
+			-- Kleiner als eine Mine (1.3) und der Compactor (1.6): eine Pistole am
+			-- Tisch, nicht ein Sprengsatz im Feld -- aber jeder sitzt dicht dran.
+			announce(st.room, { kind = "gorefx", pos = { at.X, at.Y, at.Z }, power = 0.9 })
+		end
+
+		-- DER SPIELER SELBST STIRBT TROTZDEM NICHT.
+		--
+		-- Hier stand `subject.hum.Health = 0`. Der Humanoid-Tod loeste Roblox'
+		-- eigenen Respawn aus (Players.CharacterAutoLoads ist an, RespawnTime 5 s):
+		-- fuenf Sekunden spaeter stand der Spieler wieder am SpawnLocation und
+		-- konnte mitten in der laufenden Runde herumlaufen. Der Diner ist zerlegt,
+		-- der Avatar bleibt einfach verankert, unsichtbar und auf WalkSpeed 0 an
+		-- seinem Platz sitzen, bis cleanupRound ihn freigibt.
 		--
 		-- Der Ausweg ist NICHT, den Respawn global abzuschalten (CharacterAutoLoads
 		-- ist eine Players-Eigenschaft, die das ganze Spiel betrifft). Der
 		-- Humanoid stirbt hier einfach nicht mehr: eliminiert ist eine
 		-- Zustandssache (ps.eliminated), und jede Eingabe- und Schleifenpruefung
-		-- oben laeuft ueber ps.eliminated, nicht ueber Health. Der Avatar ist
-		-- ohnehin verankert, unsichtbar und auf WalkSpeed 0 -- er kann sich also
-		-- nicht bewegen, und der PS1-Koerper bleibt in seiner Endpose am Tisch,
-		-- bis cleanupRound die Props abraeumt.
+		-- oben laeuft ueber ps.eliminated, nicht ueber Health.
 		--
 		-- Damit MachineFlow den Tod trotzdem zaehlt: watchDeaths hoert auf
 		-- Humanoid.Died ODER auf das Attribut KenopsiaProcessed. Genau fuer diesen

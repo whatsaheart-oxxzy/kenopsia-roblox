@@ -513,23 +513,29 @@ do
 			"the blink loop skips instead of terminating, so no second thread is spawned")
 		check(props ~= nil and string.find(props, "pcall(diner.hold, diner, up)", 1, true) ~= nil,
 			"observerTo puts the whole table on hold")
-		-- 26.08.2026 (user): die Diner sind groesser, der BOSS ausdruecklich NICHT.
-		-- Der Faktor gehoert deshalb in CanteenDiner: CanteenProps reicht ein und
-		-- dasselbe worldScale an beide Rigs weiter, dort waere er also nicht zu
-		-- trennen.
-		check(diner ~= nil and string.find(diner, "DINER_SCALE_BOOST", 1, true) ~= nil,
-			"the diner carries its own scale boost")
-		check(props ~= nil and not string.find(props, "DINER_SCALE_BOOST", 1, true),
-			"the boost is NOT in CanteenProps, where it would hit the boss too")
-		local boss = read(SERVER .. "CanteenBoss.luau")
-		check(boss ~= nil and not string.find(boss, "DINER_SCALE_BOOST", 1, true),
-			"the boss rig is untouched by it")
-
-		-- Und der Tod ist wieder der AUTORISIERTE Clip, keine gerechnete Pose.
-		check(diner ~= nil and string.find(diner, 'AnimationIds.load(animator, "Player", "Death")', 1, true) ~= nil,
-			"the diner plays the authored Death clip again")
+		-- 26.08.2026 (user): ES GIBT KEINE LEICHE MEHR. Der Schuss zerlegt den
+		-- Diner, wie die zweite Mine in der Dead Zone. Damit faellt die ganze
+		-- Klasse Fehler weg, an der drei Anlaeufe gescheitert sind: kein Endframe,
+		-- der halten muss, kein Koerper, der irgendwo landen kann, keine Pose.
+		check(diner ~= nil and not string.find(diner, '"Player", "Death"', 1, true),
+			"the diner loads no Death clip any more")
 		check(diner ~= nil and not string.find(diner, "local function slump", 1, true),
-			"no custom slump pose left")
+			"no custom slump pose left either")
+		check(diner ~= nil and not string.find(diner, "parkAtEnd", 1, true),
+			"the last-frame hold machinery is gone with the clip")
+		check(diner ~= nil and string.find(diner, 'if d:IsA("BasePart") then d.Transparency = 1 end', 1, true) ~= nil,
+			"die() hides every part -- fork and beans included, not just the meshes")
+		check(canteen ~= nil and string.find(canteen, "BloodFX.shatter(diner and diner.model or nil, at, st.audience)", 1, true) ~= nil,
+			"the execution shatters the diner")
+		check(canteen ~= nil and string.find(canteen, 'kind = "gorefx"', 1, true) ~= nil,
+			"and throws screen blood + shake at the room, like Dead Zone")
+
+		-- Und die Groesse ist wieder die, die die Arena selbst verlangt: der
+		-- Boost existierte nur, um den Death-Clip auf den Tisch zu heben.
+		check(diner ~= nil and not string.find(diner, "DINER_SCALE_BOOST *=", 1, false),
+			"the diner scale boost is gone -- both anchors fit again")
+		local boss = read(SERVER .. "CanteenBoss.luau")
+		check(props ~= nil and boss ~= nil, "CanteenProps and CanteenBoss readable")
 
 		-- 26.08.2026 (user): no dance in CANTEEN PROTOCOL, on any platform. The
 		-- trial-scoped attribute is what makes that hold BETWEEN a trial's rounds.
