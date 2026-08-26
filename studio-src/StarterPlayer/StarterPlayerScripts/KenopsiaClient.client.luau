@@ -2701,15 +2701,31 @@ RunService.RenderStepped:Connect(function(dt)
 	local nx = math.noise(shakeSeed, t)
 	local ny = math.noise(shakeSeed + 17, t)
 	local nz = math.noise(shakeSeed + 43, t)
+	-- 26.08.2026 (user): DER ABWAERTS-SCHLAG, getrennt vom Rumpeln.
+	--
+	-- Das Rauschen oben ist symmetrisch und hat deshalb keine Richtung -- es
+	-- ruettelt, aber es schlaegt nicht. `kick` faellt steiler ab als `mag`
+	-- (trauma^3 gegen trauma^2), sitzt also im ersten Moment und ist wieder weg,
+	-- waehrend das Rumpeln noch ausklingt: ein Schlag, kein Dauerdruck.
+	--
+	-- Minus auf Y ist in Kamerakoordinaten nach unten. Das Nicken ebenfalls
+	-- negativ, damit der Blick MIT nach unten kippt statt gegenzuhalten.
+	local kick = trauma * trauma * trauma * (uiSettings.ReduceShake and S.ReduceFactor or 1)
 	camera.CFrame = camera.CFrame
-		* CFrame.new(nx * S.Translate * mag, ny * S.Translate * mag, 0)
-		* CFrame.Angles(nx * S.Tilt * mag, ny * S.Tilt * mag, nz * S.Roll * mag)
+		* CFrame.new(nx * S.Translate * mag, ny * S.Translate * mag - S.Down * kick, 0)
+		* CFrame.Angles(nx * S.Tilt * mag - S.DownPitch * kick, ny * S.Tilt * mag, nz * S.Roll * mag)
 end)
 
 local function screenBlood(strength)
 	local v = Instance.new("Frame")
-	v.BackgroundColor3 = Color3.fromRGB(120, 8, 6)
-	v.BackgroundTransparency = 0.55
+	-- 26.08.2026 (user): ROT. Der Schleier lag fest auf 0.55 -- ein Streifschuss
+	-- und eine Hinrichtung direkt vor der Nase faerbten den Schirm gleich blass.
+	-- Er haengt jetzt an der Naehe: weit weg bleibt es die alte Ahnung, ganz nah
+	-- schlaegt der Schirm richtig zu. Die Farbe zieht mit ins Sattere, sonst
+	-- wird aus mehr Deckkraft nur ein grauerer Schleier.
+	local k = math.clamp(tonumber(strength) or 0, 0, 1)
+	v.BackgroundColor3 = Color3.fromRGB(120 + math.floor(50 * k), 8, 6)
+	v.BackgroundTransparency = 0.62 - 0.34 * k
 	v.BorderSizePixel = 0
 	v.Size = UDim2.fromScale(1, 1)
 	v.ZIndex = 60

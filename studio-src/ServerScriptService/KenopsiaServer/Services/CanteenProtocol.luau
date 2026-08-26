@@ -469,9 +469,14 @@ local function eliminate(st, userId, reason)
 			BloodFX.fountain(at, st.audience)
 			BloodFX.pool(at - Vector3.new(0, 0.4, 0), 3.2, st.audience)
 			BloodFX.sound(at, "ImpactBody", st.audience)
-			-- Kleiner als eine Mine (1.3) und der Compactor (1.6): eine Pistole am
-			-- Tisch, nicht ein Sprengsatz im Feld -- aber jeder sitzt dicht dran.
-			announce(st.room, { kind = "gorefx", pos = { at.X, at.Y, at.Z }, power = 0.9 })
+			-- 26.08.2026 (user): 0.9 -> 1.5. Der Wert war als "kleiner als eine
+			-- Mine" gedacht, aber das ist der falsche Vergleich: eine Mine geht
+			-- IRGENDWO im Feld hoch, die Hinrichtung passiert am selben Tisch, an
+			-- dem man sitzt. Ueber 1 zu gehen hat dabei einen konkreten Zweck --
+			-- applyGoreFx deckelt trauma bei 1, ein Wert darueber stellt also
+			-- sicher, dass der Schlag IMMER voll ankommt, auch wenn kurz zuvor
+			-- schon geschuettelt wurde.
+			announce(st.room, { kind = "gorefx", pos = { at.X, at.Y, at.Z }, power = 1.5 })
 		end
 
 		-- DER SPIELER SELBST STIRBT TROTZDEM NICHT.

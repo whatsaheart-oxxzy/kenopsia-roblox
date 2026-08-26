@@ -178,6 +178,18 @@ print("Shake")
 check(Feel.Shake.Decay > 0 and 1 / Feel.Shake.Decay <= 3.5, "full trauma drains in ~3 s")
 check(Feel.Shake.Translate > 0 and Feel.Shake.Tilt > 0 and Feel.Shake.Roll > 0 and Feel.Shake.NoiseHz > 0,
 	"shake amplitudes and noise rate positive")
+-- 26.08.2026 (user): der Schlag hat jetzt eine RICHTUNG -- nach unten. Das
+-- Rauschen daneben ist symmetrisch und kann sie nicht liefern, also sind es
+-- eigene Felder. Ohne sie schreibt der Writer im Client nil in eine CFrame.
+check(type(Feel.Shake.Down) == "number" and Feel.Shake.Down > 0,
+	"the shake has a downward kick", tostring(Feel.Shake.Down))
+check(type(Feel.Shake.DownPitch) == "number" and Feel.Shake.DownPitch > 0,
+	"and the view pitches down with it", tostring(Feel.Shake.DownPitch))
+-- Der Schlag muss ueber dem Rumpeln liegen, sonst geht die Richtung im
+-- Rauschen unter und man sieht wieder nur Ruetteln.
+check(Feel.Shake.Down > Feel.Shake.Translate,
+	"the kick outweighs the rumble, or the direction is lost in the noise",
+	string.format("down %s vs translate %s", tostring(Feel.Shake.Down), tostring(Feel.Shake.Translate)))
 
 print("Overlay")
 check(Feel.Overlay.BlipMin == 8 and Feel.Overlay.BlipMax == 20, "interference blip every 8-20 s")

@@ -82,12 +82,33 @@ Feel.Fade = {
 
 -- Camera shake: trauma model. Events add to trauma (0..1); strength is
 -- trauma squared; trauma drains at Decay per second (a full load ~3 s).
+-- 26.08.2026 (user): HEFTIGER, NACH UNTEN, ROT.
+--
+-- Die Amplituden sind angehoben (Translate 1.15 -> 1.8, Tilt 0.2 -> 0.3,
+-- Roll 0.26 -> 0.38). Ueber `power` allein war das nicht zu holen: applyGoreFx
+-- rechnet trauma = min(1, trauma + power * near), der Wert ist also bei 1
+-- gedeckelt und mag = trauma^2 damit ebenfalls. Wer mehr Wucht will, muss an
+-- die Amplituden -- `power` entscheidet nur, wie schnell man den Deckel
+-- erreicht.
+--
+-- GILT FUER JEDEN gorefx, also auch fuer Minen und Compactor in der Dead Zone.
+-- Das ist Absicht: ein Spiel sollte EINE Sprache fuer Einschlaege sprechen, und
+-- zwei verschieden harte Schuettler waeren nicht Abstimmung, sondern Zufall.
 Feel.Shake = {
 	Decay = 0.33,      -- trauma per second
 	NoiseHz = 30,      -- math.noise sample rate
-	Translate = 1.15,  -- studs at full trauma
-	Tilt = 0.2,        -- radians (pitch / yaw) at full trauma
-	Roll = 0.26,       -- radians at full trauma
+	Translate = 1.8,   -- studs at full trauma
+	Tilt = 0.3,        -- radians (pitch / yaw) at full trauma
+	Roll = 0.38,       -- radians at full trauma
+	-- DER ABWAERTS-SCHLAG. Das Rauschen oben ist symmetrisch -- es rumpelt in
+	-- alle Richtungen gleich und hat deshalb keine RICHTUNG. Diese beiden geben
+	-- ihm eine: die Kamera faellt nach unten und kippt den Blick mit, als saecke
+	-- einem der Kopf weg. Getrennt vom Rauschen, weil ein Schlag kein Rumpeln
+	-- ist -- er faellt steiler ab (trauma^3 statt ^2, siehe den Writer im
+	-- Client), sitzt also im ersten Moment und ist weg, waehrend das Rumpeln
+	-- noch ausklingt.
+	Down = 2.2,        -- studs nach unten at full trauma
+	DownPitch = 0.16,  -- radians, der Blick kippt mit nach unten
 	-- P2.3: the SHAKE settings row (ReduceShake, seeded from
 	-- GuiService.ReducedMotionEnabled) multiplies every amplitude by this.
 	-- Never zero: a hit must still read as a hit.
