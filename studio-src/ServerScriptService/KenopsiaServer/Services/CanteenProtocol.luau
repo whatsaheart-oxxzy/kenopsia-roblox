@@ -98,6 +98,19 @@ local RAISING_TIME = 0.30
 -- not a mandatory hold: the loop exits as soon as every visible shot finishes.
 local EXECUTION_GRACE = 8.0
 
+-- 26.08.2026 (user, Schritt 3): der Schlag zwischen Treffer und Zerlegen.
+--
+-- Ohne ihn passiert alles im selben Frame: Einschlag, Koerper weg, Brockenregen,
+-- Schirm-Blut. Das liest sich als ein einziger roter Schmierer, in dem keine
+-- Ursache mehr zu erkennen ist. Mit dem Schlag sieht man erst den TREFFER am
+-- Kopf und dann, dass ihn das zerlegt -- zwei Ereignisse, in dieser Reihenfolge.
+--
+-- Kurz genug, dass es ein Einschlag bleibt und kein Zoegern wird. Der Boss
+-- feuert onFire am Muendungsblitz ab, das hier haengt also am Blitz und nicht an
+-- der Rundenuhr -- und es haelt die Runde auch nicht auf: finish() laeuft
+-- unabhaengig weiter, pendingExecutions wartet nicht auf diesen Timer.
+local SHATTER_BEAT = 0.15
+
 -- RANKING BANDS. runRound returns one ordering key per player and MachineFlow
 -- sums those across rounds, then ranks and distributes exactly 1700. The bands
 -- encode the plan's order: finished > alive-unfinished > eliminated.
@@ -455,20 +468,30 @@ local function eliminate(st, userId, reason)
 		-- Koerper, der irgendwo landen kann, keine Pose, die stimmen muss.
 		--
 		-- Die Reihenfolge ist die Choreografie:
-		--   1. Treffer am Kopf -- der rote Punkt, bevor irgendetwas fliegt
-		--   2. der Diner verschwindet (dinerDie blendet jedes Teil aus)
-		--   3. shatter -- der Brockenregen an derselben Stelle
-		--   4. Fontaene und Lache -- was am Platz bleibt, bleibt auf dem Tisch
-		--   5. gorefx an den ganzen Raum -- Schirm-Blut und Shake wie in Dead Zone
+		--   1. Treffer am Kopf -- der rote Punkt, der Koerper sitzt noch
+		--   2. SHATTER_BEAT spaeter: der Diner verschwindet, der Brockenregen
+		--      kommt, und der ganze Raum kriegt Schirm-Blut und Shake
 		-- Der Teller mit den restlichen Erbsen bleibt stehen. Das ist der Punkt:
 		-- gedeckt fuer jemanden, der nicht mehr da ist.
+		--
+		-- NUR shatter, sonst NICHTS. Der Client baut daraus bereits das volle
+		-- Paket (GoreClient.shatter): zwei Sounds, burst 2.2, 14 Brocken,
+		-- Fontaene, vier Lachen und Tropfen. Hier standen zusaetzlich noch ein
+		-- fountain, ein pool und ein ImpactBody -- also eine zweite Fontaene, eine
+		-- sechste Lache und derselbe Sound ein zweites Mal an derselben Stelle.
+		-- Zwei identische Sounds am selben Punkt werden nicht lauter, sondern
+		-- matschig, und sechs Lachen uebereinander sind ein Fleck, kein Blut.
+		-- Die Lachen liegen uebrigens richtig: pool() raycastet nach unten und
+		-- legt sich auf die TISCHPLATTE, nicht auf den Boden darunter.
 		if at then BloodFX.hit(at, st.audience) end
-		if diner then st.props.dinerDie(ps.seat) end
-		if at then
+		task.delay(SHATTER_BEAT, function()
+			-- Der Timer ueberlebt die Runde nicht: nach dem Abraeumen ist st.props
+			-- nil und der Diner zerstoert. Beides hier geprueft, statt sich darauf
+			-- zu verlassen, dass 0.15 s immer reichen.
+			if not roundActive(st) or not st.props then return end
+			if diner then st.props.dinerDie(ps.seat) end
+			if not at then return end
 			BloodFX.shatter(diner and diner.model or nil, at, st.audience)
-			BloodFX.fountain(at, st.audience)
-			BloodFX.pool(at - Vector3.new(0, 0.4, 0), 3.2, st.audience)
-			BloodFX.sound(at, "ImpactBody", st.audience)
 			-- 26.08.2026 (user): 0.9 -> 1.5. Der Wert war als "kleiner als eine
 			-- Mine" gedacht, aber das ist der falsche Vergleich: eine Mine geht
 			-- IRGENDWO im Feld hoch, die Hinrichtung passiert am selben Tisch, an
@@ -477,7 +500,7 @@ local function eliminate(st, userId, reason)
 			-- sicher, dass der Schlag IMMER voll ankommt, auch wenn kurz zuvor
 			-- schon geschuettelt wurde.
 			announce(st.room, { kind = "gorefx", pos = { at.X, at.Y, at.Z }, power = 1.5 })
-		end
+		end)
 
 		-- DER SPIELER SELBST STIRBT TROTZDEM NICHT.
 		--

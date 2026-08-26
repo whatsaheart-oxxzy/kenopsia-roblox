@@ -529,6 +529,20 @@ do
 			"the execution shatters the diner")
 		check(canteen ~= nil and string.find(canteen, 'kind = "gorefx"', 1, true) ~= nil,
 			"and throws screen blood + shake at the room, like Dead Zone")
+		-- Schritt 3: shatter ist bereits das VOLLE Paket. GoreClient.shatter macht
+		-- zwei Sounds, burst 2.2, 14 Brocken, Fontaene, vier Lachen und Tropfen --
+		-- wer hier noch eins draufsetzt, bekommt denselben Sound doppelt (matschig
+		-- statt lauter) und Lachen uebereinander, die zu einem Fleck verlaufen.
+		-- Auf die AUFRUFFORM geprueft: der Kommentar daneben nennt beide Namen.
+		check(canteen ~= nil and not string.find(canteen, "BloodFX.fountain(", 1, true),
+			"the execution does not stack a second fountain on shatter's own")
+		check(canteen ~= nil and not string.find(canteen, "BloodFX.pool(", 1, true),
+			"nor a sixth pool on the four shatter already lays")
+		-- Und der Schlag zwischen Treffer und Zerlegen, sonst ist es ein Frame.
+		check(canteen ~= nil and string.find(canteen, "task.delay(SHATTER_BEAT", 1, true) ~= nil,
+			"the body comes apart a beat AFTER the hit, not in the same frame")
+		check(canteen ~= nil and string.find(canteen, "if not roundActive(st) or not st.props then return end", 1, true) ~= nil,
+			"and that timer cannot outlive the round it belongs to")
 		-- Schritt 2: nichts bleibt ueber dem leeren Stuhl stehen. Die Gabel des
 		-- Fork-Rigs haengt am Modell und geht mit; die des blanken Rigs ist ein
 		-- Seat-Prop und musste eigens abgeraeumt werden.
