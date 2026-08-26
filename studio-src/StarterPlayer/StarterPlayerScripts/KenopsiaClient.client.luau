@@ -511,10 +511,12 @@ do
 		if not hum then return end
 		local moves = char:GetAttribute("XBotMoves") or ""
 		if not string.find(moves, "scan") then return end
-		-- 26.08.2026 (user, MP-08 S8): der Krabbler wurde hier ausgenommen, weil
-		-- CRAWL_SPEED (4.2) unter dem Rampenfuss (7) lag und die Rampe ihn sonst
-		-- beschleunigt haette. Krabbeln IST jetzt Laufen -- also faehrt er
-		-- dieselbe 7 -> 10 Rampe wie jeder andere, und die Ausnahme faellt weg.
+		-- 26.08.2026 (user, MP-08 S8): der Krabbler bleibt hier ausgenommen.
+		-- CRAWL_SPEED ist 6.0 und liegt damit UNTER dem Rampenfuss (7) -- ohne
+		-- diese Zeile wuerde die Rampe ihn sofort auf 7 heben und in einer
+		-- Sekunde auf 10 ziehen, und der Compactor (max. 6.5) waere wieder
+		-- wirkungslos. Die Rampe gehoert dem Laeufer, nicht dem Krabbler.
+		if char:GetAttribute("XBotCrawl") == true then runT = 0 return end
 		if char:GetAttribute("XBotScanning") == true or hum.MoveDirection.Magnitude < 0.2 then
 			runT = 0
 		else

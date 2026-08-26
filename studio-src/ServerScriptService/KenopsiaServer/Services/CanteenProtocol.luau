@@ -441,7 +441,38 @@ local function eliminate(st, userId, reason)
 		local hitPart = subject.char:FindFirstChild("Head") or subject.root
 		local at = diner and diner:headPosition() or (hitPart and hitPart:IsA("BasePart") and hitPart.Position)
 		if at then BloodFX.hit(at, st.audience) end
-		subject.hum.Health = 0
+
+		-- 26.08.2026 (user): DIE LEICHE BLEIBT SITZEN, BIS DIE RUNDE VORBEI IST.
+		--
+		-- Hier stand `subject.hum.Health = 0`. CanteenDiner.die parkt den PS1-
+		-- Koerper korrekt auf dem letzten Frame des Death-Clips (parkAtEnd,
+		-- AdjustSpeed(0)) -- aber der Humanoid-Tod loeste Roblox' eigenen Respawn
+		-- aus (Players.CharacterAutoLoads ist an, RespawnTime 5 s). Nach fuenf
+		-- Sekunden war der Avatar weg und wurde am SpawnLocation neu geladen: das
+		-- ist das "die Animation bleibt nicht lange, dann verschwindet der
+		-- Character".
+		--
+		-- Der Ausweg ist NICHT, den Respawn global abzuschalten (CharacterAutoLoads
+		-- ist eine Players-Eigenschaft, die das ganze Spiel betrifft). Der
+		-- Humanoid stirbt hier einfach nicht mehr: eliminiert ist eine
+		-- Zustandssache (ps.eliminated), und jede Eingabe- und Schleifenpruefung
+		-- oben laeuft ueber ps.eliminated, nicht ueber Health. Der Avatar ist
+		-- ohnehin verankert, unsichtbar und auf WalkSpeed 0 -- er kann sich also
+		-- nicht bewegen, und der PS1-Koerper bleibt in seiner Endpose am Tisch,
+		-- bis cleanupRound die Props abraeumt.
+		--
+		-- Damit MachineFlow den Tod trotzdem zaehlt: watchDeaths hoert auf
+		-- Humanoid.Died ODER auf das Attribut KenopsiaProcessed. Genau fuer diesen
+		-- Fall ist der zweite Pfad da. Hochzaehlen statt setzen, damit auch eine
+		-- zweite Elimination in einer spaeteren Runde ein Change-Signal ausloest.
+		local plrOut = Players:GetPlayerByUserId(userId)
+		if plrOut then
+			plrOut:SetAttribute("KenopsiaProcessed",
+				(plrOut:GetAttribute("KenopsiaProcessed") or 0) + 1)
+		end
+		subject.hum.WalkSpeed = 0
+		subject.hum.AutoRotate = false
+		subject.root.Anchored = true
 	end
 
 	if st.props and st.props.execute then

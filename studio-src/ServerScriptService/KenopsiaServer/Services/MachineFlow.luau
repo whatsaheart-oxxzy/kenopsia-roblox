@@ -355,6 +355,22 @@ local function setActiveTrial(ctx, trialId)
 	end
 end
 
+-- 26.08.2026 (user): KenopsiaActiveTrial is a ROUND flag -- it is cleared after
+-- every round of a trial (setActiveTrial(ctx, "") below), so during the
+-- standings card, the round card and the 3-2-1 of a multi-round trial it reads
+-- "". Anything that has to be true for a WHOLE trial cannot hang off it. The
+-- emote button was the case that showed it: hidden during a Canteen round,
+-- popping back between the rounds of the same Canteen.
+--
+-- This one is set once per trial and cleared once, at the end of it.
+local function setTrialId(ctx, trialId)
+	for _, plr in ctx.audience do
+		if plr.Parent == Players then
+			plr:SetAttribute("KenopsiaTrialId", trialId or "")
+		end
+	end
+end
+
 -- SELECTING ------------------------------------------------------------------
 
 -- MP-08 S9 (26.08.2026, user): der Icon-/Koeder-Aufbau steckte in runSelection
@@ -746,6 +762,9 @@ local function runMatch(room)
 		cleaned = true
 		if ctx then
 			setActiveTrial(ctx, "")
+			-- Every exit route, including the aborted one: a session that dies
+			-- mid-Canteen must not leave the emote button switched off forever.
+			setTrialId(ctx, "")
 			if activeTrial and activeTrial.module.cleanup then
 				pcall(activeTrial.module.cleanup, ctx)
 			end
@@ -828,6 +847,9 @@ local function runMatch(room)
 
 			local trialCtx = session:newTrial(trial.id, trialIndex, #order)
 			activeTrial = trial
+			-- Trial-scoped, unlike setActiveTrial: it survives the gaps between
+			-- this trial's rounds. See setTrialId.
+			setTrialId(ctx, trial.id)
 			ctx.effectScope = ("%s:%s"):format(ctx.sessionId, trial.id)
 			-- P1.3: the last trial of a multi-trial session is the FINAL AUDIT and
 			-- pays double, so the session is open until its last minute.
@@ -1053,6 +1075,7 @@ local function runMatch(room)
 			if trial.module.cleanup then pcall(trial.module.cleanup, ctx) end
 			trialCtx:cancel()
 			activeTrial = nil
+			setTrialId(ctx, "")
 		end
 
 		-- FINAL SCORE. Highest cumulative total is VIABLE, everyone else

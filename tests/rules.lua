@@ -436,6 +436,61 @@ do
 			"MachineFlow exposes iconsFor(trial)")
 		check(string.find(machineFlow, "Pacing.Timing.TrialReveal", 1, true) ~= nil,
 			"the trial loop holds on Pacing.Timing.TrialReveal")
+
+		-- S8 (26.08.2026, user decision): the crawl speed must stay INSIDE the
+		-- compactor's own speed band. The machine is clamped to
+		-- [MIN_SHRED_SPEED, MAX_SHRED_SPEED]; a crawler above the upper clamp can
+		-- never be caught, whatever the number looks like, and the maiming stops
+		-- costing time. This is the whole reason 6.0 was chosen over 10, and it
+		-- is a single edit away from being undone silently.
+		local minShred = tonumber(string.match(minefield, "local MIN_SHRED_SPEED = ([%d%.]+)"))
+		local maxShred = tonumber(string.match(minefield, "local MAX_SHRED_SPEED = ([%d%.]+)"))
+		local crawl = tonumber(string.match(minefield, "local CRAWL_SPEED = ([%d%.]+)"))
+		check(minShred ~= nil and maxShred ~= nil and crawl ~= nil,
+			"Minefield states MIN_SHRED_SPEED, MAX_SHRED_SPEED and CRAWL_SPEED")
+		if minShred and maxShred and crawl then
+			check(crawl == 6.0, "CRAWL_SPEED is 6.0", tostring(crawl))
+			check(crawl <= maxShred,
+				"a crawler stays catchable: CRAWL_SPEED <= MAX_SHRED_SPEED",
+				string.format("crawl %s vs machine cap %s", tostring(crawl), tostring(maxShred)))
+			check(crawl > minShred,
+				"but the crawl still beats the machine's floor, so it is not a death sentence",
+				string.format("crawl %s vs machine floor %s", tostring(crawl), tostring(minShred)))
+		end
+		-- The client half of the same decision: the 7 -> 10 runner ramp must keep
+		-- its crawl exception, or it would lift a 6.0 crawler straight past the
+		-- compactor's cap on the first frame they move.
+		check(string.find(client, 'if char:GetAttribute("XBotCrawl") == true then runT = 0 return end', 1, true) ~= nil,
+			"the runner ramp still exempts a crawler")
+		check(string.find(client, 'if char:GetAttribute("XBotCrawl") ~= true then', 1, true) ~= nil,
+			"applyMovement still leaves a crawler's WalkSpeed to the server")
+
+		-- 26.08.2026 (user): the Canteen corpse stays parked at the table until
+		-- the round is cleaned up. Killing the Humanoid handed the body to
+		-- Roblox's auto-respawn, which destroyed it five seconds later.
+		-- Line-anchored on purpose: the comment that replaced this line QUOTES it,
+		-- so a plain substring search would match the explanation and never fail.
+		check(not string.find(canteen, "\n[ \t]*subject%.hum%.Health = 0"),
+			"CanteenProtocol no longer kills the Humanoid on elimination")
+		check(string.find(canteen, 'SetAttribute("KenopsiaProcessed"', 1, true) ~= nil,
+			"CanteenProtocol reports the death through KenopsiaProcessed instead")
+		check(string.find(canteen, "subject.root.Anchored = true", 1, true) ~= nil,
+			"the eliminated subject is frozen in place")
+
+		-- 26.08.2026 (user): no dance in CANTEEN PROTOCOL, on any platform. The
+		-- trial-scoped attribute is what makes that hold BETWEEN a trial's rounds.
+		local ps1 = read("studio-src/StarterPlayer/StarterCharacterScripts/PS1Animate.client.luau")
+		check(machineFlow ~= nil and string.find(machineFlow, "local function setTrialId(ctx, trialId)", 1, true) ~= nil,
+			"MachineFlow publishes a trial-scoped KenopsiaTrialId")
+		check(ps1 ~= nil and string.find(ps1, "local function danceBlocked()", 1, true) ~= nil,
+			"PS1Animate routes every dance path through one danceBlocked()")
+		if ps1 then
+			local guards = 0
+			for _ in string.gmatch(ps1, "danceBlocked%(%)") do guards = guards + 1 end
+			-- definition + animation + key/gamepad + touch button + stop-on-enter
+			check(guards >= 5, "danceBlocked guards the key, the button and the clip",
+				tostring(guards) .. " uses")
+		end
 	end
 end
 

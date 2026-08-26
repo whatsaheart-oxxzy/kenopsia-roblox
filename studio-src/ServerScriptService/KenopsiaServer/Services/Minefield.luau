@@ -43,19 +43,25 @@ local MIN_SHRED_SPEED = 4.6   -- was: "runner crawls at 4.2" -- see CRAWL_SPEED
 -- crawl clip over a runner still walking at 7. The server now writes this
 -- onto the humanoid the moment XBotCrawl latches; it replicates down.
 --
--- 26.08.2026 (user, MP-08 S8): das Krabbeln ist so schnell wie das Rennen.
--- Der Client rampt einen Laeufer von 7 auf 10 (KenopsiaClient applyMovement +
--- die Ramp-Schleife daneben); der Krabbler bekommt jetzt denselben Endwert und
--- faehrt dieselbe Rampe.
+-- 26.08.2026 (user, MP-08 S8): das Krabbeln war 4.2 und damit deutlich langsamer
+-- als der Lauf; der Plan verlangte Lauftempo (10). Auf 10 waere der Compactor
+-- aber wirkungslos geworden -- er ist auf MAX_SHRED_SPEED = 6.5 gedeckelt und
+-- holt oberhalb davon NIEMANDEN mehr ein. Die Sache ist bei 6.5 binaer: jeder
+-- Wert darueber ist derselbe Zustand ("entkommt immer"), nur anders lackiert.
 --
--- FOLGE, BEWUSST UND BEAUFTRAGT: MIN_SHRED_SPEED (4.6) ist die untere Schranke
--- der Compactor-Geschwindigkeit. Mit CRAWL_SPEED = 10 holt der Compactor einen
--- Krabbler NIE MEHR ein -- die Beinamputation kostet ab hier Optik, keine Zeit.
--- Der Kommentar oben ("over the crawl speed -> being maimed still costs the
--- round") beschreibt damit nicht mehr das Verhalten, sondern die Absicht, die
--- hier bewusst aufgegeben wurde. Hier notiert, damit es nicht spaeter als Bug
--- zurueckkommt.
-local CRAWL_SPEED = 10
+-- 26.08.2026 (user, Entscheidung): 6.0 -- der einzige echte Mittelweg. Deutlich
+-- fluessiger als die alten 4.2, aber INNERHALB des Compactor-Bandes
+-- (MIN_SHRED_SPEED 4.6 .. MAX_SHRED_SPEED 6.5). Der Compactor faehrt
+-- sweepDistance / sweepBudget, auf dieses Band geklemmt: in Runden, in denen
+-- er nahe am oberen Klemmwert liegt, holt er einen Krabbler ein, darunter nicht.
+-- Die Beinamputation kostet damit wieder Zeit, statt nur Optik zu sein -- aber
+-- sie ist kein sicheres Todesurteil mehr.
+--
+-- Der Client rampt einen Laeufer von 7 auf 10 (applyMovement + Ramp-Schleife).
+-- Ein Krabbler faehrt die Rampe NICHT: applyMovement laesst WalkSpeed in Ruhe,
+-- solange XBotCrawl gesetzt ist, und die Ramp-Schleife nimmt ihn wieder aus.
+-- Dieser Wert hier ist also der Endwert, nicht der Rampenfuss.
+local CRAWL_SPEED = 6.0
 -- Seconds allowed for the APPROACH -- the stretch from the marker to the
 -- players' line, where the machine is behind everyone and threatens nobody.
 -- Spending gameplay seconds there is what made the round 88 s. Lower this to

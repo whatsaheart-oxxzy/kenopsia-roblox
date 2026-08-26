@@ -97,6 +97,24 @@ local dead = false
 local speedNow = 0
 local danceOn = false
 local localPlayer = game:GetService("Players").LocalPlayer
+
+-- 26.08.2026 (user): KEIN TANZ IN CANTEEN PROTOCOL -- auf keiner Plattform.
+--
+-- Vorher haben sich drei Wege unterschiedlich verhalten:
+--   * der Touch-Button war Lobby-only (KenopsiaActiveTrial ~= ""),
+--   * G / DPadLeft auf PC und Konsole hatte ueberhaupt keine Sperre,
+--   * die Animation selbst war gegen "canteen" geprueft.
+-- KenopsiaActiveTrial ist aber ein RUNDEN-Flag und steht zwischen den Runden
+-- eines Trials auf "" -- in einer Canteen mit 2-3 Runden kam der Button also
+-- zwischen den Runden zurueck und der Tanz war dort auch wieder erlaubt.
+-- KenopsiaTrialId (MachineFlow.setTrialId) gilt fuer den GANZEN Trial.
+--
+-- Eine Funktion fuer alle drei Wege, damit sie nicht wieder auseinanderlaufen.
+local function danceBlocked()
+	return (localPlayer:GetAttribute("KenopsiaTrialId") or "") == "canteen"
+		or (localPlayer:GetAttribute("KenopsiaActiveTrial") or "") == "canteen"
+end
+
 local function update()
 	if dead then return end
 	local scale = char:GetScale()
@@ -114,8 +132,7 @@ local function update()
 		else
 			play("Crouch", moving and 1 or 0)
 		end
-	elseif not moving and danceOn and track("Dance")
-		and localPlayer:GetAttribute("KenopsiaActiveTrial") ~= "canteen" then
+	elseif not moving and danceOn and track("Dance") and not danceBlocked() then
 		-- 24.08.2026 (user): no dancing at the dinner table.
 		play("Dance", 1)
 	elseif not moving and char:GetAttribute("XBotRifle") == true and track("RifleIdle") then
@@ -196,10 +213,23 @@ do
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if processed then return end
 		if input.KeyCode == Enum.KeyCode.G or input.KeyCode == Enum.KeyCode.DPadLeft then
+			-- PC und Konsole: hier fehlte die Sperre ganz.
+			if danceBlocked() then return end
 			danceOn = not danceOn
 			update()
 		end
 	end)
+	-- Wer beim Trial-Start noch tanzt, hoert hier auf -- sonst bliebe die Pose
+	-- stehen, weil update() den Zweig ab jetzt nur noch nicht mehr WAEHLT.
+	local function stopDanceIfBlocked()
+		if danceBlocked() and danceOn then
+			danceOn = false
+			update()
+		end
+	end
+	localPlayer:GetAttributeChangedSignal("KenopsiaTrialId"):Connect(stopDanceIfBlocked)
+	localPlayer:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(stopDanceIfBlocked)
+	stopDanceIfBlocked()
 	if UserInputService.TouchEnabled then
 		local gui = Instance.new("ScreenGui")
 		gui.Name = "KenopsiaEmote"
@@ -222,15 +252,21 @@ do
 		st.Parent = b
 		b.Parent = gui
 		b.Activated:Connect(function()
+			if danceBlocked() then return end
 			danceOn = not danceOn
 			update()
 		end)
 		-- 24.08.2026 (user, phone test): the emote button has no business on a
 		-- trial screen -- lobby only.
+		-- 26.08.2026 (user): und in CANTEEN PROTOCOL auch nicht zwischen den
+		-- Runden, wo KenopsiaActiveTrial kurz "" ist. Mobile und iPad laufen
+		-- beide ueber diesen Zweig (TouchEnabled).
 		local function applyDanceVisible()
 			b.Visible = (localPlayer:GetAttribute("KenopsiaActiveTrial") or "") == ""
+				and not danceBlocked()
 		end
 		localPlayer:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(applyDanceVisible)
+		localPlayer:GetAttributeChangedSignal("KenopsiaTrialId"):Connect(applyDanceVisible)
 		applyDanceVisible()
 	end
 end
