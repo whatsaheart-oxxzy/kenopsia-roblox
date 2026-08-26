@@ -88,13 +88,14 @@ check(Pacing.Timing.FinalScore == 6 and Pacing.Timing.Podium == 8, "verdict beat
 -- P1.4: the role card beat ("<NAME> IS THE HUNTER.") is 1.6 s, MASTERPLAN section 2.
 check(Pacing.Timing.RoleCard == 1.6, "role card beat is 1.6 s", tostring(Pacing.Timing.RoleCard))
 -- MP-08 S10/S11 (26.08.2026): the roulette between two trials. Its own row, so
--- the price of that beat can be tuned without moving the lobby's. It must not
--- fall UNDER the lobby hold: the client plays the identical animation on both,
--- so a shorter hold here would cut the wheel off mid-spin.
+-- the price of that beat (6.4 s per switch, +12.8 s in a three-trial session)
+-- can be tuned without moving the lobby's.
+--
+-- The real floor is the client's roulette animation, not this value -- that
+-- bound is asserted in tests/feel.lua, which is the file that can see Feel.
+-- Here we only pin the shipped number, the way LobbyReveal is pinned.
 check(Pacing.Timing.TrialReveal == 6.4, "Pacing.Timing.TrialReveal is 6.4 s (the between-trials roulette hold)",
 	tostring(Pacing.Timing.TrialReveal))
-check(Pacing.Timing.TrialReveal >= Pacing.Timing.LobbyReveal,
-	"the between-trials hold is never shorter than the lobby's")
 
 -- MP-05 D8: one RoundSeconds number per new trial, section A values.
 local expectedSeconds = {

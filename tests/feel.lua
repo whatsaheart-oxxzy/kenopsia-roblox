@@ -145,6 +145,11 @@ check(Feel.Roulette.LockBlinks >= 1 and Feel.Roulette.LockBlinks <= 4, "lock bli
 check(Feel.rouletteSeconds(3, false) <= Pacing.Timing.LobbyReveal,
 	"full roulette (3 tiles) fits under Pacing.Timing.LobbyReveal", tostring(Feel.rouletteSeconds(3, false)))
 check(Feel.rouletteSeconds(3, true) < Feel.rouletteSeconds(3, false), "ReduceFlicker path is shorter")
+-- MP-08 S10 (26.08.2026): the same wheel now also runs between two trials, on
+-- its own Pacing row. This is the REAL floor under that number -- drop it below
+-- the animation and the info card cuts the wheel off mid-spin.
+check(Feel.rouletteSeconds(3, false) <= Pacing.Timing.TrialReveal,
+	"full roulette (3 tiles) fits under Pacing.Timing.TrialReveal", tostring(Feel.rouletteSeconds(3, false)))
 check(near(Feel.Roulette.Chaos, 1.6) and near(Feel.Roulette.CrosshairSnap, 0.32) and near(Feel.Roulette.TileGap, 0.25)
 	and near(Feel.Roulette.Lead, 0.4), "roulette beats: 0.4 lead, 0.25 tiles, 1.6 chaos, 0.32 snap")
 
