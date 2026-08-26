@@ -443,6 +443,29 @@ function CanteenProps.build(arena, opts)
 	function self.dinerDie(seatIndex)
 		local diner = self.diners[seatIndex]
 		if diner then diner:die() end
+		-- 26.08.2026 (user, Schritt 2): DER KOERPER GEHT GANZ -- ALSO AUCH DAS
+		-- BESTECK.
+		--
+		-- Der Diner mit eigener Gabel (PS1Player_Fork) nimmt seine mit: sie ist an
+		-- die Hand geskinnt, haengt also unter seinem Modell und wird von die()
+		-- mit ausgeblendet. Beim blanken PS1Player-Rig ist die Gabel aber ein
+		-- SEAT-Prop -- seatDiner blendet sie nur dann aus, wenn der Diner eine
+		-- eigene mitbringt (`diner.hasFork`). Ohne diese Zeilen blieb sie mitsamt
+		-- ihren Erbsen ueber einem leeren Stuhl stehen, waehrend der Koerper
+		-- laengst zerlegt war.
+		--
+		-- Faellt nur beim Fallback-Rig auf, deshalb war es bisher unsichtbar --
+		-- aber genau dafuer ist der Fallback da.
+		--
+		-- Der TELLER bleibt bewusst stehen, mit den restlichen Erbsen darauf:
+		-- gedeckt fuer jemanden, der nicht mehr da ist.
+		local seat = self.seats[seatIndex]
+		if seat then
+			if seat.fork then setVisible(seat.fork, false) end
+			for _, rider in ipairs(seat.forkLoad or {}) do setVisible(rider, false) end
+			seat.shownLoad = 0
+			seat.pendingForkLoad = 0
+		end
 	end
 
 	-- An empty plate, survived: the one smile at this table.

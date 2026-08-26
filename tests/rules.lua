@@ -529,6 +529,14 @@ do
 			"the execution shatters the diner")
 		check(canteen ~= nil and string.find(canteen, 'kind = "gorefx"', 1, true) ~= nil,
 			"and throws screen blood + shake at the room, like Dead Zone")
+		-- Schritt 2: nichts bleibt ueber dem leeren Stuhl stehen. Die Gabel des
+		-- Fork-Rigs haengt am Modell und geht mit; die des blanken Rigs ist ein
+		-- Seat-Prop und musste eigens abgeraeumt werden.
+		check(props ~= nil and string.find(props, "if seat.fork then setVisible(seat.fork, false) end", 1, true) ~= nil,
+			"dinerDie clears the seat's own cutlery too, not just the rig's")
+		-- Der Teller bleibt: gedeckt fuer jemanden, der nicht mehr da ist.
+		check(props ~= nil and not string.find(props, "setVisible(seat.peas", 1, true),
+			"but the plate and its peas are left standing")
 
 		-- Und die Groesse ist wieder die, die die Arena selbst verlangt: der
 		-- Boost existierte nur, um den Death-Clip auf den Tisch zu heben.
