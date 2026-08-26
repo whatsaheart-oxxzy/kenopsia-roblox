@@ -32,6 +32,29 @@ local CanteenDiner = {}
 --   DinerSeated true  fold the legs 90 degrees at hip and knee
 local SCALE_LIMITS = { min = 0.4, max = 3.0 }
 
+-- 26.08.2026 (user): DIE DINER SIND GROESSER ALS DIE ARENA VERLANGT.
+--
+-- Der Death-Clip ist in Ordnung und bleibt -- der Koerper soll aber auf dem
+-- Tisch landen und nicht darunter, und der Weg dahin ist eine groessere Figur.
+--
+-- NUR DIE DINER. Der Boss bekommt seine Skalierung direkt als `worldScale` von
+-- CanteenProps (CanteenBoss.spawn) und kennt diesen Faktor nicht -- er bleibt
+-- also exakt so gross wie bisher. Genau deshalb steht der Faktor hier und nicht
+-- in CanteenProps: dort waere er derselbe Wert fuer beide Rigs.
+--
+-- PREIS, bewusst: CanteenDiner.scaleFor loest die Skalierung so auf, dass das
+-- Becken auf der Sitzflaeche UND der Mund am MouthTarget landet -- zwei Anker,
+-- eine Unbekannte. Dieser Faktor bricht den zweiten: das Becken bleibt auf dem
+-- Stuhl (PivotTo rechnet mit pelvisHeight * scale), der Mund steigt aber ueber
+-- den MouthTarget. Die Gabel ist an die Hand geskinnt und faehrt mit der Figur
+-- mit, der Versatz ist also kosmetisch und keine Regelaenderung -- aber er ist
+-- da, und bei zu grossen Werten sieht man ihn.
+--
+-- Pro Sitz weiter feinjustierbar ueber das Marker-Attribut DinerScale, das auf
+-- diesen Faktor NOCH multipliziert. Ein Sitz, der zu gross geraet, wird also in
+-- Studio zurueckgedreht, ohne dass der Code angefasst werden muss.
+local DINER_SCALE_BOOST = 1.25
+
 local function findTemplate()
 	local assets = ServerStorage:FindFirstChild("KenopsiaAssets")
 	local rigs = assets and assets:FindFirstChild("Rigs")
@@ -188,7 +211,9 @@ function CanteenDiner.spawn(marker, parent, seatIndex, opts)
 	-- ratio has to be read at 1.
 	local metrics = CanteenDiner.metrics()
 	local scale = math.clamp(
-		(tonumber(opts.scale) or 1) * (tonumber(marker:GetAttribute("DinerScale")) or 1),
+		(tonumber(opts.scale) or 1)
+			* DINER_SCALE_BOOST
+			* (tonumber(marker:GetAttribute("DinerScale")) or 1),
 		SCALE_LIMITS.min, SCALE_LIMITS.max)
 	if math.abs(scale - 1) > 0.001 then model:ScaleTo(scale) end
 

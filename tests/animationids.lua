@@ -86,6 +86,27 @@ end
 check(A.PlayerSpeeds.Crawl == 2.26 and A.PlayerSpeeds.InjuredWalk == 3.49,
 	"PlayerSpeeds carry the measured Crawl / InjuredWalk hips trends")
 
+-- 26.08.2026: der Studio-Fallback des BOSS zeigte auf Namen, die es nicht gibt.
+-- Im Place nachgemessen: Anim_Idle traegt "idle", Anim_LookUp "lookup",
+-- Anim_LookDown "lookdown", Anim_Shoot "shoot" -- FindFirstChild ist
+-- case-sensitiv, also traf keine der fuenf Zeilen, und Reading zeigte sogar auf
+-- LookUp. Sobald die veroeffentlichten Ids einmal nicht abspielbar sind, steht
+-- der Boss dann ohne Track da: T-Pose. TableMannersBoss_AllAnims traegt alle
+-- fuenf exakt richtig benannt, wie PS1Player_AllAnims beim Player.
+--
+-- Offline pruefbar ist die FORM des Mappings, nicht der Inhalt des Place: jede
+-- Boss-Zeile muss auf den All-Anims-Halter zeigen und ihren eigenen Namen
+-- tragen. Genau die beiden Fehler von vorher.
+for _, name in ipairs({ "Reading", "Idle", "LookUp", "LookDown", "Shoot" }) do
+	local seq = A.StudioSequences.Boss[name]
+	check(type(seq) == "table" and seq[1] == "TableMannersBoss_AllAnims",
+		"StudioSequences.Boss." .. name .. " points at TableMannersBoss_AllAnims",
+		type(seq) == "table" and tostring(seq[1]) or "missing")
+	check(type(seq) == "table" and seq[2] == name,
+		"StudioSequences.Boss." .. name .. " names its OWN clip, not another",
+		type(seq) == "table" and tostring(seq[2]) or "missing")
+end
+
 -- Every placeholder resolves to nil.
 local placeholdersOk = true
 for _, group in ipairs({ "Player", "Boss", "Textures" }) do

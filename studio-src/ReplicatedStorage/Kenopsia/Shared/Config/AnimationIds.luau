@@ -118,10 +118,33 @@ AnimationIds.StudioSequences = {
 		Sneak = { "Anim_FieldClips", "Sneak" }, Dance = { "Anim_FieldClips", "Dance" },
 		RifleIdle = { "Anim_FieldClips", "RifleIdle" },
 	},
+	-- 26.08.2026: JEDE der fuenf Boss-Zeilen ging ins Leere. Nachgemessen im
+	-- Place gegen ServerStorage.RBX_ANIMSAVES:
+	--   Anim_Idle     hat "idle" / "boss idle", nicht "Idle"
+	--   Anim_LookUp   hat "lookup",             nicht "LookingUp"
+	--   Anim_LookDown hat "lookdown",           nicht "LookDown"
+	--   Anim_Shoot    hat "shoot",              nicht "Shoot"
+	-- FindFirstChild ist case-sensitiv, also traf keine einzige. Reading zeigte
+	-- obendrein auf LookUp -- selbst bei passender Schreibweise die falsche
+	-- Bewegung.
+	--
+	-- Folge: sobald die veroeffentlichten Boss-Ids NICHT abspielbar sind (fehlende
+	-- Freigabe, anderer Besitzer, Asset-Aussetzer), liefert der Studio-Fallback
+	-- fuer den Boss nil -- und ein Rig ohne Track steht in T-Pose da. Das ist
+	-- genau der "aus dem Nichts"-Fall, denn ob die Ids spielen, haengt nicht am
+	-- Code.
+	--
+	-- TableMannersBoss_AllAnims traegt alle fuenf exakt richtig benannt
+	-- (Reading 121, Idle 121, LookUp 45, LookDown 20, Shoot 50 Keyframes) --
+	-- dieselbe Bauform wie PS1Player_AllAnims beim Player. Die Mindest-Keyframes
+	-- unterscheiden Reading und Idle von kurzen Stummeln, ohne die 121 exakt
+	-- festzunageln.
 	Boss = {
-		Idle = { "Anim_Idle", "Idle", 100 }, LookUp = { "Anim_LookUp", "LookingUp" },
-		Reading = { "Anim_LookUp", "LookingUp" }, LookDown = { "Anim_LookDown", "LookDown" },
-		Shoot = { "Anim_Shoot", "Shoot" },
+		Idle = { "TableMannersBoss_AllAnims", "Idle", 100 },
+		Reading = { "TableMannersBoss_AllAnims", "Reading", 100 },
+		LookUp = { "TableMannersBoss_AllAnims", "LookUp", 20 },
+		LookDown = { "TableMannersBoss_AllAnims", "LookDown", 10 },
+		Shoot = { "TableMannersBoss_AllAnims", "Shoot", 20 },
 	},
 }
 

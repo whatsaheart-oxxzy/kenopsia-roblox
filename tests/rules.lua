@@ -513,6 +513,18 @@ do
 			"the blink loop skips instead of terminating, so no second thread is spawned")
 		check(props ~= nil and string.find(props, "pcall(diner.hold, diner, up)", 1, true) ~= nil,
 			"observerTo puts the whole table on hold")
+		-- 26.08.2026 (user): die Diner sind groesser, der BOSS ausdruecklich NICHT.
+		-- Der Faktor gehoert deshalb in CanteenDiner: CanteenProps reicht ein und
+		-- dasselbe worldScale an beide Rigs weiter, dort waere er also nicht zu
+		-- trennen.
+		check(diner ~= nil and string.find(diner, "DINER_SCALE_BOOST", 1, true) ~= nil,
+			"the diner carries its own scale boost")
+		check(props ~= nil and not string.find(props, "DINER_SCALE_BOOST", 1, true),
+			"the boost is NOT in CanteenProps, where it would hit the boss too")
+		local boss = read(SERVER .. "CanteenBoss.luau")
+		check(boss ~= nil and not string.find(boss, "DINER_SCALE_BOOST", 1, true),
+			"the boss rig is untouched by it")
+
 		-- Und der Tod ist wieder der AUTORISIERTE Clip, keine gerechnete Pose.
 		check(diner ~= nil and string.find(diner, 'AnimationIds.load(animator, "Player", "Death")', 1, true) ~= nil,
 			"the diner plays the authored Death clip again")
