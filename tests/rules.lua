@@ -477,6 +477,48 @@ do
 		check(string.find(canteen, "subject.root.Anchored = true", 1, true) ~= nil,
 			"the eliminated subject is frozen in place")
 
+		-- 26.08.2026 (user): der Raum erzaehlt, nicht das HUD. Die beiden
+		-- Observer-Untertitel sind raus -- der Observer senkt sich sichtbar,
+		-- sein Gesicht springt auf Angry und er schwenkt gestuft; ein Text
+		-- darueber sagt dem Spieler, er solle aufs HUD schauen statt an den Tisch.
+		-- Auf die ZUWEISUNG geprueft, nicht auf den Text: der Kommentar, der die
+		-- Entfernung begruendet, zitiert beide Zeilen -- eine reine Textsuche
+		-- wuerde also die Erklaerung finden und nie fehlschlagen.
+		check(not string.find(client, '%.Text = "OBSERVER DESCENDING"'),
+			"the OBSERVER DESCENDING subtitle is no longer written to a label")
+		check(not string.find(client, '%.Text = "OBSERVED'),
+			"the OBSERVED - DO NOT SWALLOW subtitle is no longer written to a label")
+		-- Die Urteile bleiben: das sind Ergebnisse, keine Erzaehlung.
+		check(string.find(client, "PROTOCOL VIOLATION", 1, true) ~= nil
+			and string.find(client, "RATION COMPLETE", 1, true) ~= nil,
+			"the outcome lines (violation / ration complete) are kept")
+
+		-- Der Prompt darf nicht ins Messer schicken: unter Beobachtung ist
+		-- Schlucken die eine toedliche Handlung, und das HUD forderte sie an.
+		check(string.find(client, "cpApplyPrompt", 1, true) ~= nil,
+			"the eat prompt is decided in one place (cpApplyPrompt)")
+		check(string.find(client, 'watched and "HOLD" or "EAT"', 1, true) ~= nil,
+			"a watched player is told to HOLD, never to EAT")
+		local promptCalls = 0
+		for _ in string.gmatch(client, "cpApplyPrompt%(%)") do promptCalls = promptCalls + 1 end
+		check(promptCalls >= 2, "both the fork and the observer refresh the prompt",
+			tostring(promptCalls) .. " call sites")
+
+		-- Der Tisch haelt die Luft an, solange der Observer oben ist.
+		local diner = read(SERVER .. "CanteenDiner.luau")
+		local props = read(SERVER .. "CanteenProps.luau")
+		check(diner ~= nil and string.find(diner, "function CanteenDiner.hold", 1, true) ~= nil,
+			"CanteenDiner can hold its breath")
+		check(diner ~= nil and string.find(diner, "if not self.held then", 1, true) ~= nil,
+			"the blink loop skips instead of terminating, so no second thread is spawned")
+		check(props ~= nil and string.find(props, "pcall(diner.hold, diner, up)", 1, true) ~= nil,
+			"observerTo puts the whole table on hold")
+		-- Und der Tod ist wieder der AUTORISIERTE Clip, keine gerechnete Pose.
+		check(diner ~= nil and string.find(diner, 'AnimationIds.load(animator, "Player", "Death")', 1, true) ~= nil,
+			"the diner plays the authored Death clip again")
+		check(diner ~= nil and not string.find(diner, "local function slump", 1, true),
+			"no custom slump pose left")
+
 		-- 26.08.2026 (user): no dance in CANTEEN PROTOCOL, on any platform. The
 		-- trial-scoped attribute is what makes that hold BETWEEN a trial's rounds.
 		local ps1 = read("studio-src/StarterPlayer/StarterCharacterScripts/PS1Animate.client.luau")

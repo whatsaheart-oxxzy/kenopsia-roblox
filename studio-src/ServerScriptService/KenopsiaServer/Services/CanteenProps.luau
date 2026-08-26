@@ -567,6 +567,14 @@ function CanteenProps.build(arena, opts)
 
 	function self.observerTo(phase, duration)
 		if not self.alive then return end
+		-- 26.08.2026 (user): der ganze Tisch haelt die Luft an, sobald er sich
+		-- senkt -- niemand blinzelt mehr, bis er wieder hinter der Zeitung ist
+		-- (CanteenDiner.hold). Steht VOR dem boss-return, weil es beide Aufbauten
+		-- betrifft: mit Boss-Rig wie ohne.
+		local up = (phase == "lowering" or phase == "watching")
+		for _, diner in self.diners do
+			if diner then pcall(diner.hold, diner, up) end
+		end
 		if self.boss then
 			self.boss:setPhase(phase, duration)
 			return

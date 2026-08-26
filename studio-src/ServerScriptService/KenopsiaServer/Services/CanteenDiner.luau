@@ -146,60 +146,6 @@ local function sit(model, root)
 	end
 end
 
--- 26.08.2026 (user): DER KOERPER FAELLT AUF DEN TISCH, NICHT DARUNTER.
---
--- Bis hierher lief zum Sterben der Death-Clip (AnimationIds Player/Death),
--- einmal, geparkt auf dem letzten Frame. Das Parken funktionierte -- die POSE
--- war das Problem: der Clip ist ein STEHENDER Tod und legt die Figur auf Hoehe
--- des RIG-ROOTS ab. Der Root eines Diners sitzt aber `pelvisHeight` UNTER der
--- Sitzflaeche (siehe PivotTo in spawn), also ungefaehr auf Bodenhoehe. Die
--- Leiche landete damit flach auf dem Boden UNTER dem Tisch, wo die feste
--- Tischkamera sie gar nicht sieht -- genau der gemeldete Fehler.
---
--- Der Sitz ist in dieser Datei schon lange keine Animation, sondern ein
--- Bind-Pose-Offset (`sit` oben). Der Zusammenbruch ist jetzt dasselbe: der
--- Oberkoerper klappt um die Huefte nach vorn, bis Brust und Kopf auf der
--- Tischplatte liegen; die Beine bleiben gefaltet auf dem Stuhl, die Arme
--- fallen aus ihrer Pose. Das kann NICHT danebenlanden, weil nichts
--- translatiert wird -- es wird ausschliesslich rotiert, also bleibt der
--- Koerper da, wo er sitzt, und kippt nur nach vorn.
---
--- Der Winkel ist an der Geometrie belegt, nicht geraten: die Schultern liegen
--- bei dieser Arena-Skalierung auf Hoehe der Tischplatte (siehe den Kommentar
--- ueber HOVER). Klappt der Oberkoerper um ~90 Grad nach vorn, kommt der Kopf
--- auf Plattenhoehe und um Hals- plus Kopflaenge nach vorn zu liegen -- auf dem
--- Tisch. Etwas unter 90 Grad, damit die Brust aufliegt statt durchzurutschen.
---
--- Pro Sitzmarker feinjustierbar, wie DinerScale / DinerLift / DinerSeated:
---   DinerSlump  82   Grad, um die der Oberkoerper nach vorn faellt
-local SLUMP_FOLD = 82            -- Grad, Voreinstellung
-local SLUMP_HEAD = math.rad(18)  -- Kopf kippt zur Seite, statt gerade aufzuschlagen
-local SLUMP_ARM = math.rad(45)   -- Arme rutschen aus ihrer Pose auf die Platte
-
--- Aufgeteilt auf Becken und Brustbein: eine einzige Achse waere ein Scharnier
--- und liesse den Ruecken kerzengerade. Die Summe ist der bestellte Winkel.
-local function slump(model, root, foldDegrees)
-	local fold = math.rad(math.clamp(tonumber(foldDegrees) or SLUMP_FOLD, 0, 100))
-	local right = root.CFrame.RightVector
-	local forward = root.CFrame.LookVector
-	-- Gleiche Achse und gleiches Vorzeichen wie HIP_FOLD in `sit`: positiv um
-	-- die Rechts-Achse ist "nach vorn/unten".
-	for _, op in { { "LowerTorso", fold * 0.45 }, { "UpperTorso", fold * 0.55 } } do
-		local bone = model:FindFirstChild(op[1], true)
-		if bone and bone:IsA("Bone") then rotateBoneWorld(bone, right, op[2]) end
-	end
-	local head = model:FindFirstChild("Head", true)
-	if head and head:IsA("Bone") then rotateBoneWorld(head, forward, SLUMP_HEAD) end
-	-- Beide Arme geben nach. Der rechte verlaesst damit die Hover-Pose, in der
-	-- er die Gabel ueber dem Teller gehalten hat.
-	for _, side in { "Left", "Right" } do
-		local upperArm = model:FindFirstChild(side .. "UpperArm", true)
-		if upperArm and upperArm:IsA("Bone") then
-			rotateBoneWorld(upperArm, forward, side == "Left" and -SLUMP_ARM or SLUMP_ARM)
-		end
-	end
-end
-
 -- opts = { scale = <arena-derived world scale>, seatY = <chair surface Y> }
 function CanteenDiner.spawn(marker, parent, seatIndex, opts)
 	local template = findTemplate()
@@ -286,17 +232,9 @@ function CanteenDiner.spawn(marker, parent, seatIndex, opts)
 			-- bite, so the honest placeholder is no motion at all.
 			Eat = AnimationIds.load(animator, "Player", "Eat"),
 			Stab = AnimationIds.load(animator, "Player", "Stab"),
-			-- 26.08.2026 (user): KEIN Death-Clip mehr. Er ist ein stehender Tod
-			-- und legte die Leiche auf Root-Hoehe ab, also unter den Tisch --
-			-- siehe die lange Begruendung ueber `slump`. Der Zusammenbruch ist
-			-- jetzt eine Bind-Pose wie der Sitz selbst. AnimationIds.Player.Death
-			-- bleibt deklariert: wer den Clip zurueckholen will, laedt ihn hier
-			-- wieder und ruft ihn in die() auf.
+			Death = AnimationIds.load(animator, "Player", "Death"),
 		},
 		scale = scale,
-		-- Grad, um die der Oberkoerper beim Tod nach vorn faellt. Am Sitzmarker
-		-- feinjustierbar (DinerSlump), wie DinerScale und DinerLift.
-		slumpFold = tonumber(marker:GetAttribute("DinerSlump")) or SLUMP_FOLD,
 		-- The fork rig's own cutlery (nil on the bare PS1Player template).
 		fork = model:FindFirstChild("Fork", true),
 		beans = model:FindFirstChild("Beans_Fork", true),
@@ -321,17 +259,36 @@ function CanteenDiner.face(self, name)
 end
 
 -- A blink every 3-5 s for 0.1 s: the only motion a still diner is allowed.
+--
+-- 26.08.2026 (user): ...und selbst das hoert auf, solange der Observer oben ist.
+-- Der Tisch haelt die Luft an. Es ist die billigste Regung, die es hier gibt --
+-- ein Texturwechsel auf dem Kopf -- und trotzdem faellt ihr AUSBLEIBEN auf:
+-- vier Figuren, die im selben Moment aufhoeren zu blinzeln und mit offenen
+-- Augen dasitzen, bis er sich wieder hinter die Zeitung senkt. Kein Text, kein
+-- Ton, keine neue Instanz.
+--
+-- Bewusst KEIN Abbruch der Schleife: `held` laesst sie weiterlaufen und
+-- ueberspringt nur den Blinzler. Ein Beenden und Neustarten haette bei jedem
+-- Phasenwechsel einen zweiten Thread auf denselben Diner gelegt.
 function CanteenDiner.startBlinking(self)
 	if not AnimationIds.texture("PlayerBlink") then return end
 	task.spawn(function()
 		while self.alive and not self.dead and not self.expression do
 			task.wait(3 + math.random() * 2)
 			if not (self.alive and not self.dead and not self.expression) then break end
-			self:face("Blink")
-			task.wait(0.1)
-			if self.alive and not self.dead and not self.expression then self:face(nil) end
+			if not self.held then
+				self:face("Blink")
+				task.wait(0.1)
+				if self.alive and not self.dead and not self.expression then self:face(nil) end
+			end
 		end
 	end)
+end
+
+-- Augen auf, solange er zusieht. Gesetzt von CanteenProps.observerTo.
+function CanteenDiner.hold(self, on)
+	if not self.alive then return end
+	self.held = on and true or false
 end
 
 -- Hurt / Happy stick and end the blinking.
@@ -411,28 +368,68 @@ function CanteenDiner.eat(self, duration)
 	end)
 end
 
+-- One-shot, then frozen on the last frame so the body stays down.
+--
+-- The hold must survive a slow frame. Parking the track with AdjustSpeed(0)
+-- shortly before its end only works if the thread wakes while the track is
+-- still playing: task.wait resumes on the first Heartbeat past the deadline,
+-- and the animator has already stepped that frame -- so on any frame longer
+-- than the margin the non-looped track reaches its end, auto-stops, and the
+-- body springs back to the seated bind pose and STAYS there (Idle was stopped
+-- and `dead` blocks every other play). Hence both belts: a generous margin
+-- AND a Stopped handler that re-parks the pose if the track ends anyway.
+local DEATH_HOLD_MARGIN = 0.1
+
+local function parkAtEnd(self, death)
+	if not (self.alive and self.dead) then return end
+	local length = death.Length
+	if length <= 0 then return end
+	if not death.IsPlaying then death:Play(0, 1, 0) end
+	death:AdjustSpeed(0)
+	death.TimePosition = math.max(0, length - 0.03)
+end
+
 function CanteenDiner.die(self)
 	if not self.alive or self.dead then return end
 	self.dead = true
 	self.generation += 1
 	self:express("Hurt")
-	-- Alles anhalten, auch einen Bissen in der Luft: die Transforms der Clips
-	-- stapeln sich sonst auf die Bind-Pose, die gleich umgeklappt wird, und der
-	-- Tote wuerde weiteressen. Ohne Ausblendzeit -- ein Schuss ist ein Schnitt,
-	-- und eine auslaufende Blende wuerde gegen die neue Bind-Pose arbeiten.
-	stopAll(self, nil, 0)
-	slump(self.model, self.root, self.slumpFold)
+	local death = self.tracks.Death
+	stopAll(self, death, 0.05)
+	if not death then return end
+	death.Looped = false
+	death.Priority = Enum.AnimationPriority.Action4
+	-- Fires whether the clip ran out or something stopped it. Either way the
+	-- corpse must not stand back up.
+	self.deathStopped = death.Stopped:Connect(function()
+		task.defer(parkAtEnd, self, death)
+	end)
+	death:Play(0.05, 1, 1)
+	task.spawn(function()
+		-- Wait for the length to resolve, then park just before the end. A clip
+		-- that resolves later still ends held, because Stopped catches it.
+		local deadline = os.clock() + 4
+		while self.alive and death.Length <= 0 and os.clock() < deadline do task.wait(0.05) end
+		if not self.alive or death.Length <= 0 then return end
+		task.wait(math.max(0, death.Length - DEATH_HOLD_MARGIN - death.TimePosition))
+		if not (self.alive and self.dead) then return end
+		if death.IsPlaying then
+			death:AdjustSpeed(0)
+			death.TimePosition = math.max(0, death.Length - 0.03)
+		else
+			parkAtEnd(self, death)
+		end
+	end)
 end
 
 function CanteenDiner.destroy(self)
 	if not self.alive then return end
 	self.alive = false
 	self.generation += 1
-	-- Hier stand das Aufraeumen der Death-Stopped-Verbindung. Die gibt es nicht
-	-- mehr: der Tod ist kein Clip mehr, der auslaufen und zurueckfedern koennte,
-	-- sondern eine Bind-Pose (siehe `slump`). Damit faellt auch die ganze
-	-- Halte-Mechanik weg, die den letzten Frame gegen langsame Frames sichern
-	-- musste -- eine Bind-Pose haelt von selbst.
+	if self.deathStopped then
+		self.deathStopped:Disconnect()
+		self.deathStopped = nil
+	end
 	for _, track in self.tracks do pcall(track.Stop, track, 0) end
 	if self.model.Parent then self.model:Destroy() end
 end

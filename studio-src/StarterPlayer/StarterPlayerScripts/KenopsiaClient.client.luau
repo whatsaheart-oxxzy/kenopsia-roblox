@@ -1627,6 +1627,17 @@ local canteenActive = false
 local canteenHud = nil
 local cpPlateReadyAt = 0
 local cpMouthReadyAt = 0
+-- 26.08.2026 (user): der Client merkt sich jetzt, was der Observer gerade tut
+-- und wie voll die Gabel ist. Beides zusammen entscheidet, was der Prompt sagt
+-- (siehe cpApplyPrompt) -- vorher wusste die Gabel nichts vom Observer und rief
+-- "EAT", waehrend er zusah. cpPhaseToken bricht den Herzschlag-Puls ab, wenn
+-- die Phase wechselt.
+--
+-- Alle vier in EINER Anweisung, cpApplyPrompt hier nur deklariert und weiter
+-- unten zugewiesen: tests/glyphs.lua deckelt diese Datei auf 180 top-level
+-- `local`-ANWEISUNGEN (nicht Namen), weil der Chunk nahe an Luaus 200er-Grenze
+-- fuer lebende Locals sitzt. Vier eigene Zeilen haetten den Deckel gerissen.
+local cpPhase, cpForkLoad, cpPhaseToken, cpApplyPrompt = nil, 0, 0, nil
 
 -- Matched to the server MIN_PLATE_INTERVAL / MIN_MOUTH_INTERVAL. These exist to
 -- stop the client spamming a remote it already knows will be refused; they are
@@ -1737,6 +1748,28 @@ local function buildCanteenHud()
 	return f
 end
 
+-- 26.08.2026 (user): DER PROMPT DARF NICHT INS MESSER SCHICKEN.
+--
+-- Er stand auf "EAT", sobald die Gabel voll war -- unabhaengig davon, ob der
+-- Observer gerade zusieht. Genau dann ist Schlucken aber die eine Handlung, die
+-- einen umbringt: das HUD forderte also im gefaehrlichsten Moment die toedliche
+-- Eingabe. Jetzt entscheiden Gabel UND Phase gemeinsam, und unter Beobachtung
+-- sagt dasselbe Label HOLD in Rot.
+--
+-- Aufgerufen aus cpSetState (Gabel aendert sich) und cpSetPhase (Observer
+-- aendert sich), damit es nie eine Kombination gibt, die niemand nachzieht.
+-- Zuweisung, kein `local` -- der Name ist oben schon deklariert, siehe dort.
+cpApplyPrompt = function()
+	local hud = canteenHud
+	local panel = hud and hud:FindFirstChild("Panel")
+	local prompt = panel and panel:FindFirstChild("EatPrompt")
+	if not prompt then return end
+	local watched = cpPhase == "watching"
+	prompt.Visible = cpForkLoad >= K.CP_FORK_CAPACITY
+	prompt.Text = watched and "HOLD" or "EAT"
+	prompt.TextColor3 = watched and K.CP_DANGER or K.CP_SAFE
+end
+
 local function cpSetState(peas, forkLoad, eaten, total)
 	local hud = buildCanteenHud()
 	hud.Panel.Ration.Text = string.format("PLATE %02d    EATEN %02d/%02d", peas, eaten, total)
@@ -1762,27 +1795,57 @@ local function cpSetState(peas, forkLoad, eaten, total)
 		prompt.ZIndex = 8
 		prompt.Parent = hud.Panel
 	end
-	prompt.Visible = forkLoad >= K.CP_FORK_CAPACITY
+	cpForkLoad = forkLoad
+	cpApplyPrompt()
 end
 
 local function cpSetPhase(phaseName)
 	local hud = buildCanteenHud()
-	local label = hud.Phase
 	local glow = hud.Edge.Glow
+	-- 26.08.2026 (user): DIE BEIDEN OBSERVER-TEXTE SIND WEG.
+	--
+	-- Hier stand "OBSERVER DESCENDING" und "OBSERVED - DO NOT SWALLOW". Beides
+	-- war Doppelung: der Observer SENKT SICH SICHTBAR ab, sein Gesicht springt
+	-- auf Angry, und waehrend er zusieht schwenkt er gestuft nach rechts, links,
+	-- Mitte (CanteenBoss.applyPhase). Das ist der Tell -- mit den Augen lesbar,
+	-- ohne eine Zeile Client-Code, und von einem Client nicht vor sich selbst zu
+	-- verstecken. Ein Untertitel darueber nimmt dem Raum die Arbeit ab und sagt
+	-- dem Spieler, er solle aufs HUD schauen statt an den Tisch.
+	--
+	-- Was bleibt, ist der Rand: Farbe fuer die Phase, und im Beobachtet-Zustand
+	-- ein langsamer Puls. Ein Puls ist naemlich das Einzige am Bildschirmrand,
+	-- was man im peripheren Blick bemerkt, waehrend man auf den Teller schaut --
+	-- und er sagt nichts, er macht nur Druck.
+	--
+	-- Das Phase-Label selbst bleibt bestehen: cpdone und cpout schreiben dort
+	-- ihr Ergebnis hinein ("RATION COMPLETE", "PROTOCOL VIOLATION"). Das sind
+	-- Urteile, keine Erzaehlung -- die duerfen bleiben.
+	cpPhase = phaseName
+	cpPhaseToken += 1
+	local token = cpPhaseToken
+	cpApplyPrompt()
 	if phaseName == "lowering" then
-		label.Text = "OBSERVER DESCENDING"
-		label.TextColor3 = K.CP_WARN
 		glow.Color = K.CP_WARN
 		TweenService:Create(glow, TweenInfo.new(Feel.panel(machine:GetAttribute("Platform"))), { Transparency = 0.45 }):Play()
 	elseif phaseName == "watching" then
-		label.Text = "OBSERVED - DO NOT SWALLOW"
-		label.TextColor3 = K.CP_DANGER
 		glow.Color = K.CP_DANGER
 		-- Snappier than the wind-up on purpose: the warning may fade in slowly,
 		-- the danger may not.
 		TweenService:Create(glow, TweenInfo.new(Feel.Feedback.Jolt), { Transparency = 0 }):Play()
+		task.spawn(function()
+			task.wait(Feel.Feedback.Jolt)
+			-- Herzschlag, bis die Phase weiterzieht. Gegen cpPhaseToken
+			-- gesichert, damit ein alter Puls nicht in die naechste Phase
+			-- hineinblinkt.
+			while cpPhaseToken == token do
+				TweenService:Create(glow, TweenInfo.new(0.42), { Transparency = 0.3 }):Play()
+				task.wait(0.42)
+				if cpPhaseToken ~= token then break end
+				TweenService:Create(glow, TweenInfo.new(0.28), { Transparency = 0 }):Play()
+				task.wait(0.28)
+			end
+		end)
 	else
-		label.Text = ""
 		TweenService:Create(glow, TweenInfo.new(Feel.panel(machine:GetAttribute("Platform"))), { Transparency = 1 }):Play()
 	end
 end
