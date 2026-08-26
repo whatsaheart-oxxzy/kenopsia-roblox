@@ -109,7 +109,9 @@ local EXECUTION_GRACE = 8.0
 -- feuert onFire am Muendungsblitz ab, das hier haengt also am Blitz und nicht an
 -- der Rundenuhr -- und es haelt die Runde auch nicht auf: finish() laeuft
 -- unabhaengig weiter, pendingExecutions wartet nicht auf diesen Timer.
-local SHATTER_BEAT = 0.15
+-- 26.08.2026 (user): 0.15 -> 0.25. Der Treffer soll stehen duerfen, bevor er
+-- zerlegt wird.
+local SHATTER_BEAT = 0.25
 
 -- RANKING BANDS. runRound returns one ordering key per player and MachineFlow
 -- sums those across rounds, then ranks and distributes exactly 1700. The bands
@@ -492,6 +494,24 @@ local function eliminate(st, userId, reason)
 			if diner then st.props.dinerDie(ps.seat) end
 			if not at then return end
 			BloodFX.shatter(diner and diner.model or nil, at, st.audience)
+			-- Schritt 4: WAS AM PLATZ BLEIBT, BLEIBT AUF DEM TISCH.
+			--
+			-- Ich hatte diesen Schritt fuer erledigt erklaert, weil shatter selbst
+			-- vier Lachen legt. Nachgesehen stimmt das nicht: POOL_LIFE ist 18 s --
+			-- nach 7 s trocknen sie ein, nach 18 blenden sie aus, nach rund 21 ist
+			-- der Platz wieder blitzsauber. Die Runde laeuft aber 60 s. Wer bei
+			-- Sekunde 15 erschossen wird, hinterlaesst ab Sekunde 36 nichts mehr,
+			-- und die Ueberlebenden essen die restliche halbe Minute neben einem
+			-- Stuhl weiter, an dem nie jemand gesessen zu haben scheint. Dazu
+			-- kommt MAX_POOLS = 30 mit Verdraengung: bei vier Hinrichtungen raeumt
+			-- der letzte Fleck den ersten weg.
+			--
+			-- Diese eine Lache bleibt deshalb bis zum Rundenende stehen. Sie
+			-- trocknet ein wie jede andere -- sie verschwindet nur nicht. Etwas
+			-- kleiner als der frische Spritzer von shatter (3.0-4.2), damit sie
+			-- darunter sitzt und das ist, was uebrig bleibt, wenn der Rest
+			-- weggetrocknet ist.
+			BloodFX.mark(at, 2.6, st.audience)
 			-- 26.08.2026 (user): 0.9 -> 1.5. Der Wert war als "kleiner als eine
 			-- Mine" gedacht, aber das ist der falsche Vergleich: eine Mine geht
 			-- IRGENDWO im Feld hoch, die Hinrichtung passiert am selben Tisch, an

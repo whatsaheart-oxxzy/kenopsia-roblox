@@ -69,6 +69,24 @@ local function v(pos) return { pos.X, pos.Y, pos.Z } end
 function BloodFX.sound(pos, name, recipients) ev({ t = "sound", p = v(pos), name = name }, recipients) end
 function BloodFX.burst(pos, intensity, recipients) ev({ t = "burst", p = v(pos), k = intensity or 1 }, recipients) end
 function BloodFX.pool(pos, size, recipients) ev({ t = "pool", p = v(pos), s = size }, recipients) end
+-- 26.08.2026 (user): EINE LACHE, DIE BLEIBT.
+--
+-- Eine normale pool() lebt POOL_LIFE = 18 s: nach 7 s zieht sie ins Getrocknete,
+-- nach 18 s blendet sie aus und wird geloescht -- rund 21 s, dann ist der Platz
+-- wieder sauber. Fuer die DEAD ZONE stimmt das, dort ist die Runde ohnehin
+-- gleich vorbei und der Fleck liegt im Feld. Am Tisch der CANTEEN ist es
+-- falsch: die Runde laeuft 60 s, die Ueberlebenden essen also noch eine halbe
+-- Minute neben einem Platz weiter, an dem inzwischen NICHTS mehr darauf
+-- hindeutet, dass dort jemand sass.
+--
+-- Dieselbe Lache, aber ohne Ablaufdatum und ausserhalb der MAX_POOLS-Verdraengung
+-- (sonst raeumt der vierte Tote den ersten Fleck weg). Sie trocknet trotzdem
+-- ein -- nur verschwindet sie nicht. Abgeraeumt wird sie am Rundenende von
+-- BloodFX.clear, das drueben fx:ClearAllChildren() ausloest; sie kann also
+-- nicht in die naechste Runde lecken.
+function BloodFX.mark(pos, size, recipients)
+	ev({ t = "pool", p = v(pos), s = size, keep = true }, recipients)
+end
 function BloodFX.gibs(pos, count, long, recipients) ev({ t = "gibs", p = v(pos), n = count or 5, long = long == true }, recipients) end
 function BloodFX.fountain(pos, recipients) ev({ t = "fountain", p = v(pos) }, recipients) end
 function BloodFX.kill(pos, recipients) ev({ t = "kill", p = v(pos) }, recipients) end

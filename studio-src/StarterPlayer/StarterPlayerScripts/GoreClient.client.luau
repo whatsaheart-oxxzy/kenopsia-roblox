@@ -104,7 +104,12 @@ local function groundSplat(pos, big)
 end
 
 -- Blutlache: zwei leicht verdrehte nasse Platten; waechst, trocknet, verblasst
-local function pool(pos, size)
+-- `keep` = die Lache bleibt bis zum Rundenende stehen (BloodFX.mark). Sie
+-- trocknet wie jede andere ein, blendet aber nicht aus und nimmt auch nicht an
+-- der MAX_POOLS-Verdraengung teil -- sonst wuerde der vierte Tote den Fleck des
+-- ersten wegraeumen. clearAll() faengt sie trotzdem: es leert den ganzen
+-- FX-Ordner, nicht nur die `pools`-Liste.
+local function pool(pos, size, keep)
 	refreshRayFilter()
 	local hit = workspace:Raycast(pos + Vector3.new(0, 2.5, 0), Vector3.new(0, -12, 0), rayParams)
 	if not hit then return end
@@ -128,18 +133,22 @@ local function pool(pos, size)
 		local s = size * (layer == 1 and 1 or 0.65)
 		TweenService:Create(p, TweenInfo.new(1.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 			{ Size = Vector3.new(s, s * (0.7 + math.random() * 0.5), 0.05) }):Play()
-		table.insert(pools, p)
+		-- Eintrocknen gilt fuer beide: frisches Blut wird dunkel, ob es liegen
+		-- bleibt oder nicht.
 		task.delay(POOL_LIFE * 0.4, function()
 			if p.Parent then TweenService:Create(p, TweenInfo.new(4), { Color = DRIED }):Play() end
 		end)
-		task.delay(POOL_LIFE, function()
-			if p.Parent then
-				TweenService:Create(p, TweenInfo.new(3), { Transparency = 1 }):Play()
-				Debris:AddItem(p, 3.1)
-			end
-		end)
+		if not keep then
+			table.insert(pools, p)
+			task.delay(POOL_LIFE, function()
+				if p.Parent then
+					TweenService:Create(p, TweenInfo.new(3), { Transparency = 1 }):Play()
+					Debris:AddItem(p, 3.1)
+				end
+			end)
+		end
 	end
-	evict(pools, MAX_POOLS)
+	if not keep then evict(pools, MAX_POOLS) end
 end
 
 -- Troepfchen-Simulation ------------------------------------------------------
@@ -409,7 +418,7 @@ GoreEvent.OnClientEvent:Connect(function(p)
 	elseif p.t == "maim" then maim(pos)
 	elseif p.t == "hit" then hit(pos)
 	elseif p.t == "burst" then burst(pos, p.k)
-	elseif p.t == "pool" then pool(pos, p.s)
+	elseif p.t == "pool" then pool(pos, p.s, p.keep == true)
 	elseif p.t == "gibs" then gibs(pos, p.n, p.long)
 	elseif p.t == "fountain" then fountain(pos)
 	elseif p.t == "splat" then groundSplat(pos, false)

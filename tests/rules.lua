@@ -543,6 +543,27 @@ do
 			"the body comes apart a beat AFTER the hit, not in the same frame")
 		check(canteen ~= nil and string.find(canteen, "if not roundActive(st) or not st.props then return end", 1, true) ~= nil,
 			"and that timer cannot outlive the round it belongs to")
+
+		-- Schritt 4: was am Platz bleibt, bleibt auf dem Tisch. shatters eigene
+		-- Lachen leben POOL_LIFE = 18 s (rund 21 bis sie ganz weg sind), die Runde
+		-- laeuft 60 -- ohne eine bleibende Spur ist der Stuhl nach einem Drittel
+		-- wieder blitzsauber. Dazu verdraengt MAX_POOLS die aeltesten zuerst.
+		local blood = read(SERVER .. "BloodFX.luau")
+		local gore = read("studio-src/StarterPlayer/StarterPlayerScripts/GoreClient.client.luau")
+		check(blood ~= nil and string.find(blood, "function BloodFX.mark", 1, true) ~= nil,
+			"BloodFX offers a mark that outlasts a normal pool")
+		check(blood ~= nil and string.find(blood, "keep = true", 1, true) ~= nil,
+			"and flags it so the client can tell the two apart")
+		check(gore ~= nil and string.find(gore, "local function pool(pos, size, keep)", 1, true) ~= nil,
+			"GoreClient's pool takes the flag")
+		check(gore ~= nil and string.find(gore, "if not keep then evict(pools, MAX_POOLS) end", 1, true) ~= nil,
+			"a kept mark is exempt from eviction, so the fourth kill cannot erase the first")
+		check(canteen ~= nil and string.find(canteen, "BloodFX.mark(at, 2.6, st.audience)", 1, true) ~= nil,
+			"the execution leaves exactly one lasting stain at the seat")
+		-- Sie muss trotzdem am Rundenende verschwinden, sonst leckt sie in die
+		-- naechste Runde: clearAll leert den ganzen FX-Ordner, nicht nur `pools`.
+		check(gore ~= nil and string.find(gore, "fx:ClearAllChildren()", 1, true) ~= nil,
+			"and the round-end clear still catches it")
 		-- Schritt 2: nichts bleibt ueber dem leeren Stuhl stehen. Die Gabel des
 		-- Fork-Rigs haengt am Modell und geht mit; die des blanken Rigs ist ein
 		-- Seat-Prop und musste eigens abgeraeumt werden.
