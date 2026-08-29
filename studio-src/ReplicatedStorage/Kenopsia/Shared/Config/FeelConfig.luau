@@ -228,6 +228,75 @@ Feel.Canteen = {
 	RustleVolume = 0.5,
 }
 
+-- DEAD ZONE POLISH (Phase 3b, 30.08.2026) -- the sonar economy, the trial-long
+-- craters, the mid-round speed step, the BLACKOUT SWEEP mutator and the scrap
+-- tags. Consumed by Services/Minefield on the server; the standalone
+-- SonarClient sender reads nothing here (it only sends -- the server spends).
+-- Like the Canteen block, nothing here reaches KenopsiaClient. Round
+-- length stays Pacing.RoundSeconds.minefield and rounds per trial stay
+-- Pacing.ROUNDS -- this block only owns how the field behaves.
+--   SonarPulses      pulses per runner per round. Spent SERVER-side; the old
+--                    held-to-repeat trigger in KenopsiaClient simply drains
+--                    the same budget faster -- holding F is a choice, not an
+--                    exploit.
+--   SonarRadius      studs a pulse reveals around the pulser. Replaces the
+--                    module-local SCAN_RADIUS 8 (+ CELL fringe): one number,
+--                    one file.
+--   SonarReveal      seconds the server-part glow stands on a revealed mine.
+--                    The reveal is EVERYONE'S: ring and glows are server
+--                    parts in DZ_Runtime, the server's picture like the
+--                    canteen plate.
+--   SonarStillTime   BLACKOUT SWEEP only: a pulse fires only after this many
+--                    seconds of stillness, measured from the server's OWN
+--                    20 Hz position samples -- never from client claims.
+--   CraterClearRadius studs around a previous-round crater in which no new
+--                    mine is seeded. A crater is proven-safe ground; reading
+--                    the scars is reading the path.
+--   SpeedStepAt      fraction of RoundSeconds.minefield at which the ONE
+--                    mid-round compactor speed step lands.
+--   SpeedStepFactor  that step's multiplier on the current phase speed,
+--                    published through the same MF_Z0/T0/Speed anchor the
+--                    clients already integrate.
+--   SweepFactor      BLACKOUT SWEEP: multiplier on the compactor's clamped
+--                    base speed, final round only. Worst stack 6.5 * 1.15 *
+--                    1.12 = 8.37 stays under the ramped sprint (10) -- escape
+--                    on foot survives the mutator; walking (7) does not.
+--   ScrapTags /      tags per round in the most-mined third of the corridor,
+--   ScrapDetail      and the raw ordering-key detail each pays on pickup.
+--                    Minefield clamps progress + scrap under its DETAIL_CAP
+--                    (999) so no eliminated key can reach the escape band;
+--                    tests/feel.lua re-proves min(1000 + Tags*Detail, 999)+1
+--                    < 2000.
+--   ScrapHex         fallback tint when TrialKit.PALETTE.Signal is absent
+--                    (the HotPeaHex pattern, one shelf up).
+--   HornSound /      the speed-step horn slot (SoundService.KenopsiaAudio.
+--   HornPlaceholderId / SFX.Minefield.<HornSound>), CRT-hum pattern: named
+--   HornVolume       asset first, then the placeholder id, 0 = silent with
+--                    one warn until the asset lands (MASTERPLAN P6).
+--   CascadeSeconds   length of the lane-light cascade telegraphing the step
+--                    (the 11 LaneLight parts, flashed emissive in sequence,
+--                    server-side -- never Light objects, low quality drops
+--                    those). Held >= Feel.Death.TelegraphMin by
+--                    tests/feel.lua: the step is a lethal-adjacent event and
+--                    gets the lethal minimum warning.
+Feel.Minefield = {
+	SonarPulses = 3,
+	SonarRadius = 12,
+	SonarReveal = 2.5,
+	SonarStillTime = 0.5,
+	CraterClearRadius = 6,
+	SpeedStepAt = 0.55,
+	SpeedStepFactor = 1.12,
+	SweepFactor = 1.15,
+	ScrapTags = 3,
+	ScrapDetail = 150,
+	ScrapHex = "46E8E0",
+	HornSound = "Horn",
+	HornPlaceholderId = 0,
+	HornVolume = 0.6,
+	CascadeSeconds = 0.7,
+}
+
 -- Weapon / scope feel (not a Machine element: Quad is allowed here).
 Feel.Scope = { ZoomSeconds = 0.18 }
 

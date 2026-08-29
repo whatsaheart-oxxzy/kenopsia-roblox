@@ -289,6 +289,46 @@ check(Pacing.Timing.CanteenSettlement ~= nil and Pacing.Timing.CanteenSettlement
 	and Pacing.Timing.CanteenSettlement <= 6,
 	"settlement window in (0, 6] s", tostring(Pacing.Timing.CanteenSettlement))
 
+-- DEAD ZONE POLISH (Phase 3b, 30.08.2026) -- Feel.Minefield. The literals
+-- 1000 / 999 / 2000 mirror Minefield's progress scale, DETAIL_CAP and
+-- ESCAPE_BAND: the band proof below re-runs the exact clamp the scoring
+-- performs, so a config change that could tip an eliminated key into the
+-- escape band fails HERE, offline, not in a live round.
+print("Dead Zone polish (Phase 3b)")
+local MF = Feel.Minefield
+check(type(MF) == "table", "Minefield section present")
+check(MF.SonarPulses >= 1 and MF.SonarPulses <= 6 and MF.SonarPulses % 1 == 0,
+	"sonar pulses whole and in 1..6", tostring(MF.SonarPulses))
+check(MF.SonarRadius >= 6 and MF.SonarRadius <= 30,
+	"sonar radius in [6, 30]", tostring(MF.SonarRadius))
+check(MF.SonarReveal > 0 and MF.SonarReveal <= 6,
+	"sonar reveal in (0, 6]", tostring(MF.SonarReveal))
+check(MF.SonarStillTime > 0 and MF.SonarStillTime <= 2,
+	"blackout still time in (0, 2]", tostring(MF.SonarStillTime))
+check(MF.SpeedStepAt > 0.3 and MF.SpeedStepAt < 0.8,
+	"speed step lands mid-round (0.3, 0.8)", tostring(MF.SpeedStepAt))
+check(MF.SpeedStepFactor > 1 and MF.SpeedStepFactor <= 1.5,
+	"speed step factor in (1, 1.5]", tostring(MF.SpeedStepFactor))
+check(MF.SweepFactor > 1 and MF.SweepFactor <= 1.5,
+	"blackout sweep factor in (1, 1.5]", tostring(MF.SweepFactor))
+check(MF.CraterClearRadius >= 4 and MF.CraterClearRadius <= 12,
+	"crater clearance covers a cell, not a lane (CELL=4)", tostring(MF.CraterClearRadius))
+check(MF.ScrapTags * MF.ScrapDetail < 1000,
+	"scrap alone stays under the 1000-wide detail band", tostring(MF.ScrapTags * MF.ScrapDetail))
+-- The band proof: max progress detail (1000) + max scrap, clamped by
+-- Minefield's DETAIL_CAP (999), plus the +1 clean-run tiebreaker must stay
+-- strictly under ESCAPE_BAND (2000). min(1000+450, 999)+1 = 1000 < 2000.
+check(math.min(1000 + MF.ScrapTags * MF.ScrapDetail, 999) + 1 < 2000,
+	"eliminated detail can never reach the escape band")
+check(MF.CascadeSeconds >= Feel.Death.TelegraphMin,
+	"cascade telegraphs at least Feel.Death.TelegraphMin", tostring(MF.CascadeSeconds))
+check(MF.HornPlaceholderId >= 0,
+	"horn placeholder id is a number (0 = silent + one warn)")
+check(MF.HornVolume > 0 and MF.HornVolume <= 1,
+	"horn is a tell, not a track", tostring(MF.HornVolume))
+check(type(MF.ScrapHex) == "string" and string.match(MF.ScrapHex, "^%x%x%x%x%x%x$") ~= nil,
+	"scrap fallback tint is a 6-digit hex string", tostring(MF.ScrapHex))
+
 print("No duplicated Pacing.Timing values")
 for k in pairs(Pacing.Timing) do
 	check(Feel[k] == nil, "Feel has no top-level " .. k)

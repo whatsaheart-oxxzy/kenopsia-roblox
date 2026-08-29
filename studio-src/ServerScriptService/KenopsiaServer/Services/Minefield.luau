@@ -4,6 +4,15 @@
 -- pulst eine Welle und deckt Minen im Nahbereich persoenlich auf. Explosionen
 -- toeten im Kernradius, werfen Ueberlebende in den Zombie-Crawl und lassen
 -- Krater zurueck. Marker stammen aus dem von Hand gebauten workspace["Dead Zone"].
+--
+-- Phase 3b (30.08.2026, DEAD ZONE polish): der Sonar ist eine OEKONOMIE (drei
+-- Pulse pro Runde, Antwort als SERVER-Teile fuer alle statt per-player Marks),
+-- Krater stehen das ganze TRIAL (DZ_Craters neben DZ_Runtime, die Aussaat
+-- meidet alte Einschlaege), die Maschine macht zur Rundenmitte EINEN
+-- telegrafierten Tempo-Schritt (Lane-Light-Kaskade + Horn), die LETZTE Runde
+-- faehrt den BLACKOUT SWEEP (Puls nur aus dem Stand, Basistempo x SweepFactor),
+-- und drei Scrap-Tags bezahlen Ordnungsschluessel-Detail. Alle neuen Zahlen:
+-- Feel.Minefield (FeelConfig); Rundenzahl und -laenge bleiben Pacing.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -36,16 +45,32 @@ Minefield._guard = nil :: { cleanup: (() -> ())? }?
 --   under the runner's walk speed (7)  -> escaping on foot stays possible
 --   over the crawl speed (4.2)         -> being maimed still costs the round
 local MAX_SHRED_SPEED = 6.5   -- runner walks at 7
-local MIN_SHRED_SPEED = 4.6   -- runner crawls at 4.2
+local MIN_SHRED_SPEED = 4.6   -- was: "runner crawls at 4.2" -- see CRAWL_SPEED
 -- 23.08.2026: the crawl speed was only ever a number in the comment above.
 -- The client owns WalkSpeed (KenopsiaClient applyMovement: 7 in "scan") and
 -- nothing told it a runner had been maimed, so the attribute played the
--- crawl clip over a runner still walking at 7 -- faster than the machine,
--- which is the "no consequence" case the clamps exist to rule out. The
--- server now writes this onto the humanoid the moment XBotCrawl latches;
--- it replicates down, and the client does not rewrite WalkSpeed again until
--- the next role packet. MUST stay under MIN_SHRED_SPEED.
-local CRAWL_SPEED = 4.2
+-- crawl clip over a runner still walking at 7. The server now writes this
+-- onto the humanoid the moment XBotCrawl latches; it replicates down.
+--
+-- 26.08.2026 (user, MP-08 S8): das Krabbeln war 4.2 und damit deutlich langsamer
+-- als der Lauf; der Plan verlangte Lauftempo (10). Auf 10 waere der Compactor
+-- aber wirkungslos geworden -- er ist auf MAX_SHRED_SPEED = 6.5 gedeckelt und
+-- holt oberhalb davon NIEMANDEN mehr ein. Die Sache ist bei 6.5 binaer: jeder
+-- Wert darueber ist derselbe Zustand ("entkommt immer"), nur anders lackiert.
+--
+-- 26.08.2026 (user, Entscheidung): 6.0 -- der einzige echte Mittelweg. Deutlich
+-- fluessiger als die alten 4.2, aber INNERHALB des Compactor-Bandes
+-- (MIN_SHRED_SPEED 4.6 .. MAX_SHRED_SPEED 6.5). Der Compactor faehrt
+-- sweepDistance / sweepBudget, auf dieses Band geklemmt: in Runden, in denen
+-- er nahe am oberen Klemmwert liegt, holt er einen Krabbler ein, darunter nicht.
+-- Die Beinamputation kostet damit wieder Zeit, statt nur Optik zu sein -- aber
+-- sie ist kein sicheres Todesurteil mehr.
+--
+-- Der Client rampt einen Laeufer von 7 auf 10 (applyMovement + Ramp-Schleife).
+-- Ein Krabbler faehrt die Rampe NICHT: applyMovement laesst WalkSpeed in Ruhe,
+-- solange XBotCrawl gesetzt ist, und die Ramp-Schleife nimmt ihn wieder aus.
+-- Dieser Wert hier ist also der Endwert, nicht der Rampenfuss.
+local CRAWL_SPEED = 6.0
 -- Seconds allowed for the APPROACH -- the stretch from the marker to the
 -- players' line, where the machine is behind everyone and threatens nobody.
 -- Spending gameplay seconds there is what made the round 88 s. Lower this to
@@ -87,7 +112,16 @@ local CHAIN_FUSE = 0.30
 local CHAIN_RADIUS = 6
 local KILL_RADIUS = 4
 local KNOCK_RADIUS = 8
-local SCAN_RADIUS = 8      -- Scanner-Puls zeigt Minen innerhalb 8 Studs
+-- Phase 3b: SCAN_RADIUS (8, plus CELL Saum) ist gestrichen. Der Puls liest
+-- jetzt Feel.Minefield.SonarRadius -- die Zahl steht bei ihren Geschwistern in
+-- FeelConfig (P1.5-Regel: was das Gefuehl stellt, wohnt dort, nicht hier).
+-- Phase 3b: Scrap-Aufnahme ist ein 20-Hz-Naehecheck wie jeder Kill in dieser
+-- Datei -- niemals Touched. 2.5 haelt sie innerhalb der eigenen Zelle (CELL 4).
+local SCRAP_RADIUS = 2.5
+-- Phase 3b: "steht still" fuer das BLACKOUT-SWEEP-Tor -- Verschiebung pro
+-- 20-Hz-Probe der EIGENEN Schleife. 0.15 Studs/Tick = 3 Studs/s; ein Geher (7)
+-- oder Krabbler (6.0) reisst es, Physik-Zittern im Stand nicht.
+local STILL_EPSILON = 0.15
 -- Replaced by the banded ordering key at the end of the round. Kept out of
 -- the scoring entirely: CLEANRUN_BONUS as POINTS was what let a later
 -- escapee outrank an earlier one, which the plan lists as an error not to
@@ -101,6 +135,54 @@ local TrialInput
 -- state it points at carries its owning room/session so a stale or foreign
 -- packet cannot be serviced.
 local current = nil
+
+-- Phase 3b: KRATER UEBERLEBEN DIE RUNDE, NICHT DAS TRIAL. Der Ordner haengt
+-- am Dead-Zone-Modell NEBEN DZ_Runtime und faellt ausdruecklich nicht unter
+-- cleanup()s runtime:Destroy(). positions ist die Wahrheit (Server-Eintraege
+-- wie die Minen, REQ-DZ-02); das geklonte MF_Crater ist nur das Bild davon.
+-- announced: die Feed-Zeile "THE FALLEN MARK THE PATH_" faellt EINMAL pro
+-- Trial, wenn zum ersten Mal Narben einer Vorrunde in einer neuen stehen.
+local craters = { folder = nil, sessionId = nil, positions = {}, announced = false }
+
+local function craterTeardown()
+	if craters.folder then craters.folder:Destroy() end
+	craters.folder = nil
+	craters.sessionId = nil
+	craters.positions = {}
+	craters.announced = false
+end
+
+-- Phase 3b: ein Krater ist BEWIESEN sicherer Boden -- keine neue Mine im
+-- Umkreis CraterClearRadius um eine Detonation der Vorrunden. Wer die Narben
+-- liest, liest den Pfad.
+local function craterNear(p)
+	for _, cp in craters.positions do
+		local d = (Vector3.new(p.X, 0, p.Z) - Vector3.new(cp.X, 0, cp.Z)).Magnitude
+		if d <= Feel.Minefield.CraterClearRadius then return true end
+	end
+	return false
+end
+
+-- Phase 3b: Horn-Warnung genau einmal (CRT-Hum-Muster, siehe Feel.Hum).
+local hornWarned = false
+
+-- Phase 3b: Scrap-Tint -- Signal-Cyan aus TrialKit.PALETTE, wenn es das gibt
+-- (dieselbe bewachte Abfrage, mit der die Kantine Hazard holt); sonst der
+-- Fallback-Hex aus Feel.Minefield. pcall, weil TrialKit hier ein Nachbar
+-- SEIN KANN, aber nicht sein muss -- ein fehlender Modulname darf diese
+-- Datei nicht am Laden hindern.
+local ScrapColor
+do
+	local ok, kit = pcall(function()
+		return require(script.Parent:FindFirstChild("TrialKit"))
+	end)
+	if ok and type(kit) == "table" and type(kit.PALETTE) == "table"
+		and typeof(kit.PALETTE.Signal) == "Color3" then
+		ScrapColor = kit.PALETTE.Signal
+	else
+		ScrapColor = Color3.fromHex(Feel.Minefield.ScrapHex)
+	end
+end
 
 local function refs()
 	local dz = workspace:FindFirstChild("Dead Zone")
@@ -134,6 +216,14 @@ end
 
 local function roomActive(room)
 	return #room.members > 0 and (room.phase == nil or room.phase == "Playing")
+end
+
+-- Phase 3b: der Modul-Zwilling der `active()`-Closure jeder Runde, fuer
+-- Helfer, die der Puls-Handler ruft (sie bekommen den State, nicht die
+-- Closure). Dieselben zwei Fragen: gehoert der Arena-Besitz noch dieser
+-- Runde, und laeuft der Raum noch.
+local function stActive(st)
+	return current == st and st.room ~= nil and roomActive(st.room)
 end
 
 -- Who a finished player can watch: everyone still running. Sent WITH the
@@ -231,6 +321,126 @@ local function tellOne(userId, payload)
 	if MachineState and plr then MachineState:FireClient(plr, payload) end
 end
 
+-- Phase 3b: DER SONAR IST JETZT DAS BILD DES SERVERS, wie der Teller in der
+-- Kantine. Ein Puls antwortete bisher per-player ({kind="mines"} -> lokale
+-- Marks im KenopsiaClient); jetzt malt er Server-Teile in DZ_Runtime -- einen
+-- Ring am Pulser, einen Glow auf jeder lebenden Mine im Radius -- und JEDER
+-- liest denselben Boden, SonarReveal Sekunden lang. Die Mine selbst wird dabei
+-- NIE zur Instanz (REQ-DZ-02): der Glow ist ein Wegwerf-Bild DES Eintrags,
+-- geboren auf einen Puls, tot 2.5 s spaeter -- nichts, was ein Exploit-Client
+-- vorab aufzaehlen koennte.
+local function revealMine(st, mn)
+	local runtime = st.runtime
+	if not runtime then return end
+	-- Ein zweiter Puls auf dieselbe Mine verlaengert nur die Standzeit.
+	mn.glowDie = os.clock() + Feel.Minefield.SonarReveal
+	if mn.glow and mn.glow.Parent then return end
+	local p = Instance.new("Part")
+	p.Name = "MineGlow"
+	p.Shape = Enum.PartType.Cylinder
+	p.Material = Enum.Material.Neon
+	p.Color = Color3.fromRGB(255, 70, 50)
+	p.Size = Vector3.new(0.25, 2.6, 2.6)
+	-- Zylinderachse liegt auf X; um Z gekippt liegt die Scheibe flach im Feld.
+	p.CFrame = CFrame.new(mn.pos.X, st.grid.gTop + 0.15, mn.pos.Z)
+		* CFrame.Angles(0, 0, math.rad(90))
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Parent = runtime
+	mn.glow = p
+	task.spawn(function()
+		-- C1.d-Muster: der Reaper haengt an stActive; reisst die Runde ab,
+		-- nimmt runtime:Destroy() das Teil sowieso mit.
+		while p.Parent and os.clock() < (mn.glowDie or 0) do
+			if not stActive(st) then break end
+			task.wait(0.1)
+		end
+		p:Destroy()
+		if mn.glow == p then mn.glow = nil end
+	end)
+end
+
+-- Phase 3b: der Ring nutzt das AUTORENASSET des Clients wieder
+-- (ReplicatedStorage.KenopsiaAssets.MF_SonarRing), nur serverseitig gewachsen
+-- auf Feel.Minefield.SonarRadius. Die Form des Templates wird nicht
+-- angenommen: ein Model wird ScaleTo'd, ein einzelnes BasePart ueber Size
+-- skaliert -- und ohne Asset traegt der Minen-Glow die Aufdeckung allein.
+local function pulseRing(st, atPos)
+	local runtime = st.runtime
+	if not runtime then return end
+	local assets = ReplicatedStorage:FindFirstChild("KenopsiaAssets")
+	local tpl = assets and assets:FindFirstChild("MF_SonarRing")
+	if not tpl then return end
+	local ring = tpl:Clone()
+	local baseSize = ring:IsA("BasePart") and ring.Size or nil
+	local y = st.grid.gTop + 0.2
+	ring.Parent = runtime
+	task.spawn(function()
+		local steps = 12
+		for i = 1, steps do
+			if not stActive(st) or not ring.Parent then break end
+			local sc = 0.5 + (Feel.Minefield.SonarRadius - 0.5) * (i / steps)
+			local ok = pcall(function()
+				if ring:IsA("Model") then
+					ring:ScaleTo(sc)
+					ring:PivotTo(CFrame.new(atPos.X, y, atPos.Z))
+				elseif baseSize then
+					ring.Size = baseSize * sc
+					ring.CFrame = CFrame.new(atPos.X, y, atPos.Z)
+				end
+			end)
+			if not ok then break end
+			task.wait(0.05)
+		end
+		ring:Destroy()
+	end)
+end
+
+-- Phase 3b: das Horn des Tempo-Schritts. CRT-Hum-Platzhalter-Muster
+-- (Feel.Hum): erst das benannte Sound-Asset unter SFX.Minefield, dann
+-- HornPlaceholderId, und 0 heisst still mit EINER warn, bis das Asset landet
+-- (MASTERPLAN P6). Der Traeger sitzt auf der Linie des Compactors, damit
+-- RollOff nah/fern macht -- exakt wie die MineExplosions-Klone.
+local function playHorn(st, atPos)
+	local runtime = st.runtime
+	if not runtime then return end
+	local ka = game.SoundService:FindFirstChild("KenopsiaAudio")
+	local sfx = ka and ka:FindFirstChild("SFX")
+	local slot = sfx and sfx:FindFirstChild("Minefield")
+	local tpl = slot and slot:FindFirstChild(Feel.Minefield.HornSound)
+	local s
+	if tpl and tpl:IsA("Sound") then
+		s = tpl:Clone()
+	elseif (Feel.Minefield.HornPlaceholderId or 0) > 0 then
+		s = Instance.new("Sound")
+		s.SoundId = "rbxassetid://" .. tostring(Feel.Minefield.HornPlaceholderId)
+		s.Volume = Feel.Minefield.HornVolume
+		s.RollOffMaxDistance = 400
+	else
+		if not hornWarned then
+			hornWarned = true
+			warn("[DZ] SFX.Minefield." .. tostring(Feel.Minefield.HornSound)
+				.. " fehlt und HornPlaceholderId ist 0 -- der Tempo-Schritt wird nur von den Lane-Lights telegrafiert")
+		end
+		return
+	end
+	local carrier = Instance.new("Part")
+	carrier.Name = "HornCarrier"
+	carrier.Transparency = 1
+	carrier.Size = Vector3.new(1, 1, 1)
+	carrier.CFrame = CFrame.new(atPos)
+	carrier.Anchored = true
+	carrier.CanCollide = false
+	carrier.CanQuery = false
+	carrier.CanTouch = false
+	s.Parent = carrier
+	s.PlayOnRemove = true
+	carrier.Parent = runtime
+	task.delay(0.15, function() carrier:Destroy() end)
+end
+
 function Minefield.init()
 	local folder = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Remotes")
 	TrialInput = folder:FindFirstChild("TrialInput")
@@ -264,23 +474,58 @@ function Minefield.init()
 		-- ein Druck = ein Puls; Server-Cooldown gegen Spam
 		local now = os.clock()
 		if (ps.lastPulse or 0) + 0.8 > now then return end
-		ps.lastPulse = now
-		ps.usedScanner = true
+		-- Phase 3b: SONAR-OEKONOMIE. Feel.Minefield.SonarPulses Pulse pro Runde
+		-- und Laeufer, danach ist der Scanner leer. EINE Feed-Zeile sagt es,
+		-- dann schweigt der Server: der alte Halte-Trigger im KenopsiaClient
+		-- feuert weiter alle ~0.9 s, und jede Abweisung zu befeeden wuerde die
+		-- vier Feed-Zeilen des Clients mit derselben Nachricht fluten.
+		if (ps.pulsesLeft or 0) <= 0 then
+			if not ps.sonarSpentTold then
+				ps.sonarSpentTold = true
+				tellOne(player.UserId, { kind = "feed", style = "warn", text = "SONAR SPENT." })
+			end
+			return
+		end
+		-- Phase 3b: BLACKOUT SWEEP (nur letzte Runde) -- der Puls feuert nur
+		-- aus dem STAND. ps.stillSince fuehrt die 20-Hz-Schleife aus ihren
+		-- EIGENEN Positionsproben (nie aus Client-Angaben); der Handler liest
+		-- nur. Die Abweisung ist gratis (kostet weder Puls noch Cooldown) und
+		-- ihre Feed-Zeile selbst gedrosselt.
+		if st.blackout then
+			if not ps.stillSince or now - ps.stillSince < Feel.Minefield.SonarStillTime then
+				if (ps.stillTellAt or 0) + 1.5 <= now then
+					ps.stillTellAt = now
+					tellOne(player.UserId, { kind = "feed", style = "warn", text = "HOLD STILL TO SCAN." })
+				end
+				return
+			end
+		end
 		local char = player.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart")
 		if not root then return end
+		ps.lastPulse = now
+		ps.usedScanner = true
+		ps.pulsesLeft -= 1
 		local pos = root.Position
-		local found = {}
+		-- Phase 3b: die Antwort ist nicht mehr das per-player {kind="mines"} --
+		-- der Puls malt Server-Teile in DZ_Runtime (Ring + Minen-Glow), fuer
+		-- ALLE sichtbar (siehe revealMine oben). Der Restzaehler geht als Feed
+		-- nur an den Pulser: bestehende Paketart, keine neue.
+		pulseRing(st, pos)
 		for _, mn in st.mines do
 			if mn.live then
 				local d = (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(mn.pos.X, 0, mn.pos.Z)).Magnitude
-				if d <= SCAN_RADIUS + CELL then
-					table.insert(found, { mn.pos.X, mn.pos.Y, mn.pos.Z, d <= SCAN_RADIUS })
+				if d <= Feel.Minefield.SonarRadius then
+					revealMine(st, mn)
 				end
 			end
 		end
-		if #found > 0 then
-			tellOne(player.UserId, { kind = "mines", list = found })
+		if ps.pulsesLeft > 0 then
+			tellOne(player.UserId, { kind = "feed",
+				text = ("SONAR %d LEFT."):format(ps.pulsesLeft) })
+		else
+			ps.sonarSpentTold = true
+			tellOne(player.UserId, { kind = "feed", style = "warn", text = "SONAR SPENT." })
 		end
 	end)
 end
@@ -310,7 +555,32 @@ local function runRoundInner(room, roundIndex, guard)
 		acceptInput = false,
 		cleaned = false,
 	}
+	-- Phase 3b: die LETZTE Runde des Trials faehrt den BLACKOUT-SWEEP-Mutator
+	-- und raeumt am Ende (cleanup unten) die Trial-Krater ab. Abgeleitet aus
+	-- derselben Tabelle, aus der MachineFlow die Runden plant
+	-- (Pacing.roundsFor); `>=` statt `==` faengt einen groesseren roundIndex.
+	-- OFFEN: schrumpft der Raum WAEHREND des Trials (3 -> 2 Spieler), liefert
+	-- roundsFor hier mehr Runden, als MachineFlow noch spielt, und der Mutator
+	-- faellt aus -- die Krater raeumt dann abort() bzw. der sessionId-Abgleich
+	-- der naechsten ersten Runde. Notiert, nicht geloest: der Plan von
+	-- MachineFlow ist von hier aus nicht lesbar.
+	local lastRound = Pacing.roundsFor("minefield", #room.members) or 1
+	roundState.blackout = (roundIndex or 1) >= lastRound
 	current = roundState
+
+	-- Phase 3b: DZ_Craters adoptieren oder anlegen. Der sessionId-Abgleich ist
+	-- das Netz unter dem regulaeren Teardown: ein neues Trial findet nie
+	-- fremde Krater vor, was auch immer mit dem alten passiert ist.
+	if craters.sessionId ~= room.sessionId then
+		craterTeardown()
+		craters.sessionId = room.sessionId
+	end
+	if not craters.folder or not craters.folder.Parent then
+		local cf = Instance.new("Folder")
+		cf.Name = "DZ_Craters"
+		cf.Parent = R.dz
+		craters.folder = cf
+	end
 
 	-- True only while this exact round still owns the arena and the match is
 	-- still Playing. Every loop, wait and delayed callback tests this.
@@ -355,6 +625,20 @@ local function runRoundInner(room, roundIndex, guard)
 			roundState.runtime:Destroy()
 			roundState.runtime = nil
 		end
+		-- Phase 3b: KRATER-TEARDOWN IST TRIAL-TEARDOWN. Nur die letzte Runde
+		-- nimmt den Ordner mit; jede fruehere laesst die Narben stehen -- das
+		-- Stehenbleiben IST das Feature. Ein Abort raeumt zusaetzlich in
+		-- Minefield.abort(), und Reste faengt der sessionId-Abgleich oben.
+		-- Phase 3b (Review): `not roomActive(room)` faengt den Pfad, den weder
+		-- die letzte Runde noch abort() sieht -- die Runde endet frueh, weil der
+		-- Raum starb (Phase gekippt / alle weg), ohne dass der Watchdog feuert.
+		-- Ein toter Raum spielt dieses Trial nie zu Ende, also gehen die Narben
+		-- JETZT und stehen nicht bis zum sessionId-Netz des naechsten DZ-Trials
+		-- durch fremde Minigames herum. In einer gesunden Runde ist der Raum
+		-- beim cleanup() immer noch Playing -- die Persistenz bleibt unberuehrt.
+		if (roundIndex or 1) >= lastRound or not roomActive(room) then
+			craterTeardown()
+		end
 		-- REQ-DZ-03, closed. This used to be the server-wide BloodFX.clear():
 		-- it stopped EVERY bleed, wiped the shared FX folder, and broadcast a
 		-- clear to every player on the server -- including anyone mid-round in
@@ -377,6 +661,9 @@ local function runRoundInner(room, roundIndex, guard)
 	if not active() then return scores end
 
 	-- Laufzeitordner: Minen, Krater, Effekte
+	-- Phase 3b: Krater nicht mehr -- die wohnen in DZ_Craters (oben) und
+	-- ueberleben diesen Ordner. Hier: Flash-Teile, Compactor, Minen-Glows,
+	-- Scrap-Tags, Horn-Traeger, Sonar-Ringe.
 	local runtime = Instance.new("Folder")
 	runtime.Name = "DZ_Runtime"
 	runtime.Parent = R.dz
@@ -400,10 +687,65 @@ local function runRoundInner(room, roundIndex, guard)
 				-- The Part was never read: explode() works from pos and live,
 				-- and the sonar answers out of this table. It was pure
 				-- exposure for no behaviour at all.
-				mines[row .. ":" .. col] = {
-					pos = Vector3.new(c.X, g.gTop, c.Z),
-					live = true,
-				}
+				--
+				-- Phase 3b: eine Zelle im CraterClearRadius um eine Detonation
+				-- der Vorrunden bleibt LEER (craterNear) -- Krater sind
+				-- bewiesener Boden, quer durchs ganze Trial.
+				if not craterNear(c) then
+					mines[row .. ":" .. col] = {
+						pos = Vector3.new(c.X, g.gTop, c.Z),
+						live = true,
+					}
+				end
+			end
+		end
+	end
+
+	-- Phase 3b: SCRAP TAGS -- Feel.Minefield.ScrapTags kleine Signal-Cyan-
+	-- Neon-Platten, gesaet ins MEIST-verminte Drittel des Korridors (dahin,
+	-- wo Hingehen etwas kostet), nie auf eine verminte Zelle selbst: das
+	-- Risiko ist die Nachbarschaft, nicht die Kachel. Kinder von runtime,
+	-- also sterben sie mit der Runde wie der Compactor. Gleicher Zufall wie
+	-- die Minen (math.random, kein gespeicherter Seed -- diese Datei hat
+	-- keinen; ein Trial-RNG a la TrialKit waere hier der erste und damit ein
+	-- groesserer Umbau als dieser Polish).
+	local scraps = {}
+	roundState.scraps = scraps
+	do
+		local span = math.max(1, math.ceil(g.rows / 3))
+		local thirds = { 0, 0, 0 }
+		for key in mines do
+			local rowN = tonumber(string.match(key, "^(%d+):")) or 1
+			local band = math.clamp(math.floor((rowN - 1) / span) + 1, 1, 3)
+			thirds[band] += 1
+		end
+		local best = 1
+		if thirds[2] > thirds[best] then best = 2 end
+		if thirds[3] > thirds[best] then best = 3 end
+		local rowLo = math.max(3, (best - 1) * span + 1)
+		local rowHi = math.min(g.rows - 1, best * span)
+		local placed, tries = 0, 0
+		while placed < Feel.Minefield.ScrapTags and tries < 200 do
+			tries += 1
+			local row = math.random(rowLo, math.max(rowLo, rowHi))
+			local col = math.random(1, g.cols)
+			local key = row .. ":" .. col
+			if not mines[key] and not scraps[key] then
+				local c = cellCenter(g, col, row)
+				local tag = Instance.new("Part")
+				tag.Name = "ScrapTag"
+				tag.Material = Enum.Material.Neon
+				tag.Color = ScrapColor
+				tag.Size = Vector3.new(1.2, 0.35, 1.2)
+				tag.CFrame = CFrame.new(c.X, g.gTop + 0.3, c.Z)
+					* CFrame.Angles(0, math.rad(math.random(360)), 0)
+				tag.Anchored = true
+				tag.CanCollide = false
+				tag.CanQuery = false
+				tag.CanTouch = false
+				tag.Parent = runtime
+				scraps[key] = { pos = Vector3.new(c.X, g.gTop, c.Z), part = tag }
+				placed += 1
 			end
 		end
 	end
@@ -414,7 +756,9 @@ local function runRoundInner(room, roundIndex, guard)
 	local n = 0
 	for _, mm in room.members do
 		local s = subjects[mm.userId]
-		state[mm.userId] = { done = s == nil, escaped = false, progress = 0, usedScanner = false }
+		-- Phase 3b: pulsesLeft (Sonar-Oekonomie) und scrap zaehlen pro Spieler.
+		state[mm.userId] = { done = s == nil, escaped = false, progress = 0, usedScanner = false,
+			pulsesLeft = Feel.Minefield.SonarPulses, scrap = 0 }
 		if s then
 			s.hum.Health = s.hum.MaxHealth
 			s.char:SetAttribute("XBotMoves", "scan")
@@ -440,6 +784,15 @@ local function runRoundInner(room, roundIndex, guard)
 			end
 		end
 	end
+	-- Phase 3b: EINMAL pro Trial, wenn zum ersten Mal Narben einer Vorrunde
+	-- tatsaechlich in dieser stehen. Eine FESTE Zeile ueber den Feed-Pfad,
+	-- KEIN neuer MachineVoice-Pool: die Voice-Regeln wollen Pools mit echten
+	-- Varianten, und dieser Moment hat genau einen Satz. (Notiert, falls
+	-- spaeter ein 'craters'-Pool entsteht: dann zieht die Zeile dorthin um.)
+	if (roundIndex or 1) > 1 and #craters.positions > 0 and not craters.announced then
+		craters.announced = true
+		announce(room, { kind = "feed", text = "THE FALLEN MARK THE PATH_" })
+	end
 	for c = 3, 1, -1 do
 		-- C1.b: an abort during the countdown ends the round here.
 		if not active() then return scores end
@@ -451,7 +804,13 @@ local function runRoundInner(room, roundIndex, guard)
 
 	-- C1.a: sonar input opens only now, and only for this round.
 	roundState.acceptInput = true
-	print("[DZ] go; members=" .. #room.members .. " token=" .. roundState.roundToken)
+	-- Phase 3b: der Mutator meldet sich AUF dem GO-Beat ueber den Feed; die
+	-- Rundenkarte oben bleibt die gemeinsame Tagline aller Runden.
+	if roundState.blackout then
+		announce(room, { kind = "feed", style = "warn", text = "BLACKOUT SWEEP. SCAN ONLY WHILE STILL." })
+	end
+	print("[DZ] go; members=" .. #room.members .. " token=" .. roundState.roundToken
+		.. (roundState.blackout and " BLACKOUT" or ""))
 
 	local craterTpl = ServerStorage.KenopsiaAssets.Props.Minefield:FindFirstChild("MF_Crater")
 
@@ -462,6 +821,11 @@ local function runRoundInner(room, roundIndex, guard)
 		if not active() then return end
 		if not mine.live then return end
 		mine.live = false
+		-- Phase 3b: der Glow einer aufgedeckten Mine stirbt mit ihr.
+		if mine.glow then
+			mine.glow:Destroy()
+			mine.glow = nil
+		end
 		local pos = mine.pos
 		-- Blitz + Krater
 		local flash = Instance.new("Part")
@@ -478,8 +842,30 @@ local function runRoundInner(room, roundIndex, guard)
 		if craterTpl then
 			local cr = craterTpl:Clone()
 			cr:PivotTo(CFrame.new(pos.X, g.gTop + 0.06, pos.Z) * CFrame.Angles(0, math.rad(math.random(360)), 0))
-			cr.Parent = runtime
+			-- Phase 3b (Review): ein Krater steht jetzt ein ganzes TRIAL -- er
+			-- darf so lange keinen Raycast beantworten, kein Touched fuettern
+			-- und keine Physik kosten (dasselbe Import-Muster wie MF_Compactor
+			-- oben: ein Autorenmodell kommt query- und beruehrbar an). Nur die
+			-- Bild-Disziplin wird erzwungen; CanCollide bleibt, wie das Asset
+			-- autoriert ist -- eine begehbare Kraterkante ist Design, kein Leck.
+			local function muteCrater(d)
+				if d:IsA("BasePart") then
+					d.Anchored = true
+					d.CanQuery = false
+					d.CanTouch = false
+				end
+			end
+			muteCrater(cr)
+			for _, d in cr:GetDescendants() do muteCrater(d) end
+			-- in den TRIAL-Ordner, nicht in runtime -- Krater stehen
+			-- alle Runden (DZ_Craters oben). Faellt der Ordner weg (Arena von
+			-- Hand geleert), traegt runtime ihn wie frueher, eine Runde lang.
+			cr.Parent = (craters.folder and craters.folder.Parent) and craters.folder or runtime
 		end
+		-- Phase 3b: die Position auch OHNE Template merken -- der Aussaat-
+		-- Ausschluss (craterNear) haengt am EINTRAG, das Modell ist nur das
+		-- Bild. Dieselbe Trennung wie bei den Minen selbst (REQ-DZ-02).
+		table.insert(craters.positions, Vector3.new(pos.X, g.gTop, pos.Z))
 		-- 3D-Explosion: zufaellige Variante am Krater; RollOff macht nah/fern
 		local ka = game.SoundService:FindFirstChild("KenopsiaAudio")
 		local pool = ka and ka.SFX:FindFirstChild("MineExplosions")
@@ -500,19 +886,7 @@ local function runRoundInner(room, roundIndex, guard)
 				local s = livingOf(room)[uid]
 				if s then
 					local d = (Vector3.new(s.root.Position.X, 0, s.root.Position.Z) - Vector3.new(pos.X, 0, pos.Z)).Magnitude
-					if d <= KILL_RADIUS and not ps.crawling then
-						-- 24.08.2026 (evening, user): EVERY first mine -- direct
-						-- step included, armed or not -- is the second chance:
-						-- the lower half goes, the runner crawls on. Only the
-						-- SECOND mine kills (branch below).
-						ps.crawling = true
-						s.char:SetAttribute("XBotCrawl", true)
-						s.char:SetAttribute("XBotLegless", true)
-						ps.walkBefore = s.hum.WalkSpeed
-						s.hum.WalkSpeed = CRAWL_SPEED
-						BloodFX.maim(s.char, audienceOf(room), roundState.roundToken)
-						tellOne(uid, { kind = "announce", style = "warn", text = "LEGS GONE. CRAWL." })
-					elseif d <= KILL_RADIUS then
+					if d <= KILL_RADIUS and ps.crawling then
 						ps.done = true
 						ps.cardAt = os.clock()
 						-- The second mine: nothing is left to crawl with. The
@@ -520,7 +894,12 @@ local function runRoundInner(room, roundIndex, guard)
 						-- clip, no corpse.
 						BloodFX.shatter(s.char, nil, audienceOf(room))
 						s.hum.Health = 0
-						tellOne(uid, { kind = "announce", style = "death", text = "YOU STEPPED WRONG. TWICE." })
+						-- MP-08 S5: seconds = 3.0 -- 2.5 s Stand (Feel.Death.Hold),
+						-- 0.5 s Zug auf Schwarz, dann raeumt die Karte sich selbst
+						-- ab (S2). Das spectate-Paket kommt 3.2 s spaeter und
+						-- findet die Scheibe frei vor.
+						tellOne(uid, { kind = "announce", style = "death", seconds = 3.0,
+							text = "YOU STEPPED WRONG. TWICE." })
 						if R.cam then
 							task.delay(3.2, function()
 								-- C1.d: never strand a lobby player's camera on
@@ -533,15 +912,28 @@ local function runRoundInner(room, roundIndex, guard)
 							end)
 						end
 					elseif d <= KNOCK_RADIUS and not ps.crawling then
-						-- Survived the outer ring: from here on, crawl.
+						-- BEIDE RINGE, EINE VERZWEIGUNG.
 						--
-						-- LATCHED. Without ps.crawling a second blast re-applied the
-						-- whole effect to someone already crawling -- another bleed
-						-- stacked on the first, and the attribute rewritten under an
-						-- animation that had already started.
+						-- Das waren bis MP-08 zwei Zweige: der innere (KILL_RADIUS,
+						-- noch nicht krabbelnd) und der aeussere (KNOCK_RADIUS). Sie
+						-- fuehrten schon vorher dieselben sechs Anweisungen aus, und
+						-- mit der Feed-Zeile aus B-06 -- der aeussere Ring setzte das
+						-- Krabbeln, sagte es aber nie -- waren sie Zeichen fuer
+						-- Zeichen gleich. Zusammengelegt, statt die Zeile zweimal zu
+						-- pflegen: die Reihenfolge bleibt erhalten, weil der Todesfall
+						-- oben jetzt auf `ps.crawling` prueft und dieser Zweig auf
+						-- `not ps.crawling` -- die vier Faelle (innen/aussen x
+						-- krabbelnd/nicht) treffen damit exakt wie vorher.
 						--
-						-- bleed(), not maim(): maim is the leg-severing effect, and the
-						-- outer ring is crawl plus glitch with no severing.
+						-- 24.08.2026 (evening, user): JEDE erste Mine -- direkter
+						-- Tritt eingeschlossen, scharf oder nicht -- ist die zweite
+						-- Chance: die untere Haelfte geht, der Laeufer krabbelt
+						-- weiter. Erst die ZWEITE Mine toetet (Zweig oben).
+						--
+						-- LATCHED. Ohne ps.crawling legte eine zweite Explosion den
+						-- ganzen Effekt erneut auf jemanden, der schon krabbelt --
+						-- noch ein Bleed auf dem ersten, und das Attribut unter eine
+						-- bereits laufende Animation geschrieben.
 						ps.crawling = true
 						s.char:SetAttribute("XBotCrawl", true)
 						-- 24.08.2026 (user): one mine takes the LOWER HALF. The
@@ -554,6 +946,14 @@ local function runRoundInner(room, roundIndex, guard)
 						ps.walkBefore = s.hum.WalkSpeed
 						s.hum.WalkSpeed = CRAWL_SPEED
 						BloodFX.maim(s.char, audienceOf(room), roundState.roundToken)
+						-- MP-08 B-01/B-06: war fuer den inneren Ring eine Vollbild-
+						-- karte OHNE Timer (style ~= "death" heisst sofort deckendes
+						-- Schwarz, und danach schickte niemand ein `hide` -- der
+						-- Krabbler war ab hier blind bis zum Rundenende, ganz ohne
+						-- gestorben zu sein: die "eingefrorene UI"), und fuer den
+						-- aeusseren gar nichts. Als Feed-Zeile sagt sie beiden
+						-- dasselbe, ohne das Bild zu nehmen.
+						tellOne(uid, { kind = "feed", style = "warn", text = "LEGS GONE. CRAWL." })
 					end
 				end
 			end
@@ -582,7 +982,10 @@ local function runRoundInner(room, roundIndex, guard)
 		ps.cardAt = os.clock()
 		local s = livingOf(room)[plr.UserId]
 		if s then s.hum.WalkSpeed = 0 end
-		tellOne(plr.UserId, { kind = "announce", style = "win", text = "SECTOR CLEARED." })
+		-- MP-08 B-07: auch die Siegkarte deckte sofort zu und hatte keinen Timer.
+		-- 1.2 s, passend zum spectate-Paket unten -- der Sieger sah bis dahin
+		-- denselben schwarzen Schirm wie der Tote.
+		tellOne(plr.UserId, { kind = "announce", style = "win", seconds = 1.2, text = "SECTOR CLEARED." })
 		if R.cam then
 			task.delay(1.2, function()
 				if not active() then return end
@@ -760,7 +1163,7 @@ local function runRoundInner(room, roundIndex, guard)
 		if (markerZ - shredZ) * g.dir < 0 then shredZ = markerZ end
 	end
 	local shredEndZ = g.z0 + g.dir * (g.rows * CELL + 12)
-	
+
 	-- TWO PHASES, and only the second one is gameplay.
 	--
 	-- APPROACH: marker -> the players' line. The machine is behind everyone
@@ -784,6 +1187,15 @@ local function runRoundInner(room, roundIndex, guard)
 	local sweepBudget = math.max(5, targetRound - SHRED_GRACE - APPROACH_SECONDS)
 	local sweepSpeed = math.clamp(sweepDistance / sweepBudget,
 		MIN_SHRED_SPEED, MAX_SHRED_SPEED)
+	-- Phase 3b: BLACKOUT SWEEP faehrt die Basis um SweepFactor hoeher -- NACH
+	-- der Klemme, mit Absicht: der Mutator soll das Band sprengen. Obergrenze
+	-- aller Multiplikatoren: 6.5 (MAX_SHRED_SPEED) * 1.15 (SweepFactor) * 1.12
+	-- (SpeedStepFactor) = 8.37, und das liegt UNTER dem gerampten Sprint (10,
+	-- MAX_RUNNER_SPEED): zu Fuss entkommen bleibt moeglich, nur GEHEN (7)
+	-- reicht in der letzten Runde nicht mehr. Genau das ist der Zahn.
+	if roundState.blackout then
+		sweepSpeed = sweepSpeed * Feel.Minefield.SweepFactor
+	end
 	-- Never slower than the sweep. APPROACH_SECONDS is a BUDGET, not a
 	-- duration: with the marker close to the field the budget would work out
 	-- below the sweep speed and the machine would dawdle in, then accelerate
@@ -807,6 +1219,11 @@ local function runRoundInner(room, roundIndex, guard)
 	--
 	-- Measured to the exit, not to shredEndZ: the machine passes the exit
 	-- before it stops, and reaching the exit is what ends a runner's round.
+	--
+	-- Phase 3b: das hier ist die VOR-SCHRITT-Rechnung. Der Tempo-Schritt zur
+	-- Rundenmitte (unten) laesst die Maschine FRUEHER ankommen, als diese
+	-- Zeilen drucken -- gewollt, die Schraube dreht sich; die Failsafe bleibt
+	-- sicher, weil die Maschine nur schneller wird, nie langsamer.
 	local approachTime = approachDistance / approachSpeed
 	local sweepToExit = math.abs(R.exit.Position.Z - sweepStartZ) / sweepSpeed
 	local machineReachesExit = SHRED_GRACE + approachTime + sweepToExit
@@ -822,6 +1239,56 @@ local function runRoundInner(room, roundIndex, guard)
 	if custom then publishShred(shredZ, 0) end
 	shred.Parent = runtime
 
+	-- Phase 3b: EIN Tempo-Schritt zur Rundenmitte. Zeitpunkt und Faktor aus
+	-- Feel.Minefield (SpeedStepAt als Anteil der Rundenlaenge,
+	-- SpeedStepFactor), telegrafiert CascadeSeconds vorher -- und
+	-- CascadeSeconds haelt tests/feel.lua auf >= Feel.Death.TelegraphMin, die
+	-- MINDEST-Warnung vor jedem toedlichen Ereignis.
+	local stepAt = targetRound * Feel.Minefield.SpeedStepAt
+	local telegraphAt = math.max(0, stepAt - Feel.Minefield.CascadeSeconds)
+	local telegraphed, stepped = false, false
+	local speedMul = 1
+
+	-- Phase 3b: die Kaskade laeuft ueber die von Hand gebauten Lane-Lights
+	-- (workspace["Dead Zone"]["Dead Zone Lane Lights"], LaneLight_01..11) --
+	-- bis heute reine Deko, jetzt der Telegraf. EMISSIV (Material Neon +
+	-- Farbe), nie ueber Light-Objekte: niedrige Qualitaetsstufen rendern
+	-- lokale Lichter nicht, und ein Telegraf, den ein Geraet nicht zeigt, ist
+	-- keiner (Feel.Death-Regel "readable on every device"). Das Horn feuert
+	-- mit dem ersten Licht. Snapshot + Restore laufen auch nach einem Abort
+	-- zu Ende: nur die Warte-Schleife haengt an active(), die Wiederher-
+	-- stellung nicht -- die Lights sind Szenerie und gehoeren keiner Runde.
+	local function laneCascade()
+		playHorn(roundState, Vector3.new(g.x0 + g.cols * CELL / 2, g.gTop + 3.2, shredZ))
+		local lightsFolder = R.dz:FindFirstChild("Dead Zone Lane Lights")
+		if not lightsFolder then return end
+		local lights = {}
+		for _, p in lightsFolder:GetChildren() do
+			if p:IsA("BasePart") then table.insert(lights, p) end
+		end
+		if #lights == 0 then return end
+		-- LaneLight_01..LaneLight_11 sortieren lexikografisch korrekt.
+		table.sort(lights, function(a, b) return a.Name < b.Name end)
+		local hold = Feel.Minefield.CascadeSeconds / #lights
+		local beforeColor, beforeMat = {}, {}
+		for i, p in lights do
+			beforeColor[i] = p.Color
+			beforeMat[i] = p.Material
+		end
+		for i, p in lights do
+			if not active() then break end
+			p.Material = Enum.Material.Neon
+			p.Color = Color3.fromRGB(255, 40, 30)
+			task.wait(hold)
+			p.Color = beforeColor[i]
+			p.Material = beforeMat[i]
+		end
+		for i, p in lights do
+			p.Color = beforeColor[i]
+			p.Material = beforeMat[i]
+		end
+	end
+
 	-- Hauptschleife: Zellenerkennung, Fortschritt und der marschierende Compactor
 	local t0 = os.clock()
 	local lastTick = os.clock()
@@ -836,13 +1303,26 @@ local function runRoundInner(room, roundIndex, guard)
 		local now = os.clock()
 		local dt = now - lastTick
 		lastTick = now
+		-- Phase 3b: Telegraf, dann Schritt -- beides an der Rundenuhr (t0).
+		if not telegraphed and now - t0 >= telegraphAt then
+			telegraphed = true
+			task.spawn(laneCascade)
+		end
+		if not stepped and now - t0 >= stepAt then
+			stepped = true
+			speedMul = Feel.Minefield.SpeedStepFactor
+		end
 		-- Compactor bewegen (nach Schonfrist), Walzen drehen
 		local speedNow = 0
 		if now - t0 > SHRED_GRACE and (shredZ - shredEndZ) * g.dir < 0 then
 			-- Approach speed until the machine reaches the players' line, sweep
 			-- speed from there on.
-			speedNow = ((shredZ - sweepStartZ) * g.dir < 0)
-				and approachSpeed or sweepSpeed
+			-- Phase 3b: speedMul geht durch publishShred wie jede andere
+			-- Aenderung -- der Anker (Z0/T0/Speed) springt beim Schritt genau
+			-- EINMAL um, und jeder Client integriert ab da die neue
+			-- Geschwindigkeit. Kein neuer Replikationsweg.
+			speedNow = (((shredZ - sweepStartZ) * g.dir < 0)
+				and approachSpeed or sweepSpeed) * speedMul
 			shredZ += g.dir * speedNow * dt
 		end
 		spin += dt * 6
@@ -869,6 +1349,11 @@ local function runRoundInner(room, roundIndex, guard)
 		for _, mn in mines do
 			if mn.live and not mn.armed and (mn.pos.Z - shredFront) * g.dir < 0 then
 				mn.live = false
+				-- Phase 3b: der Glow faellt mit der Mine (revealMine oben).
+				if mn.glow then
+					mn.glow:Destroy()
+					mn.glow = nil
+				end
 				crushed += 1
 			end
 		end
@@ -885,6 +1370,19 @@ local function runRoundInner(room, roundIndex, guard)
 					-- Fortschritt in Studs Richtung Exit
 					local prog = (pos.Z - g.z0) * g.dir
 					if prog > ps.progress then ps.progress = prog end
+					-- Phase 3b (BLACKOUT SWEEP): Stillstand aus den EIGENEN
+					-- 20-Hz-Proben DIESER Schleife -- nie aus Client-Angaben.
+					-- Unter STILL_EPSILON pro Tick beginnt/haelt die Uhr,
+					-- drueber faellt sie; der Puls-Handler liest nur.
+					if roundState.blackout then
+						local lp = ps.lastPos
+						ps.lastPos = pos
+						if lp and (pos - lp).Magnitude <= STILL_EPSILON then
+							if not ps.stillSince then ps.stillSince = now end
+						else
+							ps.stillSince = nil
+						end
+					end
 					-- crossing the exit line IS the win (see escapeRunner above);
 					-- 1.5 studs of grace so STANDING IN THE GATE already counts
 					-- (the user stood exactly on the line and nothing fired).
@@ -899,7 +1397,16 @@ local function runRoundInner(room, roundIndex, guard)
 						BloodFX.shatter(s.char, nil, audienceOf(room))
 						announce(room, { kind = "gorefx", pos = { pos.X, pos.Y, pos.Z }, power = 1.6 })
 						s.hum.Health = 0
-						tellOne(uid, { kind = "announce", style = "death", text = "PROCESSED." })
+						-- MP-08 S5: der Compactor-Tod ist byteweise dieselbe Figur wie
+						-- die zweite Mine oben -- Todeskarte, 3.2 s spaeter das
+						-- spectate-Paket. Der Plan nennt nur die Minenzeile, aber es
+						-- ist derselbe Fehler (B-01/B-08), also derselbe Timer.
+						-- Phase 3b (E6 geprueft): KEINE Crush-Nahaufnahme existiert --
+						-- shatter zerlegt den Koerper sofort und die Todeskarte deckt
+						-- ab Sekunde 0 (style="death"); die Kamera des Opfers sieht
+						-- nie ein Zerquetschen. Kein Umbau noetig.
+						tellOne(uid, { kind = "announce", style = "death", seconds = 3.0,
+							text = "PROCESSED." })
 						if R.cam then
 							task.delay(3.2, function()
 								-- C1.d: never strand a lobby player's camera on
@@ -918,6 +1425,29 @@ local function runRoundInner(room, roundIndex, guard)
 						if mine and mine.live and not mine.armed then
 							mine.armed = true
 							task.delay(FUSE, function() explode(mine) end)
+						end
+						-- Phase 3b: Scrap-Aufnahme -- 20-Hz-Naehe wie alles in
+						-- dieser Schleife, nie Touched. part == nil heisst
+						-- genommen; der Confirm-Klang faehrt als PlayOnRemove
+						-- auf dem Teil mit (MineExplosions-Muster).
+						for _, tag in scraps do
+							if tag.part then
+								local d2 = (Vector3.new(pos.X, 0, pos.Z)
+									- Vector3.new(tag.pos.X, 0, tag.pos.Z)).Magnitude
+								if d2 <= SCRAP_RADIUS then
+									ps.scrap += 1
+									local ka2 = game.SoundService:FindFirstChild("KenopsiaAudio")
+									local conf = ka2 and ka2.SFX:FindFirstChild("Confirm")
+									if conf then
+										local s3 = conf:Clone()
+										s3.Parent = tag.part
+										s3.PlayOnRemove = true
+									end
+									tag.part:Destroy()
+									tag.part = nil
+									tellOne(uid, { kind = "feed", text = "SCRAP SECURED." })
+								end
+							end
 						end
 					end
 				end
@@ -955,8 +1485,20 @@ local function runRoundInner(room, roundIndex, guard)
 	--   escaped       2000 + 1000 down to 2000, earlier is STRICTLY higher
 	--   eliminated       0 ..  1000, by legitimate forward progress
 	--   clean run       +1, a tiebreaker ONLY -- it can never cross a band
+	--
+	-- Phase 3b: DETAIL-DECKEL, das Kantinen-Muster. Die Detail-Summe eines
+	-- Eliminierten ist Fortschritt (0..1000) plus Scrap (max ScrapTags *
+	-- ScrapDetail = 3 * 150 = 450), zusammen bis 1450 -- DETAIL_CAP klemmt
+	-- sie auf 999. BEWEIS: min(1000 + 450, 999) + 1 (Tiebreaker) = 1000
+	-- < ESCAPE_BAND (2000). Kein Band kippt, tests/feel.lua rechnet dieselbe
+	-- Zeile nach. Entflohene bekommen KEIN Scrap-Detail: jede Zutat >=
+	-- ORDER_STEP (100) koennte einen spaeteren Entflohenen ueber einen
+	-- frueheren heben -- exakt der CLEANRUN_BONUS-Fehler von oben. Scrap
+	-- ordnet also nur unter den Gefallenen; wer entkommt, hat sein Scrap in
+	-- die Flucht investiert.
 	local ESCAPE_BAND = 2000
 	local ORDER_STEP = 100
+	local DETAIL_CAP = 999
 	local fieldLen = g.rows * CELL
 	for uid, ps in state do
 		local sc
@@ -966,7 +1508,9 @@ local function runRoundInner(room, roundIndex, guard)
 			sc = ESCAPE_BAND
 				+ math.max(0, 1000 - ORDER_STEP * ((ps.escapeOrder or 1) - 1))
 		else
-			sc = math.floor(1000 * math.clamp((ps.progress or 0) / fieldLen, 0, 1))
+			local detail = math.floor(1000 * math.clamp((ps.progress or 0) / fieldLen, 0, 1))
+			detail += (ps.scrap or 0) * Feel.Minefield.ScrapDetail
+			sc = math.min(detail, DETAIL_CAP)
 		end
 		-- Never a bonus, only a tiebreaker: it separates two players who are
 		-- otherwise exactly level and cannot move anyone past a band.
@@ -981,7 +1525,7 @@ local function runRoundInner(room, roundIndex, guard)
 	-- minigame structure now -- RoomService carries roundIndex/roundCount and
 	-- MachineFlow draws the Score stage after every minigame -- so a card
 	-- announcing the same thing per round only delayed the next one.
-	
+
 	-- BLACK OUT BEFORE THE TELEPORT. cleanup() moves every player to the
 	-- global SpawnLocation, which sits on the Baseplate far from the arena,
 	-- and the next round teleports them back. Uncovered, that round trip is
@@ -1001,7 +1545,7 @@ local function runRoundInner(room, roundIndex, guard)
 		announce(room, { kind = "announce", text = "" })
 		task.wait(0.6)
 	end
-	
+
 	return scores
 end
 
@@ -1015,6 +1559,10 @@ function Minefield.abort()
 	local g = Minefield._guard
 	Minefield._guard = nil
 	if g and g.cleanup then pcall(g.cleanup) end
+	-- Phase 3b: ein Abbruch ist ein TRIAL-Ende -- die Krater gehen mit. (Die
+	-- Runden-cleanup raeumt sie nur in der LETZTEN Runde; der Watchdog kann
+	-- jede treffen.)
+	craterTeardown()
 end
 
 function Minefield.runRound(room, roundIndex)
@@ -1035,6 +1583,10 @@ function Minefield.runRound(room, roundIndex)
 		-- the same throw for all 10 rounds (~45s of black screen) and then
 		-- reported a final board of zeros with no player-visible error.
 		warn("[DZ] round errored: " .. tostring(result))
+		-- Phase 3b: ein geworfenes Trial hinterlaesst dem naechsten keine
+		-- Krater (der sessionId-Abgleich wuerde sie auch fangen, aber erst
+		-- beim naechsten DZ-Rundenstart -- bis dahin staenden sie herum).
+		craterTeardown()
 		error(result, 0)
 	end
 	return result
