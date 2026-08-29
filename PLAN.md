@@ -148,6 +148,37 @@ das ist billiger und wirksamer als jedes Streichen.
 `GameConfig.Playlist.PerSession = 5` (aus MP-05 D7) aktivieren, sobald mehr als fünf
 Trials fertig sind. Bis dahin spielt jede Session alles.
 
+### E4 — Art Direction · ENTSCHIEDEN 29.08.2026: **Welt wird PS2-Industrieblau, Machine-Grün bleibt**
+
+Nutzervorgabe: „mostly blue PS2–3 style graphics". Umsetzung: die *Welt* wird kalt
+industrieblau (globale Lighting-Reparatur zuerst — der Live-Stand hat ein defektes
+Fog-Band 823/832 und eine HDR-weiße FogColor); das Phosphor-**Grün bleibt exklusiv der
+Machine** und wird damit ihre diegetische Signatur — die einzige „lebende" Farbe in einer
+blauen Anlage. Keine GUI-Änderung nötig. Signal/Hazard-Telegraph-Farben in
+`TrialKit.PALETTE` wandern auf Cyan `#41D9FF` / Amber `#FFB13B`. Details:
+`docs/INNER-GAME-PLAN.md` §4.
+
+### E5 — Monetarisierung erweitert · ENTSCHIEDEN 29.08.2026: **2 Gamepasses + Crate-Emotes + Emote-Wheel (später), Sockets jetzt**
+
+Ersetzt die frühere Aussage „nur bezahlte Private Server". Nutzerentscheidung: nach dem
+Release kommen **zwei Gamepasses** und **Tanz-Emotes** (kaufbar mit Robux **oder** aus
+Crates in Kenopsia_DEV) plus ein Emote-Wheel. Dieser Plan baut nur die Sockets
+(`EmoteRegistry`, `EmotePlay`/`EmoteEquip`/`ShopPrompt`-Remotes, `MonetizationConfig`,
+Profil-Felder `emotes`/`crates`) — ruhend bis der Store existiert. Leitplanken: null
+Pay-for-Power; Crate-Keys werden nur **verdient** (Quests/Streaks), nie verkauft;
+Gamepass-Besitz wird live geprüft, nie als Wahrheit persistiert. Vorher zu klären:
+teilen sich DEV (129909297895850) und MainGame ein Universum (DataStore-Transport)?
+Private Server bleiben zusätzlich bestehen (Preis = offene Frage #5).
+
+### E6 — Altersfreigabe · ENTSCHIEDEN 29.08.2026: **mild (~14+), „heavy fantasy gore" wird zurückgestuft**
+
+Nutzervorgabe 29.08.: Inhalt „mild/minimal, ~14+, playable for everyone". Das ersetzt die
+in RELEASE-CHECKLIST festgehaltene Fragebogen-Antwort „heavy fantasy gore".
+Gestaltungssprache: Andeutung statt Gore — Compactor-Kill als harter Kameraschnitt,
+Exekution als Mündungsblitz + Blackout, burgunderrote PS1-Splats innerhalb der
+GoreClient-Caps, keine Verstümmelung, keine Horror-Extreme. Beim Umsetzen: Creator-Hub-
+Fragebogen neu beantworten und RELEASE-CHECKLIST/#49 im selben Commit korrigieren.
+
 ---
 
 ## 3. Arbeitspakete
