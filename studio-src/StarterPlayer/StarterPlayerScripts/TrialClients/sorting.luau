@@ -331,14 +331,19 @@ function M.onPacket(p)
 				if p.state == "ok" then
 					kit.flash(lamp, kit.palette.world.Sodium, 0.25)
 				elseif p.state == "bad" then
-					kit.flash(lamp, kit.palette.world.Hazard, 0.6)
+					-- E4 palette shift: world.Hazard is amber now (~= Sodium's ok
+					-- flash) -- wrong sorts flash the UI DANGER red instead, so
+					-- approve(warm)/reject(red)/neutral(grey) stay separable.
+					kit.flash(lamp, kit.palette.DANGER, 0.6)
 				else
 					kit.flash(lamp, kit.palette.world.Steel, 0.2)
 				end
 			end
 		elseif p.ev == "so_strike" and p.drop then
 			local lamp = arenaPart("Lamp" .. tostring(p.station))
-			if lamp then kit.flash(lamp, kit.palette.world.Signal, 0.7) end
+			-- E4 palette shift: cyan Signal reads UI-safe, not alarm -- the
+			-- drop-strike keeps its alarm red via the UI DANGER key.
+			if lamp then kit.flash(lamp, kit.palette.DANGER, 0.7) end
 			kit.sfx("Warning")
 			if p.userId == kit.player.UserId then
 				kit.card("STAND CLEAR.", "death")
