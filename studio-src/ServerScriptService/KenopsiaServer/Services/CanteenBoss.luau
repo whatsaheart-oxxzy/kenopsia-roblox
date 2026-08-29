@@ -32,6 +32,11 @@ local READING_FRAME_TIME = 0
 local SEAT_DROP = 0.65
 local SCALE_LIMITS = { min = 0.4, max = 3.0 }
 
+-- Phase 3a (29.08.2026): the glance (CanteenBoss.glance) runs LookDown at clip
+-- rate. Exported so CanteenProtocol can fit a fake-lower inside a hidden read
+-- without duplicating the frame numbers here.
+CanteenBoss.GlanceSeconds = LOOK_DOWN_FRAMES / FRAME_RATE
+
 local function findTemplate()
 	local assets = ServerStorage:FindFirstChild("KenopsiaAssets")
 	local rigs = assets and assets:FindFirstChild("Rigs")
@@ -60,11 +65,13 @@ local function setPistolVisible(self, visible)
 	end
 end
 
--- The glare: the angry atlas goes on the head while the eyes are up.
+-- The glare: the angry atlas goes on the head while the eyes are up -- or,
+-- Phase 3a, for the rest of the round once the table has made him suspicious
+-- (setSuspicious below): the paper comes back up, the face does not forgive.
 local function setAngry(self, angry)
 	local head = self.model and self.model:FindFirstChild("Boss_Head", true)
 	if not (head and head:IsA("MeshPart")) then return end
-	local uri = angry and AnimationIds.texture("BossAngry") or nil
+	local uri = (angry or self.suspicious) and AnimationIds.texture("BossAngry") or nil
 	head.TextureID = uri or self.neutralFace or head.TextureID
 end
 
@@ -292,6 +299,8 @@ function CanteenBoss.spawn(marker, parent, opts)
 		model = model,
 		pistol = pistol,
 		neutralFace = (bossHead and bossHead:IsA("MeshPart")) and bossHead.TextureID or nil,
+		-- Phase 3a: room suspicion keeps the angry atlas up (see setAngry).
+		suspicious = false,
 		phase = "hidden",
 		tracks = {
 			Reading = AnimationIds.load(animator, "Boss", "Reading"),
@@ -336,6 +345,29 @@ function CanteenBoss.setPhase(self, phase, duration)
 	self.phase = phase
 	self.phaseDuration = duration
 	applyPhase(self)
+end
+
+-- Phase 3a: the room's suspicion, made face. While set, applyPhase keeps
+-- calling setAngry and the OR inside it keeps answering "angry", so the glare
+-- survives raising and hidden alike. One-way in practice: CanteenProps
+-- rebuilds the actor every round, so a fresh round is a fresh face.
+function CanteenBoss.setSuspicious(self, on)
+	if not self.alive then return end
+	self.suspicious = on and true or false
+	setAngry(self, self.phase == "lowering" or self.phase == "watching")
+end
+
+-- Phase 3a: FAKE-LOWER -- a theatrical glance with NO phase behind it.
+-- LookDown played from the reading pose reads as the head twitching up and
+-- settling back onto the paper; the existing Stopped handler (see spawn)
+-- hands over to Reading, so the paper never snaps. Deliberately refused
+-- outside `hidden` and while a shot is playing: the glance is theater, and
+-- theater never outranks the rule's picture (the phases CanteenProtocol
+-- announces stay the only truth about detection).
+function CanteenBoss.glance(self)
+	if not self.alive or self.executing or self.currentShot then return end
+	if self.phase ~= "hidden" then return end
+	playTrack(self, "LookDown", false, Enum.AnimationPriority.Movement, 1)
 end
 
 function CanteenBoss.execute(self, onFire, onDone)

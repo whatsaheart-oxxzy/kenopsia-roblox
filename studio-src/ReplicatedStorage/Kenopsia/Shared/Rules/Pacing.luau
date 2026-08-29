@@ -122,6 +122,24 @@ Pacing.Timing = {
 	Title        = 1.2,  -- in-trial title card (plan value, no typewriter)
 	RoundCard    = 3.0,  -- "Round n/m" plus its verb line
 	RoundSettle  = 1.5,  -- beat after a round ends, before the next card
+	-- 27.08.2026 (user): the cut to black that closes a round is LONG now. The
+	-- 0.7 s beat that shipped on 24.08. was a blink -- long enough to hide the
+	-- teardown, too short to read as "your round is over". This is the hold
+	-- MachineFlow keeps the screen dark for after death / win / the round
+	-- running out, before it fires the standings (or, on a trial's last round,
+	-- the score board).
+	--
+	-- It is a FLOOR, not the length of the blackout: the client holds the black
+	-- frame until the next Machine card actually lands, so a slow standings is
+	-- more black, never a flash of the torn-down arena. Turn this one number to
+	-- make the beat longer or shorter.
+	RoundBlackout = 2.5,
+	-- Client-side backstop for that held blackout. If the card that should
+	-- clear it never arrives (a dropped packet, a stalled round), the fader
+	-- lifts on its own after this many seconds rather than leaving somebody in
+	-- front of a black screen for the rest of the session. Generous on purpose:
+	-- it is a safety net, not a timer anyone should hit in a healthy session.
+	BlackoutMax   = 25.0,
 	Standings    = 2.5,  -- P1.2: standings card between rounds (typed, 5 lines)
 	RoleCard     = 1.6,  -- P1.4: "<NAME> IS THE HUNTER." full screen before an asymmetric leg
 	CountdownFrom = 3,   -- 3-2-1, one per second
@@ -136,6 +154,25 @@ Pacing.Timing = {
 	-- client spins the icon strip and lands on the chosen trial in this time;
 	-- MachineFlow.preFlow used to hard-code `task.wait(6.4)` next to it.
 	LobbyReveal  = 6.4,
+	-- 26.08.2026 (user, MP-08 S10): derselbe Halt, aber ZWISCHEN den Trials.
+	-- MachineFlow schickt bei jedem Trial-Wechsel jetzt auch ein
+	-- kind="selection" (S9), und der Client spielt darauf dasselbe Roulette wie
+	-- in der Lobby ab. Der Halt muss ueber Feel.rouletteSeconds(3) liegen
+	-- (~5.9 s), sonst schneidet die Infokarte das Rad ab -- daher derselbe Wert
+	-- wie LobbyReveal und NICHT weniger.
+	--
+	-- Eigener Eintrag statt LobbyReveal wiederzuverwenden, damit der Preis
+	-- dieses Beats (6.4 s pro Wechsel, +12.8 s in einer Session mit drei
+	-- Trials) an einer Stelle steht, an der man ihn drehen kann, ohne die
+	-- Lobby mitzudrehen.
+	TrialReveal  = 6.4,
+	-- 29.08.2026 (Phase 3a): the canteen SETTLEMENT window. The FIRST cleaned
+	-- plate no longer just waits for the rest -- it starts this many seconds in
+	-- which the others may keep eating (the observer keeps running, every rate
+	-- gate applies), then the round ends. CanteenProtocol reads it for the
+	-- clock AND for the feed line ("SETTLEMENT. 5 SECONDS_"), so turning this
+	-- one number turns both. tests/feel.lua holds it in (0, 6].
+	CanteenSettlement = 5.0,
 }
 
 -- The scoring pool a completed trial distributes. Kept here rather than in

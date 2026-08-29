@@ -24,7 +24,7 @@ local MachineVoice = {}
 MachineVoice.MaxLength = 48
 MachineVoice.NameLength = 14
 
-MachineVoice.Categories = { "outcome", "swing", "streak", "firstdeath", "sweep", "idle" }
+MachineVoice.Categories = { "outcome", "swing", "streak", "firstdeath", "sweep", "idle", "lastdiner" }
 
 MachineVoice.Lines = {
 	-- A trial has been won and lost. Spoken with the score board.
@@ -102,6 +102,18 @@ MachineVoice.Lines = {
 		"NO INPUT. THE MACHINE NOTES THIS TOO.",
 		"WAITING FOR A FULL SHIFT.",
 		"CALIBRATION COMPLETE. SUBJECTS ARE NOT.",
+	},
+	-- Phase 3a (29.08.2026), Canteen: exactly one living diner still has food
+	-- on the plate. Fired at most once per round by CanteenProtocol, as a feed
+	-- line (a full-screen card mid-round would cover the observer, MP-08 B-02).
+	-- The trailing underscore is the CRT cursor left standing -- it is not
+	-- punctuation, and it passes every rule tests/voice.lua enforces
+	-- (uppercase, no exclamation mark, under 48 characters).
+	lastdiner = {
+		"ONE REMAINS_",
+		"ONE PLATE IS STILL FULL_",
+		"THE OTHERS ARE DONE. ONE IS NOT_",
+		"A SINGLE RATION OUTSTANDING_",
 	},
 }
 

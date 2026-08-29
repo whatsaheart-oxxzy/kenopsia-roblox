@@ -23,12 +23,22 @@
 -- apart and the drift is invisible until a player is scored on the wrong one.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local SoundService = game:GetService("SoundService")
 
 local CanteenBoss = require(script.Parent.CanteenBoss)
 local CanteenDiner = require(script.Parent.CanteenDiner)
+-- Phase 3a (29.08.2026): the rustle slot and its volume live in FeelConfig,
+-- like every other feel number -- no literal here to drift.
+local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
 
 local CanteenProps = {}
+
+-- One warn per SESSION, not per round: the hum's discipline (UiFx). Three
+-- rounds of "no rustle asset" would be noise about the same missing file.
+local warnedNoRustle = false
 
 local PEA_SIZE = 0.18
 -- Peas sit inside this radius on the plate. The plates are 1.7 studs across
@@ -410,6 +420,61 @@ function CanteenProps.build(arena, opts)
 		end
 	end
 
+	-- RUSTLE TELL (Phase 3a). One Sound on the boss (or the mechanical
+	-- Observer), played by CanteenProtocol Feel.Canteen.RustleLead seconds
+	-- before every lowering onset -- and before every fake glance, which is the
+	-- point: the sound must never disambiguate them. Lookup is the CRT-hum
+	-- pattern (UiFx): named asset under SoundService.KenopsiaAudio first
+	-- (SFX.Canteen.<name>, then any Sound of that name), else the placeholder
+	-- id; 0 = silent with one warn, so a later asset drop needs zero code
+	-- change here.
+	do
+		local function rustleSource()
+			local audio = SoundService:FindFirstChild("KenopsiaAudio")
+			if not audio then return nil end
+			local sfx = audio:FindFirstChild("SFX")
+			local canteen = sfx and sfx:FindFirstChild("Canteen")
+			local named = canteen and canteen:FindFirstChild(Feel.Canteen.RustleSound)
+			if named and named:IsA("Sound") and named.SoundId ~= "" then return named end
+			for _, d in ipairs(audio:GetDescendants()) do
+				if d:IsA("Sound") and d.Name == Feel.Canteen.RustleSound and d.SoundId ~= "" then
+					return d
+				end
+			end
+			return nil
+		end
+		local emitter = nil
+		if self.boss and self.boss.model then
+			emitter = self.boss.model.PrimaryPart
+				or self.boss.model:FindFirstChildWhichIsA("BasePart", true)
+		end
+		if not emitter then
+			emitter = observer:IsA("BasePart") and observer
+				or observer.PrimaryPart
+				or observer:FindFirstChildWhichIsA("BasePart", true)
+		end
+		local placeholderId = tonumber(Feel.Canteen.RustlePlaceholderId) or 0
+		local sound = Instance.new("Sound")
+		sound.Name = "CP_Rustle"
+		local src = rustleSource()
+		if src then
+			sound.SoundId = src.SoundId
+		elseif placeholderId > 0 then
+			sound.SoundId = ("rbxassetid://%d"):format(placeholderId)
+		else
+			sound.SoundId = ""
+			if not warnedNoRustle then
+				warnedNoRustle = true
+				warn(("[CanteenProps] no rustle asset (KenopsiaAudio.SFX.Canteen.%s) and placeholder id %d, tell is silent")
+					:format(tostring(Feel.Canteen.RustleSound), placeholderId))
+			end
+		end
+		sound.Volume = tonumber(Feel.Canteen.RustleVolume) or 0.5
+		sound.RollOffMode = Enum.RollOffMode.InverseTapered
+		sound.Parent = emitter or folder
+		self.rustleSound = sound
+	end
+
 	-- METHODS ---------------------------------------------------------------
 
 	-- The visible body at an occupied seat. Called by CanteenProtocol for each
@@ -443,6 +508,29 @@ function CanteenProps.build(arena, opts)
 	function self.dinerDie(seatIndex)
 		local diner = self.diners[seatIndex]
 		if diner then diner:die() end
+		-- 26.08.2026 (user, Schritt 2): DER KOERPER GEHT GANZ -- ALSO AUCH DAS
+		-- BESTECK.
+		--
+		-- Der Diner mit eigener Gabel (PS1Player_Fork) nimmt seine mit: sie ist an
+		-- die Hand geskinnt, haengt also unter seinem Modell und wird von die()
+		-- mit ausgeblendet. Beim blanken PS1Player-Rig ist die Gabel aber ein
+		-- SEAT-Prop -- seatDiner blendet sie nur dann aus, wenn der Diner eine
+		-- eigene mitbringt (`diner.hasFork`). Ohne diese Zeilen blieb sie mitsamt
+		-- ihren Erbsen ueber einem leeren Stuhl stehen, waehrend der Koerper
+		-- laengst zerlegt war.
+		--
+		-- Faellt nur beim Fallback-Rig auf, deshalb war es bisher unsichtbar --
+		-- aber genau dafuer ist der Fallback da.
+		--
+		-- Der TELLER bleibt bewusst stehen, mit den restlichen Erbsen darauf:
+		-- gedeckt fuer jemanden, der nicht mehr da ist.
+		local seat = self.seats[seatIndex]
+		if seat then
+			if seat.fork then setVisible(seat.fork, false) end
+			for _, rider in ipairs(seat.forkLoad or {}) do setVisible(rider, false) end
+			seat.shownLoad = 0
+			seat.pendingForkLoad = 0
+		end
 	end
 
 	-- An empty plate, survived: the one smile at this table.
@@ -456,6 +544,26 @@ function CanteenProps.build(arena, opts)
 		if not seat then return end
 		for k, pea in ipairs(seat.peas) do
 			setVisible(pea, k <= remaining)
+		end
+	end
+
+	-- Phase 3a HOT PEAS. The tint is the whole announcement -- the server's
+	-- colour IS the picture, no packet needed (see the header). It only ever
+	-- touches PLATE peas: the fork riders and the diner's skinned beans are
+	-- shared by every mouthful and would flash amber on ordinary bites.
+	-- Removal stays visibility-based (setPeas), so the tint survives for as
+	-- long as the pea does. `color` is decided by CanteenProtocol
+	-- (TrialKit.PALETTE.Hazard or Feel.Canteen.HotPeaHex), not here.
+	function self.markPeaHot(seatIndex, peaIndex, color)
+		local seat = self.seats[seatIndex]
+		local pea = seat and seat.peas[peaIndex]
+		if not pea then return end
+		if pea:IsA("BasePart") then
+			pea.Color = color
+			return
+		end
+		for _, d in ipairs(pea:GetDescendants()) do
+			if d:IsA("BasePart") then d.Color = color end
 		end
 	end
 
@@ -567,6 +675,14 @@ function CanteenProps.build(arena, opts)
 
 	function self.observerTo(phase, duration)
 		if not self.alive then return end
+		-- 26.08.2026 (user): der ganze Tisch haelt die Luft an, sobald er sich
+		-- senkt -- niemand blinzelt mehr, bis er wieder hinter der Zeitung ist
+		-- (CanteenDiner.hold). Steht VOR dem boss-return, weil es beide Aufbauten
+		-- betrifft: mit Boss-Rig wie ohne.
+		local up = (phase == "lowering" or phase == "watching")
+		for _, diner in self.diners do
+			if diner then pcall(diner.hold, diner, up) end
+		end
 		if self.boss then
 			self.boss:setPhase(phase, duration)
 			return
@@ -613,6 +729,36 @@ function CanteenProps.build(arena, opts)
 			end
 			if self.alive then poseObserver(self.observer, target, self.observerAuthored) end
 		end)
+	end
+
+	-- Phase 3a: the rustle. Fired by CanteenProtocol's observer loop; safe to
+	-- call with no asset (SoundId "" never plays -- the same contract the hum
+	-- keeps).
+	function self.rustle()
+		if not self.alive then return end
+		local s = self.rustleSound
+		if s and s.Parent and s.SoundId ~= "" then
+			s.TimePosition = 0
+			s:Play()
+		end
+	end
+
+	-- Phase 3a: the fake-lower is BOSS theater. Without a boss rig there is no
+	-- body to glance, so the fake stays audio-only (the rustle above): the
+	-- mechanical observer and the newspaper are the AUTHORITY's tell, and the
+	-- tell must never move without the phase behind it.
+	function self.glance()
+		if self.boss then self.boss:glance() end
+	end
+	-- How long the glance clip runs -- CanteenProtocol fits the fake inside a
+	-- hidden read with this, instead of duplicating the boss's frame numbers.
+	self.glanceSeconds = CanteenBoss.GlanceSeconds
+
+	-- Phase 3a: room suspicion -> the angry atlas stays up (CanteenBoss). The
+	-- mechanical fallback has no face to keep; the shortened reads are its
+	-- whole expression.
+	function self.setSuspicious(on)
+		if self.boss then self.boss:setSuspicious(on) end
 	end
 
 	-- Serialised by CanteenBoss. The first callback is the authoritative shot;

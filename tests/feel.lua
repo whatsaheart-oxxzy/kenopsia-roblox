@@ -124,6 +124,7 @@ local nonFade = {
 	{ "Typewriter.LineGap", Feel.Typewriter.LineGap }, { "Typewriter.LeadIn", Feel.Typewriter.LeadIn },
 	{ "Typewriter.ScoreLeadIn", Feel.Typewriter.ScoreLeadIn }, { "Death.Fade", Feel.Death.Fade },
 	{ "Overlay.BlipHold", Feel.Overlay.BlipHold },
+	{ "Canteen.RustleLead", Feel.Canteen.RustleLead },
 }
 for _, e in ipairs(nonFade) do
 	check(type(e[2]) == "number" and e[2] > 0 and e[2] <= Feel.MaxMotion, e[1] .. " <= 600 ms", tostring(e[2]))
@@ -242,6 +243,51 @@ check(type(Feel.Hum.PlaceholderId) == "number" and Feel.Hum.PlaceholderId >= 0, 
 print("Shake reduce")
 check(near(Feel.Shake.ReduceFactor, 0.35), "ReduceShake = 0.35x amplitude", tostring(Feel.Shake.ReduceFactor))
 check(Feel.Shake.ReduceFactor > 0 and Feel.Shake.ReduceFactor < 1, "reduced shake is never zero and never full")
+
+-- Phase 3a (29.08.2026): the canteen escalation ladder, hot peas, suspicion
+-- and the rustle tell. The one hard contract here is the telegraph rule: the
+-- hidden floor may never squeeze the 0.35 s lowering tell plus a human
+-- reaction out of the round.
+print("Canteen polish (Phase 3a)")
+check(type(Feel.Canteen) == "table", "Canteen section present")
+check(Feel.Canteen.HiddenFloor >= 0.7,
+	"hidden floor >= 0.7 s (0.35 lowering tell + reaction)", tostring(Feel.Canteen.HiddenFloor))
+check(Feel.Canteen.HiddenFloor >= Feel.Death.TelegraphMin,
+	"hidden floor never under Feel.Death.TelegraphMin", tostring(Feel.Canteen.HiddenFloor))
+check(Feel.Canteen.HiddenShrink > 0 and Feel.Canteen.HiddenShrink < 0.5,
+	"hidden shrink in (0, 0.5)", tostring(Feel.Canteen.HiddenShrink))
+check(Feel.Canteen.RustleLead > 0 and Feel.Canteen.RustleLead <= 0.35 + 1,
+	"rustle lead in (0, lowering 0.35 + 1 s]", tostring(Feel.Canteen.RustleLead))
+check(Feel.Canteen.RustleLead < Feel.Canteen.HiddenFloor,
+	"rustle lead fits inside the shortest read", tostring(Feel.Canteen.RustleLead))
+check(Feel.Canteen.SuspicionStep > 0 and Feel.Canteen.SuspicionStep < Feel.Canteen.HiddenFloor,
+	"suspicion step positive and under the floor", tostring(Feel.Canteen.SuspicionStep))
+check(Feel.Canteen.SuspicionAngryAt >= 1
+	and Feel.Canteen.SuspicionAngryAt == math.floor(Feel.Canteen.SuspicionAngryAt),
+	"suspicion face threshold is a whole count")
+check(Feel.Canteen.FakeLowerFrom >= 2 and Feel.Canteen.HotPeasFrom >= 2,
+	"round 1 stays the clean teach round")
+check(Feel.Canteen.FakeLowerChance > 0 and Feel.Canteen.FakeLowerChance < 1,
+	"fake-lower chance in (0, 1)", tostring(Feel.Canteen.FakeLowerChance))
+check(Feel.Canteen.HotPeaSeconds >= 5,
+	"a hot pea gets at least 5 s to the mouth", tostring(Feel.Canteen.HotPeaSeconds))
+check(Feel.Canteen.HotPeaCount >= 1 and Feel.Canteen.HotPeaCount <= 8
+	and Feel.Canteen.HotPeaCount == math.floor(Feel.Canteen.HotPeaCount),
+	"hot peas are a whole count of at most 8", tostring(Feel.Canteen.HotPeaCount))
+check(type(Feel.Canteen.HotPeaHex) == "string"
+	and string.match(Feel.Canteen.HotPeaHex, "^%x%x%x%x%x%x$") ~= nil,
+	"hot pea fallback tint is a 6-digit hex string", tostring(Feel.Canteen.HotPeaHex))
+check(Feel.Canteen.PeaScore * 16 < 1000,
+	"pea detail band: 16 peas stay under 1000", tostring(Feel.Canteen.PeaScore * 16))
+check(type(Feel.Canteen.RustleSound) == "string" and #Feel.Canteen.RustleSound > 0,
+	"rustle has a lookup name")
+check(type(Feel.Canteen.RustlePlaceholderId) == "number" and Feel.Canteen.RustlePlaceholderId >= 0,
+	"rustle placeholder id is a number (0 = silent)")
+check(Feel.Canteen.RustleVolume > 0 and Feel.Canteen.RustleVolume <= 1,
+	"rustle is a tell, not a track", tostring(Feel.Canteen.RustleVolume))
+check(Pacing.Timing.CanteenSettlement ~= nil and Pacing.Timing.CanteenSettlement > 0
+	and Pacing.Timing.CanteenSettlement <= 6,
+	"settlement window in (0, 6] s", tostring(Pacing.Timing.CanteenSettlement))
 
 print("No duplicated Pacing.Timing values")
 for k in pairs(Pacing.Timing) do

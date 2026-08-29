@@ -82,12 +82,33 @@ Feel.Fade = {
 
 -- Camera shake: trauma model. Events add to trauma (0..1); strength is
 -- trauma squared; trauma drains at Decay per second (a full load ~3 s).
+-- 26.08.2026 (user): HEFTIGER, NACH UNTEN, ROT.
+--
+-- Die Amplituden sind angehoben (Translate 1.15 -> 1.8, Tilt 0.2 -> 0.3,
+-- Roll 0.26 -> 0.38). Ueber `power` allein war das nicht zu holen: applyGoreFx
+-- rechnet trauma = min(1, trauma + power * near), der Wert ist also bei 1
+-- gedeckelt und mag = trauma^2 damit ebenfalls. Wer mehr Wucht will, muss an
+-- die Amplituden -- `power` entscheidet nur, wie schnell man den Deckel
+-- erreicht.
+--
+-- GILT FUER JEDEN gorefx, also auch fuer Minen und Compactor in der Dead Zone.
+-- Das ist Absicht: ein Spiel sollte EINE Sprache fuer Einschlaege sprechen, und
+-- zwei verschieden harte Schuettler waeren nicht Abstimmung, sondern Zufall.
 Feel.Shake = {
 	Decay = 0.33,      -- trauma per second
 	NoiseHz = 30,      -- math.noise sample rate
-	Translate = 1.15,  -- studs at full trauma
-	Tilt = 0.2,        -- radians (pitch / yaw) at full trauma
-	Roll = 0.26,       -- radians at full trauma
+	Translate = 1.8,   -- studs at full trauma
+	Tilt = 0.3,        -- radians (pitch / yaw) at full trauma
+	Roll = 0.38,       -- radians at full trauma
+	-- DER ABWAERTS-SCHLAG. Das Rauschen oben ist symmetrisch -- es rumpelt in
+	-- alle Richtungen gleich und hat deshalb keine RICHTUNG. Diese beiden geben
+	-- ihm eine: die Kamera faellt nach unten und kippt den Blick mit, als saecke
+	-- einem der Kopf weg. Getrennt vom Rauschen, weil ein Schlag kein Rumpeln
+	-- ist -- er faellt steiler ab (trauma^3 statt ^2, siehe den Writer im
+	-- Client), sitzt also im ersten Moment und ist weg, waehrend das Rumpeln
+	-- noch ausklingt.
+	Down = 2.2,        -- studs nach unten at full trauma
+	DownPitch = 0.16,  -- radians, der Blick kippt mit nach unten
 	-- P2.3: the SHAKE settings row (ReduceShake, seeded from
 	-- GuiService.ReducedMotionEnabled) multiplies every amplitude by this.
 	-- Never zero: a hit must still read as a hit.
@@ -153,6 +174,58 @@ Feel.Death = {
 	Hold = 2.5,
 	Fade = 0.5,
 	Spectate = 3.2,
+}
+
+-- CANTEEN POLISH (Phase 3a, 29.08.2026) -- the observer's escalation ladder,
+-- suspicion, fake-lowers, hot peas and the rustle tell. Consumed by
+-- CanteenProtocol / CanteenProps / CanteenBoss on the server; nothing here
+-- reaches the client (the plate and the boss ARE the readout, per the
+-- CanteenProps header). The round length itself stays
+-- Pacing.RoundSeconds.canteen; the settlement window stays
+-- Pacing.Timing.CanteenSettlement -- this block only owns how the screw turns.
+--   HiddenShrink     multiplies BOTH hidden bounds by (1 - this) per round past
+--                    the first: round 2 reads 2.13-7.65 s, round 3 1.81-6.50 s.
+--   HiddenFloor      no hidden read is ever shorter than this. 1.2 s stays
+--                    above Feel.Death.TelegraphMin (0.7): the 0.35 s lowering
+--                    tell plus a human reaction always fits.
+--   SuspicionStep    seconds off the NEXT full read per near-catch this round
+--                    (a swallow whose window died during `lowering` -- risky
+--                    but unpunished); applied after the shrink, still floored.
+--   SuspicionAngryAt at this many near-catches the boss keeps the angry atlas
+--                    up until the round ends (CanteenBoss.setSuspicious).
+--   FakeLowerFrom /  from this round on, a hidden read may carry ONE
+--   FakeLowerChance  theatrical glance (LookDown with no phase behind it),
+--                    never two reads in a row. Pure theater: detection is off.
+--   HotPeasFrom /    from this round on, HotPeaCount peas per plate are HOT
+--   HotPeaCount /    (tinted hazard-amber on the plate): once forked they must
+--   HotPeaSeconds    reach a mouth within HotPeaSeconds or they are VOIDED --
+--                    off the fork, no score, cpmiss nudge.
+--   HotPeaHex        fallback tint when TrialKit.PALETTE.Hazard is absent.
+--   PeaScore         raw-key detail per eaten pea (CanteenProtocol PEA_STEP).
+--                    The protocol clamps every band's detail under 1000, so
+--                    the Borda bands can never overlap.
+--   RustleLead       seconds the paper rustle precedes every lowering onset --
+--                    and every fake glance, so the sound never disambiguates.
+--   RustleSound /    the SFX slot (SoundService.KenopsiaAudio.SFX.Canteen.
+--   RustlePlaceholderId / RustleVolume  <RustleSound>), CRT-hum pattern: named
+--                    asset first, then the placeholder id, 0 = silent with one
+--                    warn until the asset lands (MASTERPLAN P6).
+Feel.Canteen = {
+	HiddenShrink = 0.15,
+	HiddenFloor = 1.2,
+	SuspicionStep = 0.3,
+	SuspicionAngryAt = 2,
+	FakeLowerFrom = 2,
+	FakeLowerChance = 0.25,
+	HotPeasFrom = 2,
+	HotPeaCount = 4,
+	HotPeaSeconds = 8,
+	HotPeaHex = "D9A036",
+	PeaScore = 60,
+	RustleLead = 0.35,
+	RustleSound = "Rustle",
+	RustlePlaceholderId = 0,
+	RustleVolume = 0.5,
 }
 
 -- Weapon / scope feel (not a Machine element: Quad is allowed here).

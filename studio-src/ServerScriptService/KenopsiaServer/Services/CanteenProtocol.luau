@@ -36,6 +36,31 @@
 -- `tools/build-canteen-arena.luau`. Nothing here reads the room's dressing --
 -- in particular not the eight `Plate` cylinders, whose child order is not a
 -- contract. `validateArena()` gates the whole trial.
+--
+-- PHASE 3a POLISH (29.08.2026): the table tightens as the evening goes on.
+-- Every knob lives in Feel.Canteen / Pacing.Timing, nothing is a literal here.
+--   * ESCALATION: the hidden bounds shrink per round (HiddenShrink,
+--     multiplicative, floored at HiddenFloor). Lowering stays 0.35 s -- the
+--     tell is the contract and it is never shortened.
+--   * SUSPICION: a swallow whose window died during `lowering` was risky and
+--     went unpunished; each one (a NEAR-CATCH, see sweep) shortens the NEXT
+--     full read by SuspicionStep, and at SuspicionAngryAt the boss face stops
+--     forgiving for the rest of the round (CanteenBoss.setSuspicious).
+--   * FAKE-LOWERS (round FakeLowerFrom on): a LookDown glance with NO phase
+--     behind it -- pure theater, detection stays off. The rustle fires for it
+--     anyway, on purpose: a tell that only precedes real lowerings would
+--     disambiguate them.
+--   * HOT PEAS (round HotPeasFrom on): HotPeaCount amber peas per plate.
+--     Forked, they must reach a mouth within HotPeaSeconds or they are VOIDED
+--     -- off the fork, no score, and that plate can never be cleaned.
+--   * SETTLEMENT: the first clean plate starts Pacing.Timing.CanteenSettlement
+--     seconds for everyone else, then the round ends (see the main loop).
+--   * RUSTLE: Feel.Canteen.RustleLead before every lowering onset, played on
+--     the boss by CanteenProps (silent until the SFX asset lands).
+--   * LAST DINER: one MachineVoice line ("ONE REMAINS_") when exactly one
+--     living plate still holds food. Feed line, never a card (MP-08 B-02).
+-- Eliminated diners keep the fixed ObserverCamera view they already had --
+-- there is no death-camera switch in this trial, and that is deliberate.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -49,6 +74,22 @@ local AnimationIds = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForC
 -- P1.5: the 3-2-1 step length is the SAME number the kit and the client use.
 local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 	:WaitForChild("Config"):WaitForChild("FeelConfig"))
+-- Phase 3a: the LAST DINER line comes from the voice pool like every other
+-- Machine comment, not from a string invented here.
+local MachineVoice = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("MachineVoice"))
+-- Phase 3a: the hot-pea tint is TrialKit.PALETTE.Hazard where the kit is
+-- present. The canteen predates TrialKit and must keep running without it, so
+-- the lookup is guarded and Feel.Canteen.HotPeaHex is the fallback -- a
+-- missing sibling module must never take the whole trial down.
+local TrialKit = nil
+do
+	local m = script.Parent:FindFirstChild("TrialKit")
+	if m and m:IsA("ModuleScript") then
+		local ok, kit = pcall(require, m)
+		if ok and type(kit) == "table" then TrialKit = kit end
+	end
+end
 
 local CanteenProtocol = {}
 -- #50 watchdog hook state (see CanteenProtocol.abort below).
@@ -98,25 +139,47 @@ local RAISING_TIME = 0.30
 -- not a mandatory hold: the loop exits as soon as every visible shot finishes.
 local EXECUTION_GRACE = 8.0
 
+-- 26.08.2026 (user, Schritt 3): der Schlag zwischen Treffer und Zerlegen.
+--
+-- Ohne ihn passiert alles im selben Frame: Einschlag, Koerper weg, Brockenregen,
+-- Schirm-Blut. Das liest sich als ein einziger roter Schmierer, in dem keine
+-- Ursache mehr zu erkennen ist. Mit dem Schlag sieht man erst den TREFFER am
+-- Kopf und dann, dass ihn das zerlegt -- zwei Ereignisse, in dieser Reihenfolge.
+--
+-- Kurz genug, dass es ein Einschlag bleibt und kein Zoegern wird. Der Boss
+-- feuert onFire am Muendungsblitz ab, das hier haengt also am Blitz und nicht an
+-- der Rundenuhr -- und es haelt die Runde auch nicht auf: finish() laeuft
+-- unabhaengig weiter, pendingExecutions wartet nicht auf diesen Timer.
+-- 26.08.2026 (user): 0.15 -> 0.25. Der Treffer soll stehen duerfen, bevor er
+-- zerlegt wird.
+local SHATTER_BEAT = 0.25
+
 -- RANKING BANDS. runRound returns one ordering key per player and MachineFlow
 -- sums those across rounds, then ranks and distributes exactly 1700. The bands
 -- encode the plan's order: finished > alive-unfinished > eliminated.
 --
--- The separation is arithmetic, not hope (23.08.2026: re-fitted for 20 peas
--- and a 60-s round; PEA_STEP 50 -> 40, the bands themselves stay the shared
--- TrialRules.BAND values):
---   eliminated  0    + eaten*40 (max 19 -> 760) + survived*2 (max 60 -> 120) = 880
---   alive       1000 + eaten*40 (max 19 -> 760)                              = 1760
---   finished    2000 + spare*10 (max 60 -> 600)                              = 2600
+-- The separation is arithmetic, not hope. 29.08.2026 (Phase 3a): banked peas
+-- keep their points -- PEA_STEP reads Feel.Canteen.PeaScore (60) so the same
+-- number the offline proof asserts is the number that ships. At 60 the raw sum
+-- can outgrow its band (19 * 60 = 1140 reaches past 1000), so every band's
+-- detail is CLAMPED at DETAIL_CAP:
+--   eliminated  0    + min(999, eaten*60 + survived*2)   max  999
+--   alive       1000 + min(999, eaten*60)                max 1999
+--   finished    2000 + min(999, spare*10 (max 600))      max 2600
 -- 19 is the ceiling for both lower bands because eating the 20th pea IS
--- finishing. 880 < 1000 and 1760 < 2000, so no band can ever reach into the one
--- above it. (At PEA_STEP 50 the eliminated band would have reached 1070.)
+-- finishing. 999 < 1000 and 1999 < 2000, so no band can ever reach into the
+-- one above it. The clamp costs ordering only at the very top of a band
+-- (17, 18 and 19 peas eaten all read 999 of detail) -- two players that close
+-- are that close, and the band itself still separates them from everyone else.
 local ELIMINATED_BAND = 0
 local ALIVE_BAND = 1000
 local FINISHED_BAND = 2000
-local PEA_STEP = 40
+-- Phase 3a: 40 -> Feel.Canteen.PeaScore (60). ONE source for what a pea is
+-- worth, shared with tests/feel.lua's band proof.
+local PEA_STEP = Feel.Canteen.PeaScore
 local FINISH_SPEED_STEP = 10
 local SURVIVAL_STEP = 2
+local DETAIL_CAP = 999
 
 -- cos(40 degrees). Roblox's default FOV is 70, so the half-angle is 35 vertical
 -- and wider horizontally; 40 keeps the Observer on screen from any seat without
@@ -384,11 +447,30 @@ local function eliminate(st, userId, reason)
 	ps.eliminated = true
 	ps.eliminatedAt = os.clock() - st.startedAt
 	ps.fork = 0
+	-- Phase 3a: a dead diner's hot windows die with them -- the void loop must
+	-- never nudge a body.
+	if ps.hotForkAt then table.clear(ps.hotForkAt) end
 
+	-- MP-08 B-02 (26.08.2026, user): die Vollbildkarte gehoert dem Gestorbenen.
+	-- announce() feuerte sie an JEDEN im Raum, und showAnnounce("death") zieht
+	-- nach Feel.Death.Hold auf volles Schwarz -- mitten in einer Runde, in der
+	-- man den Observer sehen MUSS, und in der ohnehin jeder auf der festen
+	-- Tischkamera sitzt. Der Raum bekommt jetzt eine Feed-Zeile, die nichts
+	-- zudeckt; die Karte geht nur noch an den, um den es geht.
+	--
+	-- seconds = 3.0: 2.5 s Stand (Feel.Death.Hold) + 0.5 s Zug auf Schwarz,
+	-- dann raeumt sie sich selbst ab (S2) und gibt das Bild wieder frei.
+	local who = Players:GetPlayerByUserId(userId)
+	local name = (who and who.DisplayName) or "SUBJECT"
 	tellOne(userId, { kind = "cpout", reason = reason })
-	announce(st.room, { kind = "announce", style = "death",
-		text = ("PROTOCOL VIOLATION - %s"):format(
-			(Players:GetPlayerByUserId(userId) and Players:GetPlayerByUserId(userId).DisplayName) or "SUBJECT") })
+	tellOne(userId, { kind = "announce", style = "death", seconds = 3.0,
+		text = ("PROTOCOL VIOLATION - %s"):format(name) })
+	for _, mm in st.room.members do
+		if mm.userId ~= userId then
+			tellOne(mm.userId, { kind = "feed", style = "death",
+				text = ("%s - PROTOCOL VIOLATION"):format(string.upper(name)) })
+		end
+	end
 
 	-- Logical elimination happens immediately, but the body and blood wait for
 	-- the boss's first visible muzzle event. Simultaneous catches are queued by
@@ -418,14 +500,106 @@ local function eliminate(st, userId, reason)
 		if not subject.char.Parent or not subject.hum.Parent or subject.hum.Health <= 0 then return end
 
 		-- Keep the R15 body intact instead of exploding into Roblox body parts.
-		-- The avatar is invisible at the table; the PS1 diner is what falls.
+		-- The avatar is invisible at the table; the PS1 diner is what is hit.
 		subject.hum.BreakJointsOnDeath = false
 		local diner = st.props and st.props.diner and ps.seat and st.props.diner(ps.seat)
-		if diner then st.props.dinerDie(ps.seat) end
 		local hitPart = subject.char:FindFirstChild("Head") or subject.root
 		local at = diner and diner:headPosition() or (hitPart and hitPart:IsA("BasePart") and hitPart.Position)
+
+		-- 26.08.2026 (user): KEINE LEICHE MEHR. DER KOERPER GEHT GANZ.
+		--
+		-- Drei Anlaeufe hat die Leiche gekostet -- Clip laeuft aus und der Koerper
+		-- verschwindet per Respawn, Clip legt ihn unter den Tisch, gerechnete Pose
+		-- verknotet das Rig. Alle drei scheiterten am selben Punkt: eine sitzende
+		-- Leiche an einem Tisch ist eine Pose, und die gehoert in ein
+		-- Animationsprogramm, nicht in Laufzeitcode.
+		--
+		-- Also gibt es sie nicht mehr. Der Schuss ZERLEGT den Diner, genau wie die
+		-- zweite Mine in der DEAD ZONE (Minefield: "The body goes entirely --
+		-- shatter destroys it -- no death clip, no corpse"). Damit faellt das ganze
+		-- Problem weg statt geloest zu werden: kein Endframe, der halten muss, kein
+		-- Koerper, der irgendwo landen kann, keine Pose, die stimmen muss.
+		--
+		-- Die Reihenfolge ist die Choreografie:
+		--   1. Treffer am Kopf -- der rote Punkt, der Koerper sitzt noch
+		--   2. SHATTER_BEAT spaeter: der Diner verschwindet, der Brockenregen
+		--      kommt, und der ganze Raum kriegt Schirm-Blut und Shake
+		-- Der Teller mit den restlichen Erbsen bleibt stehen. Das ist der Punkt:
+		-- gedeckt fuer jemanden, der nicht mehr da ist.
+		--
+		-- NUR shatter, sonst NICHTS. Der Client baut daraus bereits das volle
+		-- Paket (GoreClient.shatter): zwei Sounds, burst 2.2, 14 Brocken,
+		-- Fontaene, vier Lachen und Tropfen. Hier standen zusaetzlich noch ein
+		-- fountain, ein pool und ein ImpactBody -- also eine zweite Fontaene, eine
+		-- sechste Lache und derselbe Sound ein zweites Mal an derselben Stelle.
+		-- Zwei identische Sounds am selben Punkt werden nicht lauter, sondern
+		-- matschig, und sechs Lachen uebereinander sind ein Fleck, kein Blut.
+		-- Die Lachen liegen uebrigens richtig: pool() raycastet nach unten und
+		-- legt sich auf die TISCHPLATTE, nicht auf den Boden darunter.
 		if at then BloodFX.hit(at, st.audience) end
-		subject.hum.Health = 0
+		task.delay(SHATTER_BEAT, function()
+			-- Der Timer ueberlebt die Runde nicht: nach dem Abraeumen ist st.props
+			-- nil und der Diner zerstoert. Beides hier geprueft, statt sich darauf
+			-- zu verlassen, dass 0.15 s immer reichen.
+			if not roundActive(st) or not st.props then return end
+			if diner then st.props.dinerDie(ps.seat) end
+			if not at then return end
+			BloodFX.shatter(diner and diner.model or nil, at, st.audience)
+			-- Schritt 4: WAS AM PLATZ BLEIBT, BLEIBT AUF DEM TISCH.
+			--
+			-- Ich hatte diesen Schritt fuer erledigt erklaert, weil shatter selbst
+			-- vier Lachen legt. Nachgesehen stimmt das nicht: POOL_LIFE ist 18 s --
+			-- nach 7 s trocknen sie ein, nach 18 blenden sie aus, nach rund 21 ist
+			-- der Platz wieder blitzsauber. Die Runde laeuft aber 60 s. Wer bei
+			-- Sekunde 15 erschossen wird, hinterlaesst ab Sekunde 36 nichts mehr,
+			-- und die Ueberlebenden essen die restliche halbe Minute neben einem
+			-- Stuhl weiter, an dem nie jemand gesessen zu haben scheint. Dazu
+			-- kommt MAX_POOLS = 30 mit Verdraengung: bei vier Hinrichtungen raeumt
+			-- der letzte Fleck den ersten weg.
+			--
+			-- Diese eine Lache bleibt deshalb bis zum Rundenende stehen. Sie
+			-- trocknet ein wie jede andere -- sie verschwindet nur nicht. Etwas
+			-- kleiner als der frische Spritzer von shatter (3.0-4.2), damit sie
+			-- darunter sitzt und das ist, was uebrig bleibt, wenn der Rest
+			-- weggetrocknet ist.
+			BloodFX.mark(at, 2.6, st.audience)
+			-- 26.08.2026 (user): 0.9 -> 1.5. Der Wert war als "kleiner als eine
+			-- Mine" gedacht, aber das ist der falsche Vergleich: eine Mine geht
+			-- IRGENDWO im Feld hoch, die Hinrichtung passiert am selben Tisch, an
+			-- dem man sitzt. Ueber 1 zu gehen hat dabei einen konkreten Zweck --
+			-- applyGoreFx deckelt trauma bei 1, ein Wert darueber stellt also
+			-- sicher, dass der Schlag IMMER voll ankommt, auch wenn kurz zuvor
+			-- schon geschuettelt wurde.
+			announce(st.room, { kind = "gorefx", pos = { at.X, at.Y, at.Z }, power = 1.5 })
+		end)
+
+		-- DER SPIELER SELBST STIRBT TROTZDEM NICHT.
+		--
+		-- Hier stand `subject.hum.Health = 0`. Der Humanoid-Tod loeste Roblox'
+		-- eigenen Respawn aus (Players.CharacterAutoLoads ist an, RespawnTime 5 s):
+		-- fuenf Sekunden spaeter stand der Spieler wieder am SpawnLocation und
+		-- konnte mitten in der laufenden Runde herumlaufen. Der Diner ist zerlegt,
+		-- der Avatar bleibt einfach verankert, unsichtbar und auf WalkSpeed 0 an
+		-- seinem Platz sitzen, bis cleanupRound ihn freigibt.
+		--
+		-- Der Ausweg ist NICHT, den Respawn global abzuschalten (CharacterAutoLoads
+		-- ist eine Players-Eigenschaft, die das ganze Spiel betrifft). Der
+		-- Humanoid stirbt hier einfach nicht mehr: eliminiert ist eine
+		-- Zustandssache (ps.eliminated), und jede Eingabe- und Schleifenpruefung
+		-- oben laeuft ueber ps.eliminated, nicht ueber Health.
+		--
+		-- Damit MachineFlow den Tod trotzdem zaehlt: watchDeaths hoert auf
+		-- Humanoid.Died ODER auf das Attribut KenopsiaProcessed. Genau fuer diesen
+		-- Fall ist der zweite Pfad da. Hochzaehlen statt setzen, damit auch eine
+		-- zweite Elimination in einer spaeteren Runde ein Change-Signal ausloest.
+		local plrOut = Players:GetPlayerByUserId(userId)
+		if plrOut then
+			plrOut:SetAttribute("KenopsiaProcessed",
+				(plrOut:GetAttribute("KenopsiaProcessed") or 0) + 1)
+		end
+		subject.hum.WalkSpeed = 0
+		subject.hum.AutoRotate = false
+		subject.root.Anchored = true
 	end
 
 	if st.props and st.props.execute then
@@ -454,11 +628,32 @@ end
 
 -- Anyone still mid-swallow when the eyes open is caught. This is the half of
 -- the rule the input handler cannot see: the action already happened.
+--
+-- Phase 3a NEAR-CATCH: the third case. A window that closed AFTER the paper
+-- began to drop (st.lowerStartedAt, stamped by runObserver) but BEFORE the
+-- eyes opened was a swallow that got away by a fraction of a second -- risky
+-- and unpunished, which is exactly what makes a boss suspicious. Counted
+-- room-wide, because the table is one organism to him: every point shortens
+-- his NEXT full read by Feel.Canteen.SuspicionStep (see runObserver), and at
+-- SuspicionAngryAt the angry atlas stays up for the rest of the round. This is
+-- detection-adjacent BOOKKEEPING, not detection: nothing here eliminates, no
+-- packet is sent, and no margin is ever told to a client.
 local function sweep(st)
 	local now = os.clock()
 	for userId, ps in st.state do
-		if not (ps.finished or ps.eliminated) and now < (ps.eatUntil or 0) then
-			eliminate(st, userId, "seen")
+		if not (ps.finished or ps.eliminated) then
+			if now < (ps.eatUntil or 0) then
+				eliminate(st, userId, "seen")
+			elseif (ps.eatUntil or 0) > (st.lowerStartedAt or math.huge) then
+				st.suspicion = (st.suspicion or 0) + 1
+				if st.suspicion >= Feel.Canteen.SuspicionAngryAt
+					and not st.suspicionShown
+					and st.props and st.props.setSuspicious
+				then
+					st.suspicionShown = true
+					pcall(st.props.setSuspicious, true)
+				end
+			end
 		end
 	end
 end
@@ -488,10 +683,47 @@ local function runObserver(st)
 	-- 23.08.2026: the read length is decided when the paper goes up, not when
 	-- it comes down, so the fake-out decision and the announce happen together.
 	-- The first read is always a full one: nobody has had a chance to eat yet.
-	local hiddenTime = rng:NextNumber(HIDDEN_MIN, HIDDEN_MAX)
+	-- Phase 3a: the bounds are per-round now (st.hiddenMin/Max, shrunk by
+	-- Feel.Canteen.HiddenShrink and floored at HiddenFloor -- see runRoundInner).
+	local hiddenTime = rng:NextNumber(st.hiddenMin, st.hiddenMax)
 	local lastWasFakeout = false
+	local lastReadHadGlance = false
 	while roundActive(st) do
-		if not sleepWhileActive(st, hiddenTime) then break end
+		-- Phase 3a FAKE-LOWER: at most one glance per read, never two reads in
+		-- a row, and only in reads long enough that the glance lands a clear
+		-- RustleLead before the REAL rustle below -- overlapping the two
+		-- sounds would make the pair itself a tell. The bounds are derived,
+		-- not tuned: the glance starts no earlier than the paper has settled
+		-- (RAISING_TIME) plus its own rustle lead, and must finish
+		-- (glanceSeconds) a full lead clear of the real one. Fake-out reads
+		-- (1.0-1.8 s) never qualify, which is right: a fake inside a fake-out
+		-- would pin the whole table for the length of both.
+		local rustleLead = Feel.Canteen.RustleLead
+		local glanceAt = nil
+		if st.fakeLowers and not lastReadHadGlance then
+			local glanceLen = (st.props and st.props.glanceSeconds) or 0.7
+			local lo = RAISING_TIME + rustleLead
+			local hi = hiddenTime - (rustleLead * 3 + glanceLen)
+			if hi > lo and rng:NextNumber() < Feel.Canteen.FakeLowerChance then
+				glanceAt = rng:NextNumber(lo, hi)
+			end
+		end
+		lastReadHadGlance = glanceAt ~= nil
+
+		-- The read, minus the lead the REAL rustle claims just before lowering.
+		local preLead = math.max(0, hiddenTime - rustleLead)
+		if glanceAt then
+			if not sleepWhileActive(st, glanceAt) then break end
+			-- The rustle fires on the fake ON PURPOSE: if only real lowerings
+			-- rustled, the sound would disambiguate them and teach players to
+			-- trust their ears over the tell. Same sound, same lead, no truth.
+			if st.props and st.props.rustle then pcall(st.props.rustle) end
+			if not sleepWhileActive(st, rustleLead) then break end
+			if st.props and st.props.glance then pcall(st.props.glance) end
+			if not sleepWhileActive(st, preLead - glanceAt - rustleLead) then break end
+		else
+			if not sleepWhileActive(st, preLead) then break end
+		end
 		-- Never open the eyes while an execution is still being played. The boss
 		-- is a serial actor: he cannot lower the paper and shoot at the same
 		-- time, so a sweep launched during a queue of shots would arrive with NO
@@ -503,7 +735,14 @@ local function runObserver(st)
 		while (st.pendingExecutions or 0) > 0 do
 			if not sleepWhileActive(st, 0.1) then return end
 		end
+		-- Phase 3a RUSTLE TELL: exactly RustleLead before the lowering onset,
+		-- AFTER the execution wait so the gap can never stretch. Server-side
+		-- sound on the boss; silent until the asset lands (CanteenProps).
+		if st.props and st.props.rustle then pcall(st.props.rustle) end
+		if not sleepWhileActive(st, rustleLead) then break end
 		setPhase(st, "lowering", LOWERING_TIME)
+		-- Phase 3a: sweep() rules on near-catches against THIS drop.
+		st.lowerStartedAt = os.clock()
 		if not sleepWhileActive(st, LOWERING_TIME) then break end
 
 		local watchMin, watchMax = watchRange(st)
@@ -524,7 +763,13 @@ local function runObserver(st)
 		if fakeout then
 			hiddenTime = rng:NextNumber(FAKEOUT_MIN, FAKEOUT_MAX)
 		else
-			hiddenTime = rng:NextNumber(HIDDEN_MIN, HIDDEN_MAX)
+			hiddenTime = rng:NextNumber(st.hiddenMin, st.hiddenMax)
+			-- Phase 3a SUSPICION: every near-catch this round shortens the next
+			-- FULL read (fake-outs are already the squeeze and stay untouched).
+			-- Applied after the round-shrink, still floored: the tell math
+			-- never goes under HiddenFloor, whatever the table did.
+			hiddenTime = math.max(Feel.Canteen.HiddenFloor,
+				hiddenTime - (st.suspicion or 0) * Feel.Canteen.SuspicionStep)
 		end
 		setPhase(st, "hidden", HIDDEN_MIN)
 	end
@@ -578,8 +823,21 @@ local function handleAction(player, action)
 		local space = FORK_CAPACITY - ps.fork
 		if space <= 0 or ps.remaining <= 0 then return end
 		local take = math.min(1, space, ps.remaining)
+		-- Phase 3a: WHICH pea left the plate is deterministic -- setPeas shows
+		-- k <= remaining, so the pea that visibly disappears on this stab is
+		-- exactly #remaining. That identity is what lets a HOT pea be a real
+		-- amber part on the plate instead of a packet.
+		local takenIndex = ps.remaining
 		ps.fork = ps.fork + take
 		ps.remaining = ps.remaining - take
+		if ps.hot and ps.hot[takenIndex] then
+			-- HOT PEA forked: the clock starts. It must reach a mouth within
+			-- HotPeaSeconds or the main round loop voids it -- off the fork,
+			-- no score. The window list lives in ps, so it dies with the
+			-- round, with the player (eliminate) and with the mouthful below.
+			ps.hotForkAt = ps.hotForkAt or {}
+			table.insert(ps.hotForkAt, now + Feel.Canteen.HotPeaSeconds)
+		end
 		pushState(st, player.UserId)
 		return
 	end
@@ -598,6 +856,9 @@ local function handleAction(player, action)
 
 	local load = ps.fork
 	ps.fork = 0
+	-- Phase 3a: every pea on the fork reached the mouth, hot ones included --
+	-- their windows are settled the moment the swallow is accepted.
+	if ps.hotForkAt then table.clear(ps.hotForkAt) end
 	ps.eaten = ps.eaten + load
 	ps.eatUntil = now + EAT_WINDOW
 	if st.props and ps.seat then st.props.eat(ps.seat, load) end
@@ -626,6 +887,18 @@ local function handleAction(player, action)
 			ps.finishedAt = os.clock() - st.startedAt
 			if st.props and st.props.dinerHappy and ps.seat then pcall(st.props.dinerHappy, ps.seat) end
 			tellOne(player.UserId, { kind = "cpdone", at = ps.finishedAt })
+			-- Phase 3a SETTLEMENT: the FIRST clean plate no longer waits for
+			-- the rest -- it puts a clock on them. The main round loop reads
+			-- st.settleEndsAt and ends the round when it runs out; until then
+			-- everyone else keeps eating under the same rate gates. A feed
+			-- line, not a card: a full-screen announce mid-round covers the
+			-- observer (MP-08 B-02), and the feed covers nothing. The number
+			-- in the text IS the Pacing number, so turning one turns both.
+			if not st.settleEndsAt then
+				st.settleEndsAt = os.clock() + Pacing.Timing.CanteenSettlement
+				announce(st.room, { kind = "feed",
+					text = ("SETTLEMENT. %d SECONDS_"):format(math.floor(Pacing.Timing.CanteenSettlement)) })
+			end
 		end)
 	end
 end
@@ -767,9 +1040,36 @@ local function runRoundInner(room, roundIndex, guard)
 		startedAt = os.clock(),
 		pendingExecutions = 0,
 		restore = {},
+		-- Phase 3a state. st.rng draws the hot peas and the voice line; the
+		-- observer keeps its own rng exactly as before. suspicion is ROOM
+		-- suspicion (see sweep); settleEndsAt is armed by the first finisher;
+		-- lowerStartedAt is stamped by runObserver per drop.
+		rng = Random.new(),
+		suspicion = 0,
+		suspicionShown = false,
+		lastDinerAnnounced = false,
+		settleEndsAt = nil,
+		lowerStartedAt = nil,
 	}
 	current = st
 	guard.cleanup = function() cleanupRound(st) end
+
+	-- Phase 3a ESCALATION: this round's hidden bounds. Multiplicative shrink
+	-- per round past the first, floored -- and the floor (1.2 s) stays above
+	-- the 0.35 s lowering tell plus a human reaction, which is the telegraph
+	-- contract tests/feel.lua proves. Fake-out reads are untouched: they are
+	-- already the squeeze.
+	local roundNo = math.max(1, math.floor(tonumber(roundIndex) or 1))
+	local ladder = (1 - Feel.Canteen.HiddenShrink) ^ (roundNo - 1)
+	st.hiddenMin = math.max(Feel.Canteen.HiddenFloor, HIDDEN_MIN * ladder)
+	st.hiddenMax = math.max(Feel.Canteen.HiddenFloor, HIDDEN_MAX * ladder)
+	st.fakeLowers = roundNo >= Feel.Canteen.FakeLowerFrom
+	st.hotPeas = roundNo >= Feel.Canteen.HotPeasFrom
+	-- Phase 3a: hazard tint for hot peas -- TrialKit's palette when the kit is
+	-- present, Feel's hex when not. typeof guards a kit that names Hazard
+	-- something other than a Color3.
+	local hazard = TrialKit and TrialKit.PALETTE and TrialKit.PALETTE.Hazard
+	local hotColor = (typeof(hazard) == "Color3") and hazard or Color3.fromHex(Feel.Canteen.HotPeaHex)
 
 	-- Built AFTER validateArena, never before: the gate raycasts from the
 	-- Observer to every MouthTarget, and props standing on the table during
@@ -797,6 +1097,29 @@ local function runRoundInner(room, roundIndex, guard)
 			seatIndex = seatIndex + 1
 			local i = seatIndex
 			st.state[mm.userId].seat = i
+
+			-- Phase 3a HOT PEAS: HotPeaCount of this plate's peas, drawn by
+			-- the round's rng and tinted hazard-amber ON THE PLATE -- the
+			-- colour is the whole announcement, no packet (CanteenProps
+			-- header: the server's number IS the picture). The identity of a
+			-- forked pea holds because peas leave the plate top-down (see the
+			-- plate branch of handleAction). Rejection sampling is fine at
+			-- 4 of 20; the min() keeps a config typo from looping forever.
+			if st.hotPeas and st.props.markPeaHot then
+				local hp = st.state[mm.userId]
+				hp.hot = {}
+				hp.hotForkAt = {}
+				local want = math.min(Feel.Canteen.HotPeaCount, PEAS_TOTAL)
+				local chosen = 0
+				while chosen < want do
+					local idx = st.rng:NextInteger(1, PEAS_TOTAL)
+					if not hp.hot[idx] then
+						hp.hot[idx] = true
+						chosen += 1
+						pcall(st.props.markPeaHot, i, idx, hotColor)
+					end
+				end
+			end
 
 			table.insert(st.restore, {
 				root = s.root,
@@ -885,8 +1208,9 @@ local function runRoundInner(room, roundIndex, guard)
 	-- Dead Zone and Bird Hunting both log their round start, and those lines
 	-- have repeatedly answered in seconds what guessing could not. Seats is the
 	-- number that matters: a member who could not be seated plays no part.
-	print(("[CP] go; members=%d seated=%d peas=%d token=%s")
-		:format(#room.members, seatIndex, PEAS_TOTAL, st.roundToken))
+	print(("[CP] go; members=%d seated=%d peas=%d hidden=%.2f-%.2f hot=%s fakes=%s token=%s")
+		:format(#room.members, seatIndex, PEAS_TOTAL, st.hiddenMin, st.hiddenMax,
+			tostring(st.hotPeas), tostring(st.fakeLowers), st.roundToken))
 
 	st.observerThread = task.spawn(runObserver, st)
 
@@ -898,6 +1222,10 @@ local function runRoundInner(room, roundIndex, guard)
 		-- The grace period is presentation/settlement time only. No new plate or
 		-- mouth action is accepted after the authored round deadline.
 		if os.clock() >= deadline then st.acceptInput = false end
+		-- Phase 3a: a settlement clock that ran out closes the kitchen too --
+		-- the round is about to end, a swallow accepted now could never
+		-- resolve on screen.
+		if st.settleEndsAt and os.clock() >= st.settleEndsAt then st.acceptInput = false end
 		-- Reset, respawn and subject loss are terminal. Checking in the server
 		-- loop closes the gap even when the player sends no further remote.
 		for userId, ps in st.state do
@@ -915,6 +1243,41 @@ local function runRoundInner(room, roundIndex, guard)
 				end
 			end
 		end
+		-- Phase 3a HOT PEAS: void any hot pea whose window ran out on the fork.
+		-- Checked HERE rather than in task.delay timers so every window dies
+		-- with the round loop -- nothing to cancel at cleanup, death or round
+		-- end, because nothing outlives this while. The nudge reuses cpmiss
+		-- (the client already flashes the ration label on it) and the next
+		-- cpstate's shrunken fork is the rest of the message. A voided pea can
+		-- never be eaten, so that plate can no longer be CLEANED -- the price
+		-- of letting a hot pea go cold is the finished band.
+		for userId, ps in st.state do
+			if not (ps.finished or ps.eliminated) and ps.hotForkAt then
+				while ps.hotForkAt[1] and os.clock() >= ps.hotForkAt[1] and ps.fork > 0 do
+					table.remove(ps.hotForkAt, 1)
+					ps.fork -= 1
+					ps.voided = (ps.voided or 0) + 1
+					tellOne(userId, { kind = "cpmiss" })
+					pushState(st, userId)
+				end
+			end
+		end
+		-- Phase 3a LAST DINER: exactly one living plate still holds food. Once
+		-- per round, never in a solo seating (the only diner would be "last"
+		-- at GO), and a feed line for the same reason the settlement is one.
+		if not st.lastDinerAnnounced and seatIndex > 1 then
+			local withFood = 0
+			for _, ps in st.state do
+				if not ps.eliminated and (ps.remaining or 0) > 0 then withFood += 1 end
+			end
+			if withFood == 1 then
+				st.lastDinerAnnounced = true
+				local line = MachineVoice.pick("lastdiner", st.rng)
+				if line then
+					announce(room, { kind = "feed", text = line })
+				end
+			end
+		end
 		local anyLeft = false
 		local anyFinishing = false
 		for _, ps in st.state do
@@ -924,6 +1287,19 @@ local function runRoundInner(room, roundIndex, guard)
 			end
 		end
 		if not anyLeft and (st.pendingExecutions or 0) == 0 then break end
+		-- Phase 3a SETTLEMENT: the first clean plate armed a clock (see the
+		-- finisher in handleAction); when it runs out the round ends even
+		-- though plates still hold food. Executions in flight and a
+		-- mid-flight last mouthful hold the door open, exactly like the
+		-- deadline branch below -- and the deadline branch still rules, so
+		-- the settlement can never stretch a round past its own grace.
+		if st.settleEndsAt
+			and os.clock() >= st.settleEndsAt
+			and (st.pendingExecutions or 0) == 0
+			and not anyFinishing
+		then
+			break
+		end
 		if os.clock() >= deadline
 			and (st.pendingExecutions or 0) == 0
 			and not anyFinishing
@@ -947,20 +1323,24 @@ local function runRoundInner(room, roundIndex, guard)
 			eliminated = eliminated + 1
 		end
 	end
-	print(("[CP] round over, elapsed=%.1f finished=%d caught=%d")
-		:format(os.clock() - st.startedAt, finished, eliminated))
+	print(("[CP] round over, elapsed=%.1f finished=%d caught=%d suspicion=%d")
+		:format(os.clock() - st.startedAt, finished, eliminated, st.suspicion or 0))
 
+	-- Phase 3a: every band's detail is clamped at DETAIL_CAP -- see the band
+	-- comment at the constants. A VOIDED hot pea simply never counted as
+	-- eaten, so it earns nothing in any band; nothing extra to subtract here.
 	local elapsed = os.clock() - st.startedAt
 	for userId, ps in st.state do
 		local key
 		if ps.finished then
 			local spare = math.max(0, ROUND_TIME - (ps.finishedAt or ROUND_TIME))
-			key = FINISHED_BAND + math.floor(spare * FINISH_SPEED_STEP)
+			key = FINISHED_BAND + math.min(DETAIL_CAP, math.floor(spare * FINISH_SPEED_STEP))
 		elseif not ps.eliminated then
-			key = ALIVE_BAND + ps.eaten * PEA_STEP
+			key = ALIVE_BAND + math.min(DETAIL_CAP, ps.eaten * PEA_STEP)
 		else
 			local survived = math.min(ps.eliminatedAt or 0, elapsed)
-			key = ELIMINATED_BAND + ps.eaten * PEA_STEP + math.floor(survived * SURVIVAL_STEP)
+			key = ELIMINATED_BAND
+				+ math.min(DETAIL_CAP, ps.eaten * PEA_STEP + math.floor(survived * SURVIVAL_STEP))
 		end
 		scores[userId] = key
 	end

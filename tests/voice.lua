@@ -50,7 +50,7 @@ end
 
 print("\nMACHINE VOICE -- the pool")
 
-local required = { "outcome", "swing", "streak", "firstdeath", "sweep", "idle" }
+local required = { "outcome", "swing", "streak", "firstdeath", "sweep", "idle", "lastdiner" }
 local all = Voice.all()
 local perCategory = {}
 for _, e in ipairs(all) do
@@ -61,7 +61,7 @@ check(#all >= 40, "at least 40 lines in the pool", string.format("got %d", #all)
 for _, c in ipairs(required) do
 	check((perCategory[c] or 0) > 0, string.format("category %-10s is non-empty (%d)", c, perCategory[c] or 0))
 end
-check(#Voice.Categories == #required, "exactly the six categories are declared",
+check(#Voice.Categories == #required, "exactly the seven categories are declared",
 	string.format("got %d", #Voice.Categories))
 
 local tooLong, lowercase, bangs, nameLong, unknownPh, dupes, seen = {}, {}, {}, {}, {}, {}, {}
