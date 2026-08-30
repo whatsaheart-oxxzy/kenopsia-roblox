@@ -329,6 +329,66 @@ check(MF.HornVolume > 0 and MF.HornVolume <= 1,
 check(type(MF.ScrapHex) == "string" and string.match(MF.ScrapHex, "^%x%x%x%x%x%x$") ~= nil,
 	"scrap fallback tint is a 6-digit hex string", tostring(MF.ScrapHex))
 
+-- BIRD HUNTING POLISH (Phase 3c, 30.08.2026) -- Feel.Birdhunt. Two hard
+-- contracts here. (1) The literal 2.2 mirrors KenopsiaClient's
+-- K.FIRE_COOLDOWN: the client's bolt-cycle/HUD gate is a hardcoded copy of
+-- the server's reload lockout, so until the client reads Feel this test PINS
+-- the two equal -- retune ReloadSeconds and this fails offline instead of
+-- the HUD lying in a live leg. (2) The literals 15 / 100 / 999 mirror
+-- BirdHunting's HIT_POINTS, HEADSHOT_POINTS and DETAIL_CAP: the hunter's one
+-- raw-key accumulator (3 runner tags max + every decoy bird) must stay under
+-- the 1000-wide detail band, and a shot bird never respawns. Worst case PER
+-- RUNNER is wing (15) THEN headshot (100) = 115 -- a second body shot always
+-- kills at 45 HP <= BODY_DAMAGE 55, so two wings on one runner are
+-- impossible -- so the true max is 3*(15+100) + Birds*BirdDetail.
+print("Bird Hunting polish (Phase 3c)")
+local BH = Feel.Birdhunt
+check(type(BH) == "table", "Birdhunt section present")
+check(BH.ReloadSeconds >= 1 and BH.ReloadSeconds <= 4,
+	"reload lockout in [1, 4] s", tostring(BH.ReloadSeconds))
+check(BH.ReloadSeconds == 2.2,
+	"reload pins the client's K.FIRE_COOLDOWN mirror (2.2)", tostring(BH.ReloadSeconds))
+check(BH.InjuredSpeed > 0 and BH.InjuredSpeed < 7,
+	"injured limp above 0, under the old 7", tostring(BH.InjuredSpeed))
+check(BH.PushesPerLeg >= 0 and BH.PushesPerLeg <= 2
+	and BH.PushesPerLeg == math.floor(BH.PushesPerLeg),
+	"pushes per leg whole and in 0..2", tostring(BH.PushesPerLeg))
+check(BH.PushRange >= 2 and BH.PushRange <= 12,
+	"push range in [2, 12] studs", tostring(BH.PushRange))
+check(BH.ToppleSeconds > 0 and BH.ToppleSeconds <= Feel.MaxMotion,
+	"topple is a motion: (0, MaxMotion]", tostring(BH.ToppleSeconds))
+check(BH.ExposeAfter > 1 and BH.ExposeAfter <= 6,
+	"exposure arms in (1, 6] s of stillness", tostring(BH.ExposeAfter))
+check(BH.ExposeSeconds > 0 and BH.ExposeSeconds <= Pacing.Timing.FadeMax,
+	"exposure flash in (0, Pacing.Timing.FadeMax]", tostring(BH.ExposeSeconds))
+check(BH.ExposeSeconds <= Feel.MaxMotion,
+	"exposure flash also under MaxMotion", tostring(BH.ExposeSeconds))
+check(BH.ExposeEvery > BH.ExposeSeconds,
+	"exposure cooldown outlasts the flash", tostring(BH.ExposeEvery))
+check(BH.CoverRadius >= 2 and BH.CoverRadius <= 12,
+	"cover radius in [2, 12] studs", tostring(BH.CoverRadius))
+check(BH.Birds >= 0 and BH.Birds <= 4 and BH.Birds == math.floor(BH.Birds),
+	"birds whole and in 0..4", tostring(BH.Birds))
+check(BH.BirdSpeed > 0 and BH.BirdSpeed <= 14,
+	"a bird crosses no faster than a runner (14)", tostring(BH.BirdSpeed))
+-- The detail-cap proof with the real tag numbers: wing (HIT_POINTS 15) then
+-- headshot (HEADSHOT_POINTS 100) is the most one runner can pay (115 -- a
+-- second body shot always kills, so double-wing is impossible), three
+-- runners are the most a leg can hold (4p room, one seat is the hunter), and
+-- the flock is finite -- a shot bird despawns and never respawns.
+-- BirdHunting clamps the accumulator with math.min(points, 999).
+check((15 + 100) * 3 + BH.Birds * BH.BirdDetail <= 999,
+	"hunter detail (3 x wing+headshot + every bird) stays under the 999 cap",
+	tostring((15 + 100) * 3 + BH.Birds * BH.BirdDetail))
+check(math.min((15 + 100) * 3 + BH.Birds * BH.BirdDetail, 999) < 1000,
+	"the DETAIL_CAP clamp keeps every hunter raw under the 1000 band")
+for _, k in ipairs({ "LampReloadHex", "LampReadyHex", "ExposeHex" }) do
+	check(type(BH[k]) == "string" and string.match(BH[k], "^%x%x%x%x%x%x$") ~= nil,
+		k .. " is a 6-digit hex string", tostring(BH[k]))
+end
+check(BH.LampReloadHex ~= BH.LampReadyHex,
+	"the lamp's two states are distinguishable")
+
 print("No duplicated Pacing.Timing values")
 for k in pairs(Pacing.Timing) do
 	check(Feel[k] == nil, "Feel has no top-level " .. k)

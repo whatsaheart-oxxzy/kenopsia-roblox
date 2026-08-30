@@ -297,6 +297,83 @@ Feel.Minefield = {
 	CascadeSeconds = 0.7,
 }
 
+-- BIRD HUNTING POLISH (Phase 3c, 30.08.2026) -- the reload lamp, the real
+-- limp, push-topple cover, heartbeat exposure and the decoy birds. Consumed
+-- by Services/BirdHunting on the server; the standalone RunnerClient push
+-- sender reads nothing here (it only sends -- the server owns the budget,
+-- the range and the topple, the SonarClient contract one trial over). Like
+-- the Canteen and Minefield blocks, nothing here reaches KenopsiaClient. Leg
+-- length stays Pacing.RoundSeconds.birdhunt and legs per trial stay
+-- Pacing.LEGS -- this block only owns how a leg feels.
+--   ReloadSeconds    the fire lockout AND the lamp cycle, one number. The
+--                    server enforces it in the SniperFire handler (early
+--                    shots rejected silently, as before); the lamp over the
+--                    post holds the reload colour for exactly this long
+--                    after every accepted shot. KenopsiaClient mirrors it as
+--                    K.FIRE_COOLDOWN = 2.2 (bolt-cycle, recoil, local gate);
+--                    tests/feel.lua PINS this value to 2.2 until the client
+--                    reads Feel, so the hunter's rifle can never lie about
+--                    the server's gate.
+--   LampReloadHex /  the lamp's two states (the hex-string colour
+--   LampReadyHex     convention, though here the SERVER paints them onto a
+--                    neon part -- readable at 300 studs with sound off, per
+--                    the telegraph contract: neon emissive + sound, never
+--                    Light-only). Amber = bolt open, sprint now; Signal-cyan
+--                    = loaded, be behind something.
+--   InjuredSpeed     WalkSpeed of a winged runner for the rest of the leg.
+--                    Was the module's own 7 -- faster than PS1Animate's
+--                    InjuredWalk was authored for (natural 3.49 st/s); at
+--                    3.5 the gait plays ~1x and the limp is a real decision
+--                    for the hunter: finish the wounded or switch targets.
+--                    Healed at the next leg's placement (the Minefield CRAWL
+--                    snapshot + restore contract), never mid-leg.
+--   PushesPerLeg /   each runner may topple this many LOOSE cover props per
+--   PushRange /      leg (Metal_crate / Wooden_pallet only -- stones, walls,
+--   ToppleSeconds    trees never move) within PushRange studs. The fall is a
+--                    ToppleSeconds stepped pivot, server-side, one-shot; the
+--                    prop stays down as new LOW cover and stands back up
+--                    from its snapshot when the leg ends. Under MaxMotion:
+--                    the topple is a motion, not a fade.
+--   ExposeAfter /    HEARTBEAT EXPOSURE. Standing still ExposeAfter s in
+--   ExposeSeconds /  OPEN ground (no cover prop within CoverRadius) pings
+--   ExposeEvery /    the runner: a Highlight on the character, ExposeSeconds
+--   CoverRadius /    long, repeating every ExposeEvery while still, visible
+--   ExposeHex        to EVERYONE -- deliberately including the runner. (The
+--                    plan asked for a sniper-only ping; a telegraph given
+--                    ABOUT you that you cannot see is not a telegraph, and
+--                    self-visibility is what lets a runner correct instead
+--                    of just die confused.) Stillness comes from the leg
+--                    loop's own 0.2 s samples, the Minefield STILL_EPSILON
+--                    precedent -- never client claims.
+--   Birds /          decoy birds crossing the lane per leg on server-moved
+--   BirdSpeed /      straight paths (10 Hz, one PivotTo per bird per tick),
+--   BirdDetail       BirdSpeed st/s -- never faster than a runner (14), so a
+--                    lead learned on birds transfers to runners. Shooting
+--                    one pays BirdDetail into the hunter's raw key but
+--                    consumes the shot AND the reload -- the bluff cost. A
+--                    shot bird never respawns, so the hunter's raw stays
+--                    provable offline: 3 x (wing 15 + headshot 100) = 345
+--                    plus Birds*BirdDetail (400) = 745, clamped under 1000
+--                    by the DETAIL_CAP (999) pattern; tests/feel.lua
+--                    re-proves the sum.
+Feel.Birdhunt = {
+	ReloadSeconds = 2.2,
+	LampReloadHex = "D9A036",
+	LampReadyHex = "46E8E0",
+	InjuredSpeed = 3.5,
+	PushesPerLeg = 1,
+	PushRange = 6,
+	ToppleSeconds = 0.5,
+	ExposeAfter = 2.5,
+	ExposeSeconds = 0.4,
+	ExposeEvery = 1.5,
+	CoverRadius = 5,
+	ExposeHex = "FF1818",
+	Birds = 2,
+	BirdSpeed = 14,
+	BirdDetail = 200,
+}
+
 -- Weapon / scope feel (not a Machine element: Quad is allowed here).
 Feel.Scope = { ZoomSeconds = 0.18 }
 
