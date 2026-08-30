@@ -755,20 +755,31 @@ local function runRoundGuarded(trial, ...)
 		ok, result = pcall(trial.module.runRound, table.unpack(args, 1, args.n))
 		done = true
 	end)
+	local room = args[1]
 	local deadline = os.clock() + budget
-	while not done and os.clock() < deadline do task.wait(0.1) end
+	-- 30.08.2026 (user): "the game continues" -- stimmte: ein Abbruch bumpte
+	-- nur room.token, der Runden-Thread spielte seine 62 s zu Ende und die
+	-- Session starb erst am naechsten hold(). Der Watchdog pollt jetzt auch
+	-- room.aborting (RoomService.abortMatch setzt es) und schneidet die
+	-- Runde binnen 0.1 s ab; danach reissen dieselben Hooks wie auf der
+	-- Timeout-Route die Arena ab, und der Finalizer schickt alle nach Hause
+	-- (siehe cleanup()).
+	while not done and os.clock() < deadline and not room.aborting do task.wait(0.1) end
 	if not done then
 		pcall(task.cancel, thread)
-		warn(("[MachineFlow] %s round exceeded %.0f s - cut by the watchdog"):format(trial.id, budget))
+		if room.aborting then
+			print(("[MachineFlow] %s round cut by match abort"):format(trial.id))
+		else
+			warn(("[MachineFlow] %s round exceeded %.0f s - cut by the watchdog"):format(trial.id, budget))
+		end
 		-- #50: the cancel above kills the round thread mid-yield, so nothing on
 		-- it (guard.cleanup, kit teardown) ever ran. Run the cleanups from here:
 		-- the trial's own abort hook (legacy trio) and the kit round registry.
-		local room = args[1]
 		if type(trial.module.abort) == "function" then
 			pcall(trial.module.abort, room)
 		end
 		pcall(TrialKit.abortRoom, trial.id, room)
-		return false, "timeout"
+		return false, room.aborting and "aborted" or "timeout"
 	end
 	return ok, result
 end
@@ -814,6 +825,26 @@ local function runMatch(room)
 		tellRoom(room, { kind = "hide" })
 		-- P1.7: whatever route brought us here, the bench gets its camera back.
 		benchCamera(room, nil)
+		-- 30.08.2026 (user): "ends up in air" -- ALLE nach Hause, auf JEDER
+		-- Route (Verdikt, Abbruch, Fehler). Bis heute schickte nur
+		-- Podium.strike die Top 3 zurueck; alle anderen blieben nach dem
+		-- Session-Ende in der Arena stehen -- und die Lobby-Plattform samt
+		-- workspace.SpawnLocation, auf die alle vier Dienste seit jeher
+		-- zeigen, existierte gar nicht mehr (Fallback (0,5,0) = offenes
+		-- Loch, Charakter faellt bis FallenPartsDestroyHeight und stirbt).
+		-- Die Plattform ist neu gebaut; hier steht der Ruecktransport.
+		local homePart = workspace:FindFirstChild("SpawnLocation")
+		local home = homePart and homePart.Position or TrialKit.HOME_FALLBACK
+		for _, m in room.members do
+			local plr = Players:GetPlayerByUserId(m.userId)
+			local ch = plr and plr.Character
+			local root = ch and ch:FindFirstChild("HumanoidRootPart")
+			if root then
+				root.Anchored = false
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.CFrame = CFrame.new(home + Vector3.new(math.random(-6, 6), 4, math.random(-6, 6)))
+			end
+		end
 	end
 
 	local ok, err = xpcall(function()
