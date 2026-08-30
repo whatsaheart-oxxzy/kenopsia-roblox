@@ -487,15 +487,18 @@ local function preFlow(room)
 	room.preSent = room.preSent or {}
 	for _, m in room.members do room.preSent[m.userId] = true end
 
-	-- P1.7 rematch: carry the last verdict's readiness forward, after a grace
-	-- in which anyone can walk away (or un-ready once the flag is on).
+	-- 30.08.2026 (user): BEIDE MUESSEN ZUSTIMMEN. Hier stand P1.7 --
+	-- task.wait(RematchGrace) + RoomServiceRef.carryReady, das die Subjekte
+	-- des letzten Verdikts automatisch wieder auf READY setzte: ein einzelner
+	-- Spieler konnte die naechste Session fuer alle starten. Jetzt kommt
+	-- jeder unready in die Lobby zurueck; der Countdown beginnt erst, wenn
+	-- ALLE Sitzenden selbst READY druecken (RoomService.maybeAutoStart).
+	-- Das Funnel feuert weiterhin: wer nach dem Verdikt sitzen geblieben ist,
+	-- zaehlt als Rematch-Interesse -- derselbe Messpunkt wie vorher, nur
+	-- ohne die 6-s-Gnadenfrist.
 	local rematch = room.rematch
 	room.rematch = nil
 	if rematch and os.clock() < rematch.until_ then
-		task.wait(Config.Match.RematchGrace or 6)
-		if room.phase ~= "Waiting" or room.token ~= waitingToken then return end
-		RoomServiceRef.carryReady(rematch.userIds)
-		-- Phase 4a funnel: still seated after the grace = the rematch taken.
 		for _, m in room.members do
 			if rematch.userIds[m.userId] then
 				local plr = Players:GetPlayerByUserId(m.userId)
@@ -1173,8 +1176,11 @@ local function runMatch(room)
 		tell(ctx, { kind = "score", board = final, final = true,
 			line = finalVoice(voice, final, #order) })
 
-		-- P1.7 rematch: the verdict's subjects come back pre-readied (preFlow
-		-- applies it after the next lobby reveal, with a grace to walk away).
+		-- 30.08.2026 (user): KEIN AUTO-REMATCH MEHR. room.rematch traegt nur
+		-- noch die Verdikt-Teilnehmer fuer das Retention-Funnel in preFlow;
+		-- carryReady ist dort raus -- JEDER drueckt READY selbst, und erst
+		-- wenn alle Sitzenden bereit sind, laeuft der Countdown (RoomService
+		-- maybeAutoStart: allReady + minPlayers, unveraendert).
 		local rematchIds = {}
 		for _, uid in ctx.participantUserIds do rematchIds[uid] = true end
 		room.rematch = { userIds = rematchIds, until_ = os.clock() + 60 }
@@ -1269,22 +1275,13 @@ local function runMatch(room)
 		end
 		if not hold(ctx, Pacing.Timing.ShiftReport or 5.0) then return end
 
-		-- P1.3 PODIUM (MASTERPLAN section 2: stamp 6 s + podium 8 s). The top
-		-- three stand on the blocks; the room AND the bench get the fixed
-		-- camera. pcall-wrapped: a failed stage is a skipped beat, never an
-		-- aborted session. strike() runs on every route out of the hold.
-		local okRaise, stage = pcall(Podium.raise, final, Pacing.Timing.Podium)
-		if okRaise and stage then
-			tellRoom(room, stage.packet)
-			tellBench(room, stage.packet)
-			hold(ctx, Pacing.Timing.Podium or 8)
-			pcall(Podium.strike, stage)
-			local clear = { kind = "podium" }
-			tellRoom(room, clear)
-			tellBench(room, clear)
-		elseif not okRaise then
-			warn(("[MachineFlow] podium skipped: %s"):format(tostring(stage)))
-		end
+		-- 30.08.2026 (user): DER PODIUMS-BEAT IST RAUS. Hier stand P1.3 --
+		-- Podium.raise/strike, 8 s WINNER/2ND-PLACE-Bloecke mit fester Kamera.
+		-- Der Nutzer will nach dem Endstand DIREKT zurueck zur Wahl "nochmal
+		-- oder raus": Endstand -> SHIFT REPORT -> Lobby, wo READY der
+		-- Play-again-Knopf ist. Das Podium-Modul bleibt unangetastet (auch
+		-- sein require oben) -- den Beat wieder einzuschalten ist ein Revert
+		-- dieses Blocks.
 	end, debug.traceback)
 
 	-- FINALIZER. Exactly one route out, for every outcome.

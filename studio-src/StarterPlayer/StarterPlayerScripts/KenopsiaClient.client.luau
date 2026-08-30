@@ -1801,7 +1801,11 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 			if bestYaw then
 				-- 24.08.2026 (user): "bisschen staerker" -- 7/4.5 -> 9.5/6.5.
-				local alpha = 1 - math.exp(-dt * (scoped and 9.5 or 6.5))
+				-- 30.08.2026 (user): HALB-AUTOAIM fuer Touch/iPad -- Zugkraft
+				-- halbiert (9.5/6.5 -> 4.75/3.25). Der Suchkegel oben bleibt
+				-- unveraendert: der Magnet hilft dem Daumen, er zielt nicht
+				-- mehr von selbst.
+				local alpha = 1 - math.exp(-dt * (scoped and 4.75 or 3.25))
 				sniperYaw = sniperYaw + (bestYaw - sniperYaw) * alpha
 				sniperPitch = sniperPitch + (bestPitch - sniperPitch) * alpha
 			end

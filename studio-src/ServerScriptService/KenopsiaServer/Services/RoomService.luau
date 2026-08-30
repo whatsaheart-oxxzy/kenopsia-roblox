@@ -333,7 +333,11 @@ local function removeMember(userId)
 			if RoomService.isParticipant(room, m.userId) then remaining += 1 end
 		end
 		if remaining < (room.requiredMinimum or minPlayers()) then
-			abortMatch("MEMBERSHIP BELOW MINIMUM")
+			-- 30.08.2026 (user): Klartext statt "MEMBERSHIP BELOW MINIMUM".
+			-- Der Client rendert "RUN ABORTED - <reason>" als LobbyError-
+			-- Karte; die Bedingung darueber feuert genau dann, wenn nur noch
+			-- EIN Teilnehmer uebrig ist (requiredMinimum ist 2 im Betrieb).
+			abortMatch("PLAYER LEFT - CANNOT CONTINUE WITH A SINGLE PLAYER")
 			return
 		end
 	end
