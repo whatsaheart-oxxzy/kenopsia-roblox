@@ -566,11 +566,17 @@ local function eliminate(st, userId, reason)
 			-- 26.08.2026 (user): 0.9 -> 1.5. Der Wert war als "kleiner als eine
 			-- Mine" gedacht, aber das ist der falsche Vergleich: eine Mine geht
 			-- IRGENDWO im Feld hoch, die Hinrichtung passiert am selben Tisch, an
-			-- dem man sitzt. Ueber 1 zu gehen hat dabei einen konkreten Zweck --
-			-- applyGoreFx deckelt trauma bei 1, ein Wert darueber stellt also
-			-- sicher, dass der Schlag IMMER voll ankommt, auch wenn kurz zuvor
-			-- schon geschuettelt wurde.
-			announce(st.room, { kind = "gorefx", pos = { at.X, at.Y, at.Z }, power = 1.5 })
+			-- dem man sitzt.
+			--
+			-- 30.08.2026 (E6, user: "weniger Blut"): 1.5 -> 0.9. Der Vergleich
+			-- von oben bleibt und ist weiterhin das, was zaehlt: die Hinrichtung
+			-- schlaegt haerter zu als die gewoehnliche Mine -- die ist im selben
+			-- Zug auf 0.8 gefallen, die Rangfolge steht also unveraendert.
+			-- Was wegfaellt, ist die GARANTIE: ueber 1 zu gehen stellte sicher,
+			-- dass trauma (bei 1 gedeckelt) auch direkt nach einem anderen
+			-- Schlag noch voll ankommt. Jetzt addiert sich der Schlag nur noch
+			-- auf, statt den Deckel zu erzwingen -- genau die E6-Absicht.
+			announce(st.room, { kind = "gorefx", pos = { at.X, at.Y, at.Z }, power = 0.9 })
 		end)
 
 		-- DER SPIELER SELBST STIRBT TROTZDEM NICHT.

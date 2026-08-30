@@ -878,8 +878,10 @@ local function runRoundInner(room, roundIndex, guard)
 				task.delay(0.15, function() s2:Destroy() end)
 			end
 		end
-		-- Schirm-Gore + aggressiver Shake fuer alle in der Naehe der Explosion
-		announce(room, { kind = "gorefx", pos = { pos.X, pos.Y, pos.Z }, power = 1.3 })
+		-- Schirm-Gore + Shake fuer alle in der Naehe der Explosion.
+		-- 30.08.2026 (E6, user: "weniger Blut"): power 1.3 -> 0.8. Die Rangfolge
+		-- bleibt erhalten -- Mine 0.8 < Hinrichtung Kantine 0.9 < Compactor 1.0.
+		announce(room, { kind = "gorefx", pos = { pos.X, pos.Y, pos.Z }, power = 0.8 })
 		-- Treffer
 		for uid, ps in state do
 			if not ps.done then
@@ -927,8 +929,10 @@ local function runRoundInner(room, roundIndex, guard)
 						--
 						-- 24.08.2026 (evening, user): JEDE erste Mine -- direkter
 						-- Tritt eingeschlossen, scharf oder nicht -- ist die zweite
-						-- Chance: die untere Haelfte geht, der Laeufer krabbelt
+						-- Chance: der Laeufer wird kampfunfaehig und krabbelt
 						-- weiter. Erst die ZWEITE Mine toetet (Zweig oben).
+						-- 30.08.2026 (user): hier stand "die untere Haelfte geht".
+						-- Der Koerper bleibt jetzt ganz -- siehe unten.
 						--
 						-- LATCHED. Ohne ps.crawling legte eine zweite Explosion den
 						-- ganzen Effekt erneut auf jemanden, der schon krabbelt --
@@ -936,11 +940,19 @@ local function runRoundInner(room, roundIndex, guard)
 						-- bereits laufende Animation geschrieben.
 						ps.crawling = true
 						s.char:SetAttribute("XBotCrawl", true)
-						-- 24.08.2026 (user): one mine takes the LOWER HALF. The
-						-- client folds the leg chains under the floor while
-						-- XBotLegless is set (PS1Animate) and maim() throws the
-						-- hip gibs; bleed (inside maim) keeps the crawl trail.
-						s.char:SetAttribute("XBotLegless", true)
+						-- 30.08.2026 (user): NUR NOCH NORMALES KRIECHEN. Hier stand
+						-- s.char:SetAttribute("XBotLegless", true) -- der Client
+						-- klappte daraufhin die Beinketten unter den Boden
+						-- (PS1Animate) und maim() warf die Huft-Brocken hinterher.
+						-- Beides ist raus: eine Mine macht kampfunfaehig, sie
+						-- halbiert nicht. Es bleibt XBotCrawl + CRAWL_SPEED, also
+						-- der normale Krabbelclip an einem ganzen Koerper; maim()
+						-- setzt die Wunde, bleed() haelt die Spur.
+						--
+						-- Die false-Schreiber in cleanup() und beim Rundenstart
+						-- bleiben absichtlich stehen: ein Char aus einer aelteren
+						-- Session oder einem heiss getauschten Skript kann das
+						-- Attribut noch tragen, und geloescht gehoert es trotzdem.
 						-- 23.08.2026: the crawl is now a SPEED, not only a clip. See
 						-- CRAWL_SPEED. Snapshot first so cleanup() can put it back.
 						ps.walkBefore = s.hum.WalkSpeed
@@ -953,7 +965,7 @@ local function runRoundInner(room, roundIndex, guard)
 						-- gestorben zu sein: die "eingefrorene UI"), und fuer den
 						-- aeusseren gar nichts. Als Feed-Zeile sagt sie beiden
 						-- dasselbe, ohne das Bild zu nehmen.
-						tellOne(uid, { kind = "feed", style = "warn", text = "LEGS GONE. CRAWL." })
+						tellOne(uid, { kind = "feed", style = "warn", text = "WOUNDED. CRAWL." })
 					end
 				end
 			end
@@ -1395,7 +1407,9 @@ local function runRoundInner(room, roundIndex, guard)
 						ps.done = true
 						ps.cardAt = os.clock()
 						BloodFX.shatter(s.char, nil, audienceOf(room))
-						announce(room, { kind = "gorefx", pos = { pos.X, pos.Y, pos.Z }, power = 1.6 })
+						-- 30.08.2026 (E6): power 1.6 -> 1.0. Bleibt der haerteste
+						-- Schlag im Spiel, nur nicht mehr der doppelte.
+						announce(room, { kind = "gorefx", pos = { pos.X, pos.Y, pos.Z }, power = 1.0 })
 						s.hum.Health = 0
 						-- MP-08 S5: der Compactor-Tod ist byteweise dieselbe Figur wie
 						-- die zweite Mine oben -- Todeskarte, 3.2 s spaeter das

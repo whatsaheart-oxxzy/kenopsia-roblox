@@ -740,7 +740,9 @@ function Round:kill(uid, opts)
 	if pos then
 		-- #50: room-scoped, never FireAllClients on a 28-player server.
 		BloodFX.kill(pos, TrialKit.audienceOf(self.room))
-		TrialKit.announce(self.room, { kind = "gorefx", pos = v3(pos), power = opts.power or 1.5 })
+		-- 30.08.2026 (E6): Default 1.5 -> 0.9. Bleibt ueber der Mine (0.8);
+		-- Aufrufer duerfen weiterhin ihren eigenen Wert mitgeben.
+		TrialKit.announce(self.room, { kind = "gorefx", pos = v3(pos), power = opts.power or 0.9 })
 	end
 	if s then s.hum.Health = 0 end
 	TrialKit.deathCard(uid, opts.text or "TERMINATED.")

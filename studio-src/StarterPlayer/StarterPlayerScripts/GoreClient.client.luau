@@ -21,10 +21,49 @@ local GRAVITY = Vector3.new(0, -75, 0)
 -- frame do not pile up.
 local UIS = game:GetService("UserInputService")
 local TOUCH_ONLY = UIS.TouchEnabled and not UIS.KeyboardEnabled
-local MAX_DROPLETS = TOUCH_ONLY and 48 or 140
-local MAX_SPLATS = TOUCH_ONLY and 40 or 90
-local MAX_POOLS = 30
-local POOL_LIFE = 18
+
+-- GORE-BUDGET (30.08.2026, user: "weniger Blut"). DIE EINZIGE STELLSCHRAUBE.
+--
+-- Das ist KEINE Perf-Massnahme -- die Deckel darueber waren das. Das hier ist
+-- die Reifegrad-Entscheidung E6 (mild, ~14+, "Andeutung statt Gemetzel"): rund
+-- 40 % des alten Volumens. Gekuerzt wird MENGE und STANDZEIT, nie ein
+-- EREIGNIS: jeder Treffer behaelt Sound, Nebelstoss und Lache, er faellt nur
+-- kleiner aus. "Noch weniger" / "wieder etwas mehr" ist EIN Eingriff -- hier.
+--
+-- Zwei Satelliten haengen an diesem Block, weil sie in anderen Skripten wohnen
+-- und ein gemeinsames Config-Modul neue Verkabelung waere (siehe APPLY.md):
+--   BloodFX: BLEED_MIN / BLEED_VAR   -- Takt der Krabbelspur (Server)
+--   KenopsiaClient: GORE_SCREEN-Block -- Blut auf der Linse
+-- Die Standzeit des Schirm-Schleiers gehoerte nach Feel.Fade.ScreenBlood;
+-- FeelConfig ist gesperrt, deshalb steht dort ein lokaler Faktor.
+--
+-- Deckel NIE anheben: sie sind zugleich die Perf-Grenze (Raycasts pro Frame).
+local GORE = {
+	Droplets  = 70,   -- war 140 (Desktop)
+	DropletsT = 24,   -- war 48  (Touch)
+	Splats    = 45,   -- war 90  (Desktop)
+	SplatsT   = 22,   -- war 40  (Touch)
+	Pools     = 16,   -- war 30  (pool() legt ZWEI Teile je Aufruf an)
+	PoolLife  = 11,   -- war 18  -- trocken nach 4.4 s, weg nach ~14 s
+	Mist      = 20,   -- war 35  Partikel je burst-Einheit k
+	BurstBase = 4,    -- war 8   -- Troepfchen je burst = Base + PerK * k
+	BurstPerK = 6,    -- war 10
+	JetRate   = 55,   -- war 90
+	JetHold   = 1.0,  -- war 1.3
+	JetDrops  = 5,    -- war 8
+	-- Kombos: k = Nebelstaerke, gibs = Brocken, long = beinfoermige Brocken,
+	-- pool/poolVar = Lachengroesse, sats = Spritzer-Lachen im Umkreis,
+	-- drops = zusaetzliche Troepfchen. maim hat KEINE gibs mehr -- siehe dort.
+	Kill    = { k = 1.0, gibs = 3, pool = 1.8, poolVar = 0.8, sats = 1 },
+	Maim    = { k = 0.8, pool = 1.1, poolVar = 0.7 },
+	Hit     = { k = 0.5, pool = 0.7, poolVar = 0.5 },
+	Shatter = { k = 1.3, gibs = 5, long = 2, pool = 2.1, poolVar = 0.8, sats = 1, drops = 7 },
+}
+
+local MAX_DROPLETS = TOUCH_ONLY and GORE.DropletsT or GORE.Droplets
+local MAX_SPLATS = TOUCH_ONLY and GORE.SplatsT or GORE.Splats
+local MAX_POOLS = GORE.Pools
+local POOL_LIFE = GORE.PoolLife
 
 local droplets = {}
 local splats = {}
@@ -218,9 +257,9 @@ local function burst(pos, k)
 	mist.Rate = 0
 	mist.Parent = att
 	holder.Parent = fxFolder()
-	mist:Emit(math.floor(35 * k))
+	mist:Emit(math.floor(GORE.Mist * k))
 	Debris:AddItem(holder, 2)
-	spawnDroplets(pos, math.floor(8 + 10 * k), 8, 24, 0.15)
+	spawnDroplets(pos, math.floor(GORE.BurstBase + GORE.BurstPerK * k), 8, 24, 0.15)
 end
 
 local function gibs(pos, n, long)
@@ -269,12 +308,12 @@ local function fountain(pos)
 	jet.Speed = NumberRange.new(14, 24)
 	jet.SpreadAngle = Vector2.new(14, 14)
 	jet.Acceleration = Vector3.new(0, -70, 0)
-	jet.Rate = 90
+	jet.Rate = GORE.JetRate
 	jet.Parent = att
 	holder.Parent = fxFolder()
-	task.delay(1.3, function() jet.Enabled = false end)
+	task.delay(GORE.JetHold, function() jet.Enabled = false end)
 	Debris:AddItem(holder, 3)
-	spawnDroplets(pos, 8, 10, 18, 1.1)
+	spawnDroplets(pos, GORE.JetDrops, 10, 18, 1.1)
 end
 
 local BIRD_MUSIC_DUCK = {
@@ -354,45 +393,50 @@ end
 local function kill(pos)
 	playSound(pos, "Blood")
 	playSound(pos, "ImpactBody")
-	burst(pos, 1.6)
-	gibs(pos, 6, false)
-	pool(pos, 2.6 + math.random() * 1.2)
-	for _ = 1, 2 do
+	burst(pos, GORE.Kill.k)
+	gibs(pos, GORE.Kill.gibs, false)
+	pool(pos, GORE.Kill.pool + math.random() * GORE.Kill.poolVar)
+	for _ = 1, GORE.Kill.sats do
 		local ang = math.random() * math.pi * 2
 		local dist = 1.5 + math.random() * 2.5
 		pool(pos + Vector3.new(math.cos(ang) * dist, 0, math.sin(ang) * dist), 0.8 + math.random())
 	end
 end
 
+-- 30.08.2026 (user): KEIN GEWORFENER UNTERKOERPER MEHR. Hier stand
+-- gibs(pos, 4, true) -- vier beinfoermige Brocken, und genau die haben den
+-- Laeufer optisch halbiert. Die Mine verwundet jetzt, sie amputiert nicht:
+-- es bleiben Sound, ein Nebelstoss und die Wundlache. Die Spur beim Krabbeln
+-- kommt weiterhin vom Server (BloodFX.bleed, haengt an XBotCrawl) -- sie
+-- tropft im selben Zug seltener, siehe BLEED_MIN/BLEED_VAR dort.
 local function maim(pos)
 	playSound(pos, "Blood")
 	playSound(pos, "ImpactBody")
-	burst(pos, 1.3)
-	gibs(pos, 4, true)
-	pool(pos, 1.6 + math.random())
+	burst(pos, GORE.Maim.k)
+	pool(pos, GORE.Maim.pool + math.random() * GORE.Maim.poolVar)
 end
 
 local function hit(pos)
 	playSound(pos, "Blood")
-	burst(pos, 0.8)
-	pool(pos, 1.0 + math.random() * 0.8)
+	burst(pos, GORE.Hit.k)
+	pool(pos, GORE.Hit.pool + math.random() * GORE.Hit.poolVar)
 end
 
 -- ZERSTUECKELUNG: der Koerper zerreisst komplett in Brocken (Minen-/Snipertod)
 local function shatter(pos)
 	playSound(pos, "Blood")
 	playSound(pos, "ImpactBody")
-	burst(pos, 2.2)
-	gibs(pos, 10, false)
-	gibs(pos, 4, true)
+	burst(pos, GORE.Shatter.k)
+	gibs(pos, GORE.Shatter.gibs, false)
+	gibs(pos, GORE.Shatter.long, true)
 	fountain(pos)
-	pool(pos, 3.0 + math.random() * 1.2)
-	for _ = 1, 3 do
+	pool(pos, GORE.Shatter.pool + math.random() * GORE.Shatter.poolVar)
+	for _ = 1, GORE.Shatter.sats do
 		local ang = math.random() * math.pi * 2
 		local dist = 1.5 + math.random() * 3
 		pool(pos + Vector3.new(math.cos(ang) * dist, 0, math.sin(ang) * dist), 0.8 + math.random())
 	end
-	spawnDroplets(pos, 14, 10, 28, 0.3)
+	spawnDroplets(pos, GORE.Shatter.drops, 10, 28, 0.3)
 end
 
 -- Dispatch -------------------------------------------------------------------

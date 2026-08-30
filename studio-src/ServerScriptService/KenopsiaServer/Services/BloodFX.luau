@@ -14,6 +14,14 @@ local DARK = Color3.fromRGB(50, 4, 4)
 local BRIGHT = Color3.fromRGB(80, 0, 0)
 local bleeding = {}   -- [char] = { alive, recipients } fuer raumbezogene Blutspuren
 
+-- GORE-BUDGET (30.08.2026, user: "weniger Blut") -- Server-Satellit des
+-- GORE-Blocks in StarterPlayerScripts.GoreClient, dieselbe E6-Entscheidung
+-- (mild, ~14+), keine Perf-Massnahme. Alles SICHTBARE am Blut wird drueben
+-- gestellt; hier steht nur der Takt, weil diese Schleife auf dem Server laeuft.
+-- Die Spur bleibt -- sie tropft seltener: ~2.0 s statt ~1.3 s.
+local BLEED_MIN = 1.6   -- war 1.0
+local BLEED_VAR = 0.8   -- war 0.6
+
 local goreEvent
 local function ev(payload, recipients)
 	if not goreEvent then
@@ -131,8 +139,12 @@ function BloodFX.corpse(char, impulse, scope)
 	return c
 end
 
--- DER KASTRIERER: Mine reisst die Beine weg. Alle sichtbaren Spuren
--- entstehen nur bei den Empfaengern des aktiven Raums.
+-- WUNDE, KEINE AMPUTATION (30.08.2026, user): die Mine reisst den Laeufer von
+-- den Beinen, sie nimmt sie ihm nicht mehr. Die Funktion setzt weiterhin den
+-- einen Wundtreffer und startet die Krabbelspur; der geworfene Unterkoerper
+-- ist auf der Client-Seite raus (GoreClient.maim). Signatur und Aufrufer
+-- (Minefield) bleiben unveraendert. Alle sichtbaren Spuren entstehen nur bei
+-- den Empfaengern des aktiven Raums.
 function BloodFX.maim(char, recipients, scope)
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
@@ -149,13 +161,20 @@ function BloodFX.bleed(char, recipients, scope)
 	bleeding[char] = entry
 	task.spawn(function()
 		while entry.alive and char.Parent do
-			task.wait(1.0 + math.random() * 0.6)
+			task.wait(BLEED_MIN + math.random() * BLEED_VAR)
 			local r = char:FindFirstChild("HumanoidRootPart")
 			local hum = char:FindFirstChildOfClass("Humanoid")
 			if not (r and hum and hum.Health > 0 and char:GetAttribute("XBotCrawl")) then break end
 			ev({ t = "splat", p = v(r.Position) }, entry.recipients)
 		end
-		BloodFX.stopBleed(char)
+		-- 30.08.2026 (Review): NUR DEN EIGENEN EINTRAG abraeumen. Dieser Thread
+		-- schlaeft jetzt bis zu 2.4 s (vorher 1.6 s) zwischen zwei Tropfen. Wird
+		-- er in dieser Zeit von aussen gestoppt (BloodFX.clear beim Rundenende)
+		-- und derselbe Char faengt sofort neu an zu bluten, wachte der alte
+		-- Thread danach auf und raeumte mit stopBleed(char) den FRISCHEN Eintrag
+		-- weg -- die neue Spur waere still gestorben. Das Fenster gab es vorher
+		-- schon, der laengere Takt macht es nur groesser.
+		if bleeding[char] == entry then BloodFX.stopBleed(char) end
 	end)
 end
 

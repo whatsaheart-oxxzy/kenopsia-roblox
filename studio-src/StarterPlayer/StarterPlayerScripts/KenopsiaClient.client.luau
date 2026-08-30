@@ -2430,37 +2430,80 @@ RunService.RenderStepped:Connect(function(dt)
 		* CFrame.Angles(nx * S.Tilt * mag, ny * S.Tilt * mag, nz * S.Roll * mag)
 end)
 
-local function screenBlood(strength)
-	local v = Instance.new("Frame")
-	v.BackgroundColor3 = Color3.fromRGB(120, 8, 6)
-	v.BackgroundTransparency = 0.55
-	v.BorderSizePixel = 0
-	v.Size = UDim2.fromScale(1, 1)
-	v.ZIndex = 60
-	v.Parent = machine
-	TweenService:Create(v, TweenInfo.new(Feel.Fade.ScreenBlood), { BackgroundTransparency = 1 }):Play()
-	task.delay(Feel.Fade.ScreenBlood + 0.05, function() v:Destroy() end)
-	local n = math.floor(5 + strength * 9)
-	for _ = 1, n do
-		local b = Instance.new("Frame")
-		local s = 18 + math.random(0, 90) * strength
-		b.BackgroundColor3 = (math.random() < 0.5) and Color3.fromRGB(96, 8, 6) or Color3.fromRGB(140, 14, 10)
-		b.BorderSizePixel = 0
-		b.Size = UDim2.fromOffset(s, s)
-		b.Position = UDim2.new(math.random(), 0, math.random() * 0.9 - 0.05, 0)
-		b.BackgroundTransparency = 0.08
-		b.ZIndex = 61
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(1, 0)
-		corner.Parent = b
-		b.Parent = machine
-		local life = 1.1 + math.random() * 1.7
-		TweenService:Create(b, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-			Position = b.Position + UDim2.fromScale(0, 0.25 + math.random() * 0.2),
-			BackgroundTransparency = 1,
-			Size = UDim2.fromOffset(math.floor(s * 0.7), math.floor(s * 1.6)),
-		}):Play()
-		task.delay(life + 0.1, function() b:Destroy() end)
+-- GORE-BUDGET (Schirm) -- 30.08.2026, user: "weniger Blut". Satellit des
+-- GORE-Blocks in StarterPlayerScripts.GoreClient; dieselbe E6-Entscheidung
+-- (mild, ~14+), KEINE Perf-Massnahme. Blut auf der LINSE ist der lauteste
+-- Gore-Reiz, den das Spiel hat -- es klebt im Bild statt in der Welt und
+-- fuellt auf dem Handy den halben Schirm. Deshalb faellt es hier am
+-- deutlichsten aus: weniger Tropfen, kleinere Tropfen, duennerer Schleier,
+-- kuerzere Standzeit, und ab rund 31.6 Studs gar keiner mehr (Gate; die
+-- Naehe-Kurve spannt 30 Studs, 0.28 entspricht damit 31.6 statt 34).
+--
+-- Der Block liegt in einem do-Ende: die Hauptkette dieses LocalScripts steht
+-- nahe an Luaus 200-Locals-Grenze. Ein do-Block gibt seine Register wieder
+-- frei, nach aussen geht nur der eine Name screenBlood -- genau wie vorher.
+--
+-- FadeScale statt eines neuen Feel-Werts: die Standzeit gehoerte eigentlich
+-- nach Feel.Fade.ScreenBlood, FeelConfig ist fuer diesen Durchgang gesperrt.
+local screenBlood
+do
+	local G = {
+		Veil      = 0.72,  -- war 0.62 -- Transparenz fern (hoeher = duenner)
+		VeilGain  = 0.26,  -- war 0.34 -- Zuschlag bei Naehe; nah 0.28 -> 0.46
+		FadeScale = 0.65,  -- war 1.0  -- x Feel.Fade.ScreenBlood: 0.55 -> 0.36 s
+		Blobs     = 3,     -- war 5
+		BlobsGain = 5,     -- war 9    -- 5-14 Tropfen -> 3-8
+		BlobSize  = 14,    -- war 18
+		BlobGrow  = 55,    -- war 90   -- groesster Tropfen 108 px -> 69 px
+		BlobLife  = 0.8,   -- war 1.1
+		BlobVar   = 1.0,   -- war 1.7  -- laengste Standzeit 2.8 s -> 1.8 s
+		Gate      = 0.28,  -- war 0.2 (stand unten in applyGoreFx)
+	}
+	function screenBlood(strength)
+		-- Die Naehe-Schwelle steht jetzt hier, nicht mehr am Aufrufer: eine
+		-- Explosion weiter als rund 31.6 Studs weg malt die Linse nicht mehr
+		-- an (near = clamp(1 - (dist - 10) / 30, 0, 1), 0.28 -> 31.6 Studs;
+		-- vorher 0.2 -> 34). Der Shake laeuft trotzdem -- trauma wird davor
+		-- gerechnet und haengt nicht an diesem Gate.
+		if (tonumber(strength) or 0) <= G.Gate then return end
+		local fade = Feel.Fade.ScreenBlood * G.FadeScale
+		local v = Instance.new("Frame")
+		-- 26.08.2026 (user): ROT. Der Schleier lag fest auf 0.55 -- ein Streifschuss
+		-- und eine Hinrichtung direkt vor der Nase faerbten den Schirm gleich blass.
+		-- Er haengt jetzt an der Naehe: weit weg bleibt es die alte Ahnung, ganz nah
+		-- schlaegt der Schirm richtig zu. Die Farbe zieht mit ins Sattere, sonst
+		-- wird aus mehr Deckkraft nur ein grauerer Schleier.
+		local k = math.clamp(tonumber(strength) or 0, 0, 1)
+		v.BackgroundColor3 = Color3.fromRGB(120 + math.floor(50 * k), 8, 6)
+		v.BackgroundTransparency = G.Veil - G.VeilGain * k
+		v.BorderSizePixel = 0
+		v.Size = UDim2.fromScale(1, 1)
+		v.ZIndex = 60
+		v.Parent = machine
+		TweenService:Create(v, TweenInfo.new(fade), { BackgroundTransparency = 1 }):Play()
+		task.delay(fade + 0.05, function() v:Destroy() end)
+		local n = math.floor(G.Blobs + strength * G.BlobsGain)
+		for _ = 1, n do
+			local b = Instance.new("Frame")
+			local s = G.BlobSize + math.random(0, G.BlobGrow) * strength
+			b.BackgroundColor3 = (math.random() < 0.5) and Color3.fromRGB(96, 8, 6) or Color3.fromRGB(140, 14, 10)
+			b.BorderSizePixel = 0
+			b.Size = UDim2.fromOffset(s, s)
+			b.Position = UDim2.new(math.random(), 0, math.random() * 0.9 - 0.05, 0)
+			b.BackgroundTransparency = 0.08
+			b.ZIndex = 61
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(1, 0)
+			corner.Parent = b
+			b.Parent = machine
+			local life = G.BlobLife + math.random() * G.BlobVar
+			TweenService:Create(b, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Position = b.Position + UDim2.fromScale(0, 0.25 + math.random() * 0.2),
+				BackgroundTransparency = 1,
+				Size = UDim2.fromOffset(math.floor(s * 0.7), math.floor(s * 1.6)),
+			}):Play()
+			task.delay(life + 0.1, function() b:Destroy() end)
+		end
 	end
 end
 
@@ -2474,7 +2517,9 @@ local function applyGoreFx(pos, power, force)
 	if force then near = math.max(near, 0.7) end
 	if near <= 0.05 then return end
 	trauma = math.min(1, trauma + (power or 1) * near)
-	if near > 0.2 then screenBlood(near) end
+	-- Die Naehe-Schwelle steht jetzt im Schirm-Block oben (G.Gate = 0.28,
+	-- war 0.2 hier). trauma/Shake bleiben unberuehrt.
+	screenBlood(near)
 end
 
 -- MP-05 ROUTER BUILD. Every closure below exists by now (sfx, touchAllowed,

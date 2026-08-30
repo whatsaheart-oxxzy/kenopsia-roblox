@@ -235,7 +235,8 @@ local function runRoundInner(room, roundIndex, guard)
 						trap.CanCollide = false
 					end
 					R:setMovement(uid, nil, false) -- unanchor: the sorter follows the item down
-					R:kill(uid, { text = "MISFILED.", power = 1.3 })
+					-- 30.08.2026 (E6): 1.3 -> 0.8, gleichauf mit der Mine.
+					R:kill(uid, { text = "MISFILED.", power = 0.8 })
 				end
 			end
 		end
