@@ -115,3 +115,17 @@ Mine 1 → wounded crawl with a whole body and a normal crawl clip, no thrown
 lower half, trail still drips; mine 2 → death; blood visibly lighter on a
 phone; no lens blood past ~32 studs; shake still reads hardest on the
 compactor.
+
+---
+
+## Addendum (same day): the dead leg-fold is gone
+
+With Phase 5 applied the scope fence on `PS1Animate` lifted, so accepted risk
+3 above is closed rather than carried. The 71-line `RenderStepped` block that
+pushed both leg chains 3.2 studs (× scale) under the floor while `XBotLegless`
+was set — plus its clot part and drip emitter — is **deleted**, replaced by a
+tombstone comment. Verified first that nothing anywhere still sets the
+attribute true: a place-wide search over 111 scripts returns only the two
+deliberate `false` clearers in `Minefield.cleanup()` and comments. `PS1Animate`
+508 → 454 lines, validates clean. This also removes one `GetAttribute` per
+character per frame.
