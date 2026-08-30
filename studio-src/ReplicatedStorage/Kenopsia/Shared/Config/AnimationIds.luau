@@ -53,6 +53,20 @@ AnimationIds.Player = {          -- rig: PS1Player (20 bones), loops in place, 3
 	Sneak       = 85068622770549,
 	Dance       = 104376411319913,
 	RifleIdle   = 77932828838759,
+	-- 30.08.2026 (Phase 5, user-supplied): the EMOTE clips, published under
+	-- the group 832614570 like every clip above -- verified via the asset
+	-- API (AssetTypeId 24, CreatorType Group, CreatorTargetId 832614570), so
+	-- they play in a group-owned place (the F-05 trap that killed the first
+	-- animation set). They live in the PLAYER table on purpose: emotes are
+	-- the player rig's own clips, so EmoteRegistry names them by KEY and
+	-- everything resolves through the same AnimationIds.load(.., "Player", key)
+	-- path Dance already used -- no new category, no resolver change.
+	BlowKiss    = 98964038217442,
+	Insult      = 81646919271965,
+	Rumba       = 83829424440172,
+	Moonwalk    = 97927613283364,
+	SillyDance  = 123767467333094,
+	HipHop      = 104916610856618,
 }
 -- Clip start offsets in seconds: the Sweep Fall source opens with ~0.6 s of
 -- "hands to the head" before the body goes — the field death skips it.
