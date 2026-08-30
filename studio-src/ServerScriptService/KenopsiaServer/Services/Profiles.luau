@@ -47,7 +47,7 @@ local Profiles = {}
 local started = false
 local warned = {}
 local store = nil -- nil = no persistence this server, everyone volatile
-local live = {} -- [userId] = { userId, data, volatile, dirty, joinedClock }
+local live = {} -- [userId] = { userId, data, volatile, dirty, joinedClock, pendingTrialWins? }
 local machineState = nil
 
 local function warnOnce(key, msg)
@@ -298,6 +298,16 @@ end
 -- badge rules need, computed from what this function already did. Returning a
 -- value to callers that used to ignore one is backward-safe; a missing
 -- profile returns nil, exactly where it used to return nothing.
+--
+-- Phase 4c: the WORK ORDER tick rides the same call. Quests re-roll/advance
+-- via ProgressionRules.applyQuests on the SAME `day` the streak tick used;
+-- completions AUTO-CLAIM (the recorded decision in applyQuests' header: while
+-- the UI is dark, completion IS the claim) and pay QuestXp each plus one
+-- crate-key fragment, fragments rolling into keys at FRAGMENTS_PER_KEY.
+-- Quest XP is folded into xpDelta BEFORE the clearance recompute, so the
+-- receipt's clearance includes it and xpTotal - xpDelta stays the
+-- pre-verdict total. The receipt grows quests / questsCompleted / fragments /
+-- keys.
 function Profiles.recordSession(userId, summary)
 	local entry = live[userId]
 	if not entry then return nil end
@@ -332,6 +342,54 @@ function Profiles.recordSession(userId, summary)
 		trialsWon = summary.trialsWon,
 		dailyFirst = dailyFirst,
 	})
+
+	-- Phase 4c WORK ORDERS: the quest tick rides the verdict. `wins` is the
+	-- session-scoped stash recordTrial filled (see its header) -- consumed
+	-- HERE and cleared, so the next session starts empty. applyQuests
+	-- re-rolls on a day change and auto-claims completions; the fragments
+	-- roll into keys here because the crates wallet is profile state, not
+	-- quest state.
+	local wins = entry.pendingTrialWins or {}
+	entry.pendingTrialWins = nil
+	local quests, questResult = ProgressionRules.applyQuests(data.quests, day,
+		ProgressionRules.sessionMetrics({
+			viable = summary.viable and true or false,
+			roundsPlayed = summary.roundsPlayed,
+			trialsWon = summary.trialsWon,
+		}, wins))
+	data.quests = quests
+	-- Wallet corruption discipline (the tickStreak / applyQuests pattern):
+	-- migrate() only fills MISSING keys, so an externally corrupted non-table
+	-- crates -- or a non-numeric counter -- would otherwise throw here on
+	-- every verdict, and recordSession promises it never throws.
+	--
+	-- The same admission forces the roll-up to be ONE DIVISION, never a
+	-- `while fragments >= perKey` loop: this function never yields, so a
+	-- corrupted counter of 1e9 would not throw, it would SPIN -- freezing the
+	-- verdict thread for the whole room, strictly worse than the throw the
+	-- guards above prevent (and a bad perKey < 1 would never terminate at
+	-- all). Division is O(1) and identical to the loop for every real value.
+	-- The finite guards reject NaN/inf/negative for the same reason: they
+	-- cannot round-trip a DataStore, so a poisoned counter would silently
+	-- kill every future write for that player.
+	if type(data.crates) ~= "table" then data.crates = { keys = 0, fragments = 0 } end
+	local perKey = tonumber(ProgressionRules.FRAGMENTS_PER_KEY) or 0
+	local fragments = (tonumber(data.crates.fragments) or 0) + questResult.fragments
+	local keys = tonumber(data.crates.keys) or 0
+	if not (fragments >= 0 and fragments < math.huge) then fragments = 0 end
+	if not (keys >= 0 and keys < math.huge) then keys = 0 end
+	if perKey >= 1 and fragments >= perKey then
+		local earned = math.floor(fragments / perKey)
+		fragments = fragments - earned * perKey
+		keys = keys + earned
+	end
+	data.crates.fragments = fragments
+	data.crates.keys = keys
+	-- Quest XP joins the SAME clearance recompute below -- added to xpDelta
+	-- BEFORE data.xp moves, so the receipt's clearance (and clearanceUp)
+	-- already includes it, and xpTotal - xpDelta stays the pre-verdict total.
+	xpDelta = xpDelta + questResult.xp
+
 	local prevClearance = tonumber(data.clearance) or 1
 	data.xp = (data.xp or 0) + xpDelta
 	local clearance, clearanceName = ProgressionRules.clearanceFor(data.xp)
@@ -354,12 +412,28 @@ function Profiles.recordSession(userId, summary)
 		viableCount = data.viableCount, -- FIRST_VIABLE reads "== 1"
 		bestBand = data.bestBand,
 		dailyFirst = dailyFirst,
+		-- Phase 4c: the post-apply quest state and the crate wallet. `quests`
+		-- is a REFERENCE to the live profile table (read it before this
+		-- player's next recordSession); questsCompleted is this verdict's own
+		-- fresh list.
+		quests = data.quests, -- { day, slots, progress, claimed }
+		questsCompleted = questResult.completed,
+		fragments = data.crates.fragments,
+		keys = data.crates.keys,
 		volatile = entry.volatile and true or false,
 	}
 end
 
 -- Per-trial lifetime stats. `won` should come from the trial board's
 -- tie-aware place (place == 1), not from the voice's sole-top counter.
+--
+-- Phase 4c COUPLING: a win is also stashed in entry.pendingTrialWins, the
+-- session-scoped set the NEXT recordSession consumes AND clears for the WORK
+-- ORDER trialwin_* metrics. MachineFlow's flow guarantees the order -- every
+-- recordTrial of a session runs at its trial's board, before the verdict's
+-- recordSession. A session that dies before its verdict leaves the stash for
+-- this player's next verdict on this server; accepted (the wins were real),
+-- and leaving drops it with the whole live entry.
 function Profiles.recordTrial(userId, trialId, won, rawBest)
 	local entry = live[userId]
 	if not entry or type(trialId) ~= "string" then return end
@@ -369,7 +443,15 @@ function Profiles.recordTrial(userId, trialId, won, rawBest)
 		entry.data.trialStats[trialId] = stats -- a new trial id records itself
 	end
 	stats.plays = (stats.plays or 0) + 1
-	if won then stats.wins = (stats.wins or 0) + 1 end
+	if won then
+		stats.wins = (stats.wins or 0) + 1
+		local pending = entry.pendingTrialWins
+		if not pending then
+			pending = {}
+			entry.pendingTrialWins = pending
+		end
+		pending[trialId] = true
+	end
 	local raw = tonumber(rawBest)
 	if raw and raw > (stats.best or 0) then stats.best = raw end
 	entry.dirty = true

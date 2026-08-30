@@ -184,6 +184,164 @@ for day = 20331, 20360 do
 end
 check(differs, "rollQuests varies across days (not a constant deal)")
 
+-- WORK ORDERS (Phase 4c): economy constants, questById, sessionMetrics --------
+check(Progression.FRAGMENTS_PER_KEY == 5, "FRAGMENTS_PER_KEY is 5", Progression.FRAGMENTS_PER_KEY)
+check(Progression.QuestXp == 100, "QuestXp is 100", Progression.QuestXp)
+local q6 = Progression.questById("q_rounds6")
+check(type(q6) == "table" and q6.metric == "roundsPlayed" and q6.goal == 6,
+	"questById returns the pool entry")
+check(q6 == Progression.QuestPool[1], "questById returns the entry itself, not a copy")
+check(Progression.questById("q_nope") == nil, "questById nil for an unknown id")
+
+local m = Progression.sessionMetrics({ viable = true, roundsPlayed = 7, trialsWon = 2 },
+	{ birdhunt = true, canteen = true })
+check(m.roundsPlayed == 7, "sessionMetrics passes roundsPlayed through", m.roundsPlayed)
+check(m.sessions == 1, "sessionMetrics: one verdict = sessions 1", m.sessions)
+check(m.viable == 1, "sessionMetrics: viable verdict = 1", m.viable)
+check(m.trialWins == 2, "sessionMetrics: trialWins from summary.trialsWon", m.trialWins)
+check(m.trialwin_birdhunt == 1 and m.trialwin_canteen == 1 and m.trialwin_minefield == 0,
+	"sessionMetrics: per-trial wins from the stash, missing trial = 0")
+local mEmpty = Progression.sessionMetrics()
+check(mEmpty.roundsPlayed == 0 and mEmpty.sessions == 1 and mEmpty.viable == 0
+	and mEmpty.trialWins == 0 and mEmpty.trialwin_birdhunt == 0,
+	"sessionMetrics: nil summary/stash = zeros (sessions still 1)")
+for _, quest in ipairs(Progression.QuestPool) do
+	check(mEmpty[quest.metric] ~= nil,
+		"sessionMetrics snapshot defines pool metric: " .. tostring(quest.id), quest.metric)
+end
+
+-- applyQuests: a day change re-rolls, zeroes progress, loses unclaimed --------
+local aq = { day = 5, slots = { "q_rounds6" }, progress = { 5 }, claimed = {} }
+local res
+aq, res = Progression.applyQuests(aq, 6, {})
+check(aq.day == 6, "applyQuests re-rolls on a day change", aq.day)
+check(#aq.slots == 3, "applyQuests re-roll deals 3 fresh slots", #aq.slots)
+local sameDeal = Progression.rollQuests(6)
+check(aq.slots[1] == sameDeal[1] and aq.slots[2] == sameDeal[2] and aq.slots[3] == sameDeal[3],
+	"applyQuests re-roll IS rollQuests(day) (same deal on every server)")
+check(aq.progress[1] == 0 and aq.progress[2] == 0 and aq.progress[3] == 0,
+	"applyQuests re-roll zeroes progress (yesterday's 5 is lost)")
+check(aq.claimed[1] == false and aq.claimed[2] == false and aq.claimed[3] == false,
+	"applyQuests re-roll clears claimed (dense false, no nil holes)")
+check(#res.completed == 0 and res.fragments == 0 and res.xp == 0,
+	"applyQuests: empty metrics complete nothing")
+
+-- applyQuests: progress ticks, clamps, pays exactly once ----------------------
+local wq = { day = 9, slots = { "q_rounds6", "q_viable1", "q_trialwins3" },
+	progress = { 0, 0, 0 }, claimed = { false, false, false } }
+wq, res = Progression.applyQuests(wq, 9, { roundsPlayed = 4 })
+check(wq.progress[1] == 4 and wq.claimed[1] == false and #res.completed == 0,
+	"applyQuests: progress ticks by the metric, short of goal")
+wq, res = Progression.applyQuests(wq, 9, { roundsPlayed = 9, viable = 1 })
+check(wq.progress[1] == 6, "applyQuests: progress clamps at goal", wq.progress[1])
+check(wq.claimed[1] == true and wq.claimed[2] == true,
+	"applyQuests: completion marks claimed (auto-claim)")
+check(#res.completed == 2 and res.completed[1] == "q_rounds6" and res.completed[2] == "q_viable1",
+	"applyQuests: completed ids in slot order", table.concat(res.completed, ","))
+check(res.fragments == 2 and res.xp == 2 * Progression.QuestXp,
+	"applyQuests pays 1 fragment + QuestXp per completion")
+check(wq.progress[3] == 0 and wq.claimed[3] == false,
+	"applyQuests: untouched slot stays open (missing metric adds 0)")
+wq, res = Progression.applyQuests(wq, 9, { roundsPlayed = 5, viable = 1, trialWins = 1 })
+check(wq.progress[1] == 6 and #res.completed == 0 and res.fragments == 0 and res.xp == 0,
+	"applyQuests: same-day re-apply pays NOTHING again (idempotent claim)")
+check(wq.progress[3] == 1 and wq.claimed[3] == false,
+	"applyQuests: the open slot still ticks on the re-apply", wq.progress[3])
+
+-- the stash path end to end: recordTrial's win set -> metrics -> completion ---
+local bq = { day = 11, slots = { "q_bird1", "q_trialwins3", "q_sessions2" },
+	progress = { 0, 0, 0 }, claimed = { false, false, false } }
+local bres
+bq, bres = Progression.applyQuests(bq, 11,
+	Progression.sessionMetrics({ viable = true, roundsPlayed = 8, trialsWon = 1 }, { birdhunt = true }))
+check(#bres.completed == 1 and bres.completed[1] == "q_bird1",
+	"stash -> sessionMetrics -> applyQuests completes the per-trial order")
+check(bq.progress[2] == 1 and bq.progress[3] == 1,
+	"trialWins and sessions tick alongside the completion")
+
+-- fragments -> keys: the CALLER's roll-up, proved at the boundary -------------
+-- (Profiles.recordSession runs exactly this arithmetic over crates. It is a
+-- DIVISION, not a `while f >= perKey` loop: recordSession never yields, so a
+-- corrupted stored counter has to settle in O(1) rather than spin the verdict
+-- thread, and NaN/inf/negative have to reset -- none of them round-trips a
+-- DataStore, so one would kill every future write for that player.)
+local function rollUp(crates, gained)
+	local perKey = tonumber(Progression.FRAGMENTS_PER_KEY) or 0
+	local fragments = (tonumber(crates.fragments) or 0) + gained
+	local keys = tonumber(crates.keys) or 0
+	if not (fragments >= 0 and fragments < math.huge) then fragments = 0 end
+	if not (keys >= 0 and keys < math.huge) then keys = 0 end
+	if perKey >= 1 and fragments >= perKey then
+		local earned = math.floor(fragments / perKey)
+		fragments = fragments - earned * perKey
+		keys = keys + earned
+	end
+	crates.fragments = fragments
+	crates.keys = keys
+	return crates
+end
+local crates = rollUp({ keys = 0, fragments = 4 }, 0)
+check(crates.keys == 0 and crates.fragments == 4, "4 fragments stay fragments")
+crates = rollUp(crates, 1)
+check(crates.keys == 1 and crates.fragments == 0, "the 5th fragment becomes a key (boundary)")
+crates = rollUp(crates, 12)
+check(crates.keys == 3 and crates.fragments == 2, "a big grant rolls up multiple keys")
+-- the division must agree with the while-loop it replaced, value for value
+for gained = 0, 20 do
+	local loopF, loopK = gained, 0
+	while loopF >= Progression.FRAGMENTS_PER_KEY do
+		loopF = loopF - Progression.FRAGMENTS_PER_KEY
+		loopK = loopK + 1
+	end
+	local c = rollUp({ keys = 0, fragments = 0 }, gained)
+	check(c.fragments == loopF and c.keys == loopK,
+		"roll-up == the while-loop it replaced, gained " .. gained, c.fragments .. "/" .. c.keys)
+end
+-- BOUNDED: a corrupted counter settles in one step instead of spinning
+local big = rollUp({ keys = 0, fragments = 1e9 }, 0)
+check(big.keys == 200000000 and big.fragments == 0,
+	"a corrupted 1e9 counter settles in O(1), no spin", big.keys .. "/" .. big.fragments)
+check(rollUp({ keys = 0, fragments = 0 / 0 }, 0).fragments == 0,
+	"a NaN counter resets to 0 (NaN cannot round-trip a DataStore)")
+check(rollUp({ keys = math.huge, fragments = math.huge }, 0).keys == 0,
+	"an infinite counter resets to 0")
+check(rollUp({ keys = 0, fragments = -7 }, 0).fragments == 0,
+	"a negative counter resets to 0")
+
+-- pool honesty: a session cannot trivially sweep its work orders --------------
+-- Every completed verdict guarantees exactly sessions = 1 and roundsPlayed >=
+-- 1; no other metric is guaranteed (viable only pays a winner, trialWins and
+-- trialwin_* only board tops). A quest is a GIMME if a guaranteed metric
+-- meets its goal on any verdict at all -- metric sessions/roundsPlayed with
+-- goal <= 1. The deliberate goal-1 orders (q_viable1 / q_bird1 style) ride
+-- NON-guaranteed metrics, so the guarantee filter already excuses them.
+local guaranteed = { sessions = true, roundsPlayed = true }
+for _, quest in ipairs(Progression.QuestPool) do
+	check(not (guaranteed[quest.metric] and quest.goal <= 1),
+		"no gimme quest (guaranteed metric at goal <= 1): " .. tostring(quest.id))
+end
+for day = 20330, 20359 do
+	local slots = Progression.rollQuests(day)
+	local nonTrivial = 0
+	for i = 1, #slots do
+		local quest = Progression.questById(slots[i])
+		if quest and not (guaranteed[quest.metric] and quest.goal <= 1) then
+			nonTrivial = nonTrivial + 1
+		end
+	end
+	check(nonTrivial >= 2, "day " .. day .. ": at least 2 of 3 slots demand real play", nonTrivial)
+end
+-- ... and the median LOSING session (9 rounds, no verdict, no board top)
+-- completes at most ONE order of any day's deal: the ~1-of-3 sizing.
+local median = Progression.sessionMetrics({ viable = false, roundsPlayed = 9, trialsWon = 0 }, {})
+for day = 20330, 20359 do
+	local dq, dres = Progression.applyQuests(
+		{ day = 0, slots = {}, progress = {}, claimed = {} }, day, median)
+	check(#dres.completed <= 1,
+		"day " .. day .. ": a median losing session completes at most 1 of " .. #dq.slots,
+		table.concat(dres.completed, ","))
+end
+
 -- ------------------------------------------------------------------------------
 print(("progression: %d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

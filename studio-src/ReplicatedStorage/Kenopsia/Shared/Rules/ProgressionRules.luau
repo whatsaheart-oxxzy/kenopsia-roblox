@@ -156,8 +156,9 @@ end
 -- QUESTS ----------------------------------------------------------------------
 -- Sized for the three shipped trials only: every metric below is countable
 -- from birdhunt / minefield / canteen play alone, so no quest can demand a
--- trial that is not in the playlist. Dormant in Phase 4a -- the pool and the
--- roll are provable now; nothing increments progress until a later phase.
+-- trial that is not in the playlist. LIVE since Phase 4c: applyQuests below
+-- ticks progress at every verdict and auto-claims completions (its header
+-- documents the decision); the pool and the roll are provable since 4a.
 -- Machine voice: uppercase, trailing underscore, no punctuation games.
 ProgressionRules.QuestPool = {
 	{ id = "q_rounds6", text = "COMPLETE 6 ROUNDS_", goal = 6, metric = "roundsPlayed" },
@@ -201,6 +202,117 @@ function ProgressionRules.rollQuests(day, rngInts)
 		table.remove(pool, pick)
 	end
 	return slots
+end
+
+-- WORK ORDERS (Phase 4c) -- the daily quests go LIVE at the verdict.
+--
+-- Economy: one completed quest pays QuestXp XP and ONE crate-key fragment;
+-- FRAGMENTS_PER_KEY fragments roll into a key. The roll-up loop lives in the
+-- CALLER (Profiles.recordSession), because the crates wallet is profile
+-- state, not quest state -- this file only prices the quest itself.
+ProgressionRules.QuestXp = 100
+ProgressionRules.FRAGMENTS_PER_KEY = 5
+
+function ProgressionRules.questById(id)
+	for _, quest in ipairs(ProgressionRules.QuestPool) do
+		if quest.id == id then return quest end
+	end
+	return nil
+end
+
+-- The metric snapshot ONE verdict contributes -- the bridge from a
+-- recordSession summary to the QuestPool metrics. `summary` is the same
+-- receipt-shaped table sessionXp reads ({ viable, roundsPlayed, trialsWon });
+-- `trialWinsById` is the session's per-trial win set ({ [trialId] = true },
+-- stashed by Profiles.recordTrial). Every metric the pool can name is present
+-- -- the trialwin_* keys default to 0 -- so applyQuests never reads a hole
+-- for a shipped quest.
+function ProgressionRules.sessionMetrics(summary, trialWinsById)
+	if type(summary) ~= "table" then summary = {} end
+	local metrics = {
+		roundsPlayed = tonumber(summary.roundsPlayed) or 0,
+		sessions = 1,
+		viable = summary.viable and 1 or 0,
+		trialWins = tonumber(summary.trialsWon) or 0,
+	}
+	for _, id in ipairs(ProgressionRules.TRIAL_IDS) do
+		metrics["trialwin_" .. id] = 0
+	end
+	if type(trialWinsById) == "table" then
+		for id, won in pairs(trialWinsById) do
+			if won and type(id) == "string" then
+				metrics["trialwin_" .. id] = 1
+			end
+		end
+	end
+	return metrics
+end
+
+-- The quest state machine, one call per verdict. Mutates and returns the
+-- profile's quests table ({ day, slots, progress, claimed }) plus the receipt
+-- part { completed = {ids}, fragments, xp }. NO clock reads -- `day` is the
+-- caller's dayStamp, the same one its streak tick consumed.
+--
+--   * quests.day ~= day -> re-roll (rollQuests(day)), progress zeroed,
+--     claimed cleared. Unclaimed completed quests from yesterday are LOST --
+--     daily discipline; the pool is sized so a session completes ~1 of 3.
+--   * per slot: progress[i] moves by metrics[metric] (a missing metric adds
+--     0), clamped at goal; reaching goal while not yet claimed[i] marks the
+--     slot claimed and appends its id to `completed`. Claiming on the SAME
+--     apply that reached the goal is what makes the payout idempotent: a
+--     second apply the same day adds into the clamp and completes nothing.
+--
+-- AUTO-CLAIM (recorded decision): while the UI is dark there is no claim
+-- flow, so completion IS the claim -- the caller pays XP and fragments
+-- immediately and claimed[i] records "paid". A later UI claim flow replaces
+-- this by leaving a completed slot unclaimed (progress at goal, claimed
+-- false) and paying on the player's claim remote instead; the state shape
+-- already carries both facts, so that change stays inside this function and
+-- its caller.
+--
+-- progress[] and claimed[] are kept DENSE (real 0/false entries, never nil
+-- holes): a sparse Lua array JSON-encodes as an object and comes back from
+-- the DataStore with string keys. A slot whose id has left the pool is
+-- skipped untouched (forward compat with a shrunk pool).
+function ProgressionRules.applyQuests(quests, day, metrics)
+	if type(quests) ~= "table" then
+		quests = { day = 0, slots = {}, progress = {}, claimed = {} }
+	end
+	day = tonumber(day) or 0
+	if type(metrics) ~= "table" then metrics = {} end
+	if (tonumber(quests.day) or 0) ~= day then
+		quests.day = day
+		quests.slots = ProgressionRules.rollQuests(day)
+		quests.progress = {}
+		quests.claimed = {}
+		for i = 1, #quests.slots do
+			quests.progress[i] = 0
+			quests.claimed[i] = false
+		end
+	end
+	if type(quests.slots) ~= "table" then quests.slots = {} end
+	if type(quests.progress) ~= "table" then quests.progress = {} end
+	if type(quests.claimed) ~= "table" then quests.claimed = {} end
+	local completed = {}
+	for i, id in ipairs(quests.slots) do
+		local quest = ProgressionRules.questById(id)
+		if quest then
+			local total = (tonumber(quests.progress[i]) or 0) + (tonumber(metrics[quest.metric]) or 0)
+			if total > quest.goal then total = quest.goal end
+			quests.progress[i] = total
+			if total >= quest.goal and quests.claimed[i] ~= true then
+				quests.claimed[i] = true
+				table.insert(completed, id)
+			else
+				quests.claimed[i] = quests.claimed[i] == true
+			end
+		end
+	end
+	return quests, {
+		completed = completed,
+		fragments = #completed * 1, -- one fragment per completed quest
+		xp = #completed * ProgressionRules.QuestXp,
+	}
 end
 
 return ProgressionRules

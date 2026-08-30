@@ -278,10 +278,12 @@ fanfare; SHIFT REPORT dot-matrix print SFX.
   attribute** (never `XBotMoves` values, which trigger legacy scan/eat/sneak/push client
   paths); `EmoteEquip {slot, emoteId}`; `ShopPrompt {sku}`. The wheel UI is Codex's, driven
   by `profile.emotes.wheel`.
-- **Cross-place grants:** **verify first whether Kenopsia_DEV (129909297895850) and
-  MainGame share a universe** (unconfirmed). Same universe → shared DataStore +
-  `MessagingService "KenopsiaGrant"`; separate → Open Cloud DataStore API behind the same
-  `Profiles.grant*` interface (transport swap, no schema change).
+- **Cross-place grants — RESOLVED 30.08.2026:** Kenopsia_DEV (129909297895850) and
+  MainGame (110672791536316) **share universe 10640788131** (measured via the public
+  `apis.roblox.com/universes/v1/places/<id>/universe` endpoint, both places). So the cheap
+  path holds: **one shared DataStore** (`KenopsiaProfile_v1` — already live since P4a) plus
+  `MessagingService "KenopsiaGrant"` for same-session sync. No Open Cloud bridge, no second
+  schema; DEV's crate ceremony calls `Profiles.grantEmote` against the same key.
 - **Gamepasses (2, ids later):** SKU slots in `Shared/Config/MonetizationConfig.luau`
   (e.g. cosmetic bundle + a future-mode pass); ownership live-checked via
   `UserOwnsGamePassAsync` pcall-cached 120s, never persisted as truth.

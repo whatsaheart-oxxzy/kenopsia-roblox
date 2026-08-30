@@ -1237,6 +1237,11 @@ local function runMatch(room)
 		-- HOLD is real, though: the session grows by Pacing.Timing.ShiftReport
 		-- (5 s). The bench and late joiners get nothing new -- this is the
 		-- room's verdict, not a spectacle.
+		--
+		-- Phase 4c: the packet also carries the WORK ORDER outcome -- the ids
+		-- completed at this verdict and the crate wallet after the roll-up.
+		-- Auto-claimed server-side (Profiles.recordSession documents it), so
+		-- a future UI renders results; it does not negotiate them.
 		if Remote then
 			for _, e in ipairs(final) do
 				local receipt = receipts[e.userId]
@@ -1253,6 +1258,9 @@ local function runMatch(room)
 						sessions = receipt.sessions,
 						viable = e.verdict == "VIABLE",
 						bestBand = receipt.bestBand,
+						questsCompleted = receipt.questsCompleted,
+						fragments = receipt.fragments,
+						keys = receipt.keys,
 						volatile = receipt.volatile,
 						openSeats = 4 - #room.members,
 					})
