@@ -389,6 +389,16 @@ end
 check(BH.LampReloadHex ~= BH.LampReadyHex,
 	"the lamp's two states are distinguishable")
 
+-- SHIFT REPORT (Phase 4b, 30.08.2026) -- the retention beat between the
+-- verdict stamp and the podium. MachineFlow holds the stage on
+-- Pacing.Timing.ShiftReport after the personal "shiftreport" packets go out;
+-- the client renders nothing yet, so this is the one place the beat's length
+-- is pinned.
+print("Shift report (Phase 4b)")
+check(Pacing.Timing.ShiftReport ~= nil and Pacing.Timing.ShiftReport > 0
+	and Pacing.Timing.ShiftReport <= 6,
+	"shift report hold in (0, 6] s", tostring(Pacing.Timing.ShiftReport))
+
 print("No duplicated Pacing.Timing values")
 for k in pairs(Pacing.Timing) do
 	check(Feel[k] == nil, "Feel has no top-level " .. k)

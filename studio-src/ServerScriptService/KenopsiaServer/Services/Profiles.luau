@@ -293,9 +293,14 @@ end
 -- trialsWon? }; band is the shared final-board place (1 = top, ties share).
 -- dailyFirst is computed HERE, off the streak tick: the day moved = the first
 -- verdict of that day. Never yields, never throws past its own pcalls.
+--
+-- Phase 4b: returns the RECEIPT -- everything the SHIFT REPORT beat and the
+-- badge rules need, computed from what this function already did. Returning a
+-- value to callers that used to ignore one is backward-safe; a missing
+-- profile returns nil, exactly where it used to return nothing.
 function Profiles.recordSession(userId, summary)
 	local entry = live[userId]
-	if not entry then return end
+	if not entry then return nil end
 	if type(summary) ~= "table" then summary = {} end
 	local data = entry.data
 	local now = os.time()
@@ -320,19 +325,37 @@ function Profiles.recordSession(userId, summary)
 	local dailyFirst = data.streak.lastDayStamp ~= prevDay
 	if (data.analytics.d1Stamp or 0) == 0 then data.analytics.d1Stamp = day end
 
-	data.xp = (data.xp or 0) + ProgressionRules.sessionXp({
+	local xpDelta = ProgressionRules.sessionXp({
 		viable = summary.viable and true or false,
 		roundsPlayed = summary.roundsPlayed,
 		roundsWon = summary.roundsWon,
 		trialsWon = summary.trialsWon,
 		dailyFirst = dailyFirst,
 	})
-	data.clearance = ProgressionRules.clearanceFor(data.xp)
+	local prevClearance = tonumber(data.clearance) or 1
+	data.xp = (data.xp or 0) + xpDelta
+	local clearance, clearanceName = ProgressionRules.clearanceFor(data.xp)
+	data.clearance = clearance
 	data.lastSeen = now
 	entry.dirty = true
 
 	local plr = Players:GetPlayerByUserId(userId)
 	if plr then setAttributes(plr, entry) end
+
+	return {
+		xpDelta = xpDelta,
+		xpTotal = data.xp,
+		clearance = clearance,
+		clearanceName = clearanceName, -- clearanceFor's second return
+		clearanceUp = clearance > prevClearance, -- the band index rose THIS session
+		streak = data.streak.current,
+		sessions = data.sessions,
+		viable = summary.viable and true or false,
+		viableCount = data.viableCount, -- FIRST_VIABLE reads "== 1"
+		bestBand = data.bestBand,
+		dailyFirst = dailyFirst,
+		volatile = entry.volatile and true or false,
+	}
 end
 
 -- Per-trial lifetime stats. `won` should come from the trial board's

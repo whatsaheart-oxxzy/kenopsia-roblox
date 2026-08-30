@@ -51,6 +51,13 @@ local AudienceCam = require(script.Parent.AudienceCam)
 -- a skipped beat, never as "MINIGAME ERROR".
 local Profiles = require(script.Parent.Profiles)
 local Telemetry = require(script.Parent.Telemetry)
+-- Phase 4b (SHIFT REPORT + badges, ships dark): the six retention badges as
+-- a socket. checkSession never yields and never throws (its rules are
+-- synchronous; the yielding award work runs on its own spawned thread, every
+-- external call pcall'd) -- and the call below is pcall-wrapped anyway, the
+-- Profiles discipline: a broken badge layer is a skipped beat, never
+-- "MINIGAME ERROR".
+local Badges = require(script.Parent.Badges)
 
 local Shared = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 local Rules = Shared:WaitForChild("Rules")
@@ -1182,20 +1189,77 @@ local function runMatch(room)
 		-- number, the way Scoring.rankRound shares them. Profiles.flush is
 		-- fire-and-forget, so none of this delays the verdict stamp.
 		local place, prevScore = 0, nil
+		-- Phase 4b: recordSession hands back a RECEIPT (xp delta, clearance,
+		-- streak -- Profiles.recordSession documents the shape). Captured per
+		-- participant for the SHIFT REPORT beat after the verdict hold; pcall
+		-- returns it as the second value, so a throwing profile layer is still
+		-- only a skipped beat.
+		local receipts = {}
 		for i, e in ipairs(final) do
 			if e.score ~= prevScore then place, prevScore = i, e.score end
-			pcall(Profiles.recordSession, e.userId, {
+			local okRec, receipt = pcall(Profiles.recordSession, e.userId, {
 				viable = e.verdict == "VIABLE",
 				band = place,
 				roundsPlayed = roundsRun,
 				trialsWon = voice.trialWins[e.userId] or 0,
 			})
+			if okRec and type(receipt) == "table" then
+				receipts[e.userId] = receipt
+				-- Phase 4b badges, straight off the receipt. `members` is the
+				-- JUDGED roster, not the live seat count: a quitter during the
+				-- presentation holds must not unmake FULL_ROSTER. CO_WORKERS
+				-- resolves lazily on Badges' own spawned thread (IsFriendsWith
+				-- yields), so hand it the other participants, not an answer.
+				local others = {}
+				for _, uid in ctx.participantUserIds do
+					if uid ~= e.userId then table.insert(others, uid) end
+				end
+				pcall(Badges.checkSession, e.userId, receipt, {
+					members = #ctx.participantUserIds,
+					trialsWon = voice.trialWins[e.userId] or 0,
+					trialsTotal = #order,
+					otherUserIds = others,
+				})
+			end
 			pcall(Profiles.flush, e.userId)
 			local plr = Players:GetPlayerByUserId(e.userId)
 			if plr then Telemetry.funnel(plr, "KenopsiaRetention", 4, "VerdictSeen") end
 		end
 
 		if not hold(ctx, Pacing.Timing.FinalScore) then return end
+
+		-- Phase 4b SHIFT REPORT (INNER-GAME-PLAN 3.1): the retention beat
+		-- between the verdict stamp and the podium. Per participant -- the
+		-- numbers are personal, so a tellRoom broadcast cannot carry them --
+		-- on the tellRoom send shape (Remote guard, GetPlayerByUserId, one
+		-- FireClient per seat). "shiftreport" is NOT in the client's dispatch
+		-- yet and an unknown kind renders NOTHING, so this ships dark; the
+		-- HOLD is real, though: the session grows by Pacing.Timing.ShiftReport
+		-- (5 s). The bench and late joiners get nothing new -- this is the
+		-- room's verdict, not a spectacle.
+		if Remote then
+			for _, e in ipairs(final) do
+				local receipt = receipts[e.userId]
+				local plr = Players:GetPlayerByUserId(e.userId)
+				if receipt and plr then
+					Remote:FireClient(plr, {
+						kind = "shiftreport",
+						xpDelta = receipt.xpDelta,
+						xpTotal = receipt.xpTotal,
+						clearance = receipt.clearance,
+						clearanceName = receipt.clearanceName,
+						clearanceUp = receipt.clearanceUp,
+						streak = receipt.streak,
+						sessions = receipt.sessions,
+						viable = e.verdict == "VIABLE",
+						bestBand = receipt.bestBand,
+						volatile = receipt.volatile,
+						openSeats = 4 - #room.members,
+					})
+				end
+			end
+		end
+		if not hold(ctx, Pacing.Timing.ShiftReport or 5.0) then return end
 
 		-- P1.3 PODIUM (MASTERPLAN section 2: stamp 6 s + podium 8 s). The top
 		-- three stand on the blocks; the room AND the bench get the fixed

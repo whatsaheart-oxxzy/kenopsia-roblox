@@ -173,6 +173,13 @@ Pacing.Timing = {
 	-- clock AND for the feed line ("SETTLEMENT. 5 SECONDS_"), so turning this
 	-- one number turns both. tests/feel.lua holds it in (0, 6].
 	CanteenSettlement = 5.0,
+	-- 30.08.2026 (Phase 4b): the SHIFT REPORT hold -- the retention beat
+	-- between the verdict stamp and the podium. MachineFlow sends every
+	-- participant a personal kind="shiftreport" packet (XP delta, clearance,
+	-- streak) and keeps the stage for this long. Dark until the client renders
+	-- the kind -- an unknown kind renders NOTHING -- but the hold is REAL: the
+	-- session grows by this many seconds. tests/feel.lua holds it in (0, 6].
+	ShiftReport = 5.0,
 }
 
 -- The scoring pool a completed trial distributes. Kept here rather than in

@@ -104,6 +104,17 @@ check(iTop == 6 and nTop == "OVERSEER_CANDIDATE", "clearanceFor(14000) = OVERSEE
 check(bandAt(10 ^ 9) == 6, "clearanceFor(huge) clamps to the top band")
 check(bandAt(-5) == 1, "clearanceFor(negative) clamps to band 1")
 
+-- clearance names (Phase 4b: the SHIFT REPORT prints these verbatim) ----------
+-- clearanceFor's SECOND return is the band name; the report renders it raw,
+-- so every name must be a display-safe uppercase/underscore string.
+for i, band in ipairs(Progression.CLEARANCE) do
+	check(type(band.name) == "string" and string.match(band.name, "^[A-Z_]+$") ~= nil,
+		"CLEARANCE band " .. i .. " name is uppercase/underscore only", tostring(band.name))
+	local index, name = Progression.clearanceFor(band.xp)
+	check(index == i and name == band.name,
+		"clearanceFor(" .. band.xp .. ") returns the band name as second value", tostring(name))
+end
+
 -- streak ----------------------------------------------------------------------
 local s = { current = 0, best = 0, lastDayStamp = 0, shield = 0 }
 Progression.tickStreak(s, 100)
