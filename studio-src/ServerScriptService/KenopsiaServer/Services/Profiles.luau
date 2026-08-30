@@ -24,6 +24,11 @@
 -- lives in Shared/Rules/ProgressionRules (pure; tests/progression.lua).
 -- This file is only the traffic and the timing. Every DataStore call is
 -- pcall-wrapped; a dirty profile that never flushes is lost by design.
+--
+-- Phase 5: the EMOTES block near the bottom stops being a one-function socket.
+-- grantEmote keeps its signature and gains the corruption guard the crates
+-- wallet already has; the wheel gets its writers (setEquipped / setEmoteSlot /
+-- setWheel) and a reader. All memory-only, all on the same three flush moments.
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -473,12 +478,139 @@ function Profiles.flush(userId)
 	return true
 end
 
--- Dormant Phase 5 socket: ownership only -- no packet, no UI, no unlock flow.
+-- EMOTES (Phase 5) --------------------------------------------------------------
+-- Memory-only, like everything else in this file: each writer marks the entry
+-- dirty and the same three flush moments (verdict / PlayerRemoving /
+-- BindToClose) carry it to the store. `emotes` is already in OWNED_FIELDS, so
+-- nothing about the merge changes.
+--
+-- The CATALOG is NOT here. Shared/Config/EmoteRegistry owns it and
+-- Services/EmoteService checks a row against it before calling any of these --
+-- a Shared/Config require from this module would buy nothing and add a boot
+-- cycle for a rule the caller already enforces. Profiles enforces exactly ONE
+-- rule, and it is the one that keeps a wheel honest:
+--
+--     YOU CANNOT EQUIP WHAT YOU DO NOT OWN.
+--
+-- (A "default" emote -- free for everyone -- is materialised into `owned` by
+-- EmoteService the first time it is put on a wheel, so that rule stays absolute
+-- without a second code path here. It is not an ownership shortcut: the PLAY
+-- path asks the registry, never `owned`, for a default row.)
+--
+-- Corruption discipline, the crates pattern from recordSession: migrate() only
+-- fills MISSING keys, so an externally corrupted non-table `emotes` -- or a
+-- non-table owned/wheel, or a non-string equipped -- would throw on the first
+-- grant of the session. Normalise ONCE, here, and every writer below is total.
+local function emoteState(entry)
+	local data = entry.data
+	if type(data.emotes) ~= "table" then
+		data.emotes = { owned = {}, equipped = "", wheel = {} }
+	end
+	local emotes = data.emotes
+	if type(emotes.owned) ~= "table" then emotes.owned = {} end
+	if type(emotes.wheel) ~= "table" then emotes.wheel = {} end
+	if type(emotes.equipped) ~= "string" then emotes.equipped = "" end
+	return emotes
+end
+
+-- The wheel is a DENSE 1..WHEEL_SLOTS array of strings ("" = empty slot). Dense
+-- for the applyQuests reason: a sparse Lua array JSON-encodes as an OBJECT and
+-- comes back from the DataStore with string keys, at which point ipairs sees
+-- nothing and the wheel silently empties itself.
+Profiles.WHEEL_SLOTS = 8
+
+local function normaliseWheel(emotes)
+	local wheel = emotes.wheel
+	for i = 1, Profiles.WHEEL_SLOTS do
+		if type(wheel[i]) ~= "string" then wheel[i] = "" end
+	end
+	-- Drop anything past the wheel: a shrunk WHEEL_SLOTS, or a value written by
+	-- a future server with a wider wheel, must not travel back to the store.
+	for i = #wheel, Profiles.WHEEL_SLOTS + 1, -1 do
+		wheel[i] = nil
+	end
+	return wheel
+end
+
+-- Ownership. Phase 5 callers: EmoteService.grant (a gamepass purchase, a crate
+-- open, a cross-place MessagingService nudge). HARD CONSTRAINT, unchanged since
+-- the socket was written: this NO-OPS for a userId that is not on this server.
+-- A grant for an offline player is LOST -- the durable write is the caller's
+-- job, and KenopsiaProfile_v1 is the source of truth.
+-- Returns TRUE only when this call actually added something. Additive: nothing
+-- read the old nil return, and an idempotent answer is what lets the caller
+-- skip a DataStore write for a grant that changes nothing (a repeated
+-- cross-place nudge, a gamepass re-confirmed every OWNERSHIP_TTL).
 function Profiles.grantEmote(userId, emoteId)
 	local entry = live[userId]
-	if not entry or type(emoteId) ~= "string" then return end
-	entry.data.emotes.owned[emoteId] = true
+	if not entry or type(emoteId) ~= "string" or emoteId == "" then return false end
+	local owned = emoteState(entry).owned
+	if owned[emoteId] == true then return false end
+	owned[emoteId] = true
 	entry.dirty = true
+	return true
+end
+
+-- Read accessor. Returns the live sub-table BY REFERENCE (the Profiles.get
+-- discipline) or nil for a player this server has not seen; callers READ it,
+-- the writers here are the only ones that mutate it.
+function Profiles.emotes(userId)
+	local entry = live[userId]
+	if not entry then return nil end
+	return emoteState(entry)
+end
+
+-- The one-button emote. "" clears it. Returns false for an id that is not
+-- owned, so a caller can tell a rejection from a no-op.
+function Profiles.setEquipped(userId, emoteId)
+	local entry = live[userId]
+	if not entry or type(emoteId) ~= "string" then return false end
+	local emotes = emoteState(entry)
+	if emoteId ~= "" and emotes.owned[emoteId] ~= true then return false end
+	if emotes.equipped == emoteId then return true end
+	emotes.equipped = emoteId
+	entry.dirty = true
+	return true
+end
+
+-- One wheel slot. slot is 1..WHEEL_SLOTS; emoteId is an owned id, or "" / nil
+-- to clear the slot.
+function Profiles.setEmoteSlot(userId, slot, emoteId)
+	local entry = live[userId]
+	if not entry then return false end
+	slot = tonumber(slot)
+	if not slot or slot ~= math.floor(slot) or slot < 1 or slot > Profiles.WHEEL_SLOTS then return false end
+	if emoteId == nil then emoteId = "" end
+	if type(emoteId) ~= "string" then return false end
+	local emotes = emoteState(entry)
+	if emoteId ~= "" and emotes.owned[emoteId] ~= true then return false end
+	local wheel = normaliseWheel(emotes)
+	if wheel[slot] == emoteId then return true end
+	wheel[slot] = emoteId
+	entry.dirty = true
+	return true
+end
+
+-- The whole wheel at once (a later UI's "save layout"). `list` is an array of
+-- ids; anything missing, unowned or not a string becomes an empty slot rather
+-- than a rejection -- a layout that names one emote the player has since lost
+-- must still save the other seven.
+function Profiles.setWheel(userId, list)
+	local entry = live[userId]
+	if not entry or type(list) ~= "table" then return false end
+	local emotes = emoteState(entry)
+	local wheel = {}
+	for i = 1, Profiles.WHEEL_SLOTS do
+		local id = list[i]
+		if type(id) == "string" and id ~= "" and emotes.owned[id] == true then
+			wheel[i] = id
+		else
+			wheel[i] = ""
+		end
+	end
+	emotes.wheel = wheel
+	entry.dirty = true
+	return true
 end
 
 -- BOOT ------------------------------------------------------------------------
