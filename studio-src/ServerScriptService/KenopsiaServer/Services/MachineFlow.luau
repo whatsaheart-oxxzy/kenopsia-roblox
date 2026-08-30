@@ -44,6 +44,13 @@ local SortingFloor = require(script.Parent.SortingFloor)
 -- played-out session into "MINIGAME ERROR".
 local Podium = require(script.Parent.Podium)
 local AudienceCam = require(script.Parent.AudienceCam)
+-- Phase 4a (retention foundation, ships dark): lifetime profiles and the
+-- retention funnel. Profiles is volatile-first -- get/record/flush never
+-- yield and never block the loop -- and every call below is pcall-wrapped
+-- (Telemetry.funnel pcalls internally), so a broken profile layer reads as
+-- a skipped beat, never as "MINIGAME ERROR".
+local Profiles = require(script.Parent.Profiles)
+local Telemetry = require(script.Parent.Telemetry)
 
 local Shared = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
 local Rules = Shared:WaitForChild("Rules")
@@ -355,26 +362,37 @@ local function setActiveTrial(ctx, trialId)
 	end
 end
 
--- SELECTING ------------------------------------------------------------------
-local function runSelection(room)
-	local pool = enabledTrials()
-	if #pool == 0 then
-		warn("[MachineFlow] no ready trials - cannot select")
-		return nil
+-- 26.08.2026 (user): KenopsiaActiveTrial is a ROUND flag -- it is cleared after
+-- every round of a trial (setActiveTrial(ctx, "") below), so during the
+-- standings card, the round card and the 3-2-1 of a multi-round trial it reads
+-- "". Anything that has to be true for a WHOLE trial cannot hang off it. The
+-- emote button was the case that showed it: hidden during a Canteen round,
+-- popping back between the rounds of the same Canteen.
+--
+-- This one is set once per trial and cleared once, at the end of it.
+local function setTrialId(ctx, trialId)
+	for _, plr in ctx.audience do
+		if plr.Parent == Players then
+			plr:SetAttribute("KenopsiaTrialId", trialId or "")
+		end
 	end
-	-- 22.08.2026 (P1.1): the lobby reveal IS the first trial of the session it
-	-- precedes. The seed is minted here and runMatch consumes it, so the
-	-- roulette can no longer contradict what starts ten seconds later.
-	local seed = math.random(1, 2147483647)
-	room.pendingSeed = seed
-	local enabledById = {}
-	for _, t in pool do enabledById[t.id] = t end
-	local firstId = Playlist.arrange(Playlist.session(Playlist.order(seed), enabledById, Config.Playlist.PerSession))[1]
-	local trial = enabledById[firstId] or pool[math.random(#pool)]
-	room.trialId = trial.id
+end
 
+-- SELECTING ------------------------------------------------------------------
+
+-- MP-08 S9 (26.08.2026, user): der Icon-/Koeder-Aufbau steckte in runSelection
+-- fest, und runSelection lief genau einmal pro Session -- in preFlow, vor dem
+-- Match. Damit gab es zwischen zwei Trials kein Roulette, obwohl der Client es
+-- laengst kann (showSelection) und nur `icons` (3 Namen) und `chosen` (1-3)
+-- braucht. Herausgezogen, damit die Trial-Schleife dieselbe Praesentation
+-- schicken kann, mit der die Lobby die erste Wahl zeigt.
+--
+-- Rueckgabe: die drei Icon-Namen und der Index (1-3), auf dem das Roulette
+-- stehen bleibt. Das Ziel ist IMMER dabei; die anderen zwei sind echte
+-- Mitbewerber, aufgefuellt aus DECOY_ICONS, wenn nicht genug Trials ready sind.
+local function iconsFor(trial)
 	local others = {}
-	for _, t in pool do
+	for _, t in enabledTrials() do
 		if t.id ~= trial.id then table.insert(others, t.icon) end
 	end
 	local decoys = {}
@@ -397,6 +415,27 @@ local function runSelection(room)
 			icons[i] = table.remove(others, 1)
 		end
 	end
+	return icons, chosenIdx
+end
+
+local function runSelection(room)
+	local pool = enabledTrials()
+	if #pool == 0 then
+		warn("[MachineFlow] no ready trials - cannot select")
+		return nil
+	end
+	-- 22.08.2026 (P1.1): the lobby reveal IS the first trial of the session it
+	-- precedes. The seed is minted here and runMatch consumes it, so the
+	-- roulette can no longer contradict what starts ten seconds later.
+	local seed = math.random(1, 2147483647)
+	room.pendingSeed = seed
+	local enabledById = {}
+	for _, t in pool do enabledById[t.id] = t end
+	local firstId = Playlist.arrange(Playlist.session(Playlist.order(seed), enabledById, Config.Playlist.PerSession))[1]
+	local trial = enabledById[firstId] or pool[math.random(#pool)]
+	room.trialId = trial.id
+
+	local icons, chosenIdx = iconsFor(trial)
 	room.chosenTile = chosenIdx
 	return trial, icons, chosenIdx
 end
@@ -423,6 +462,12 @@ local function preFlow(room)
 	room.preSent = room.preSent or {}
 	for _, m in room.members do room.preSent[m.userId] = true end
 	tellRoom(room, { kind = "selection", icons = icons, chosen = chosenIdx, name = trial.displayName })
+	-- Phase 4a funnel: the lobby roulette is the first thing a seated player
+	-- watches. One-time funnel -- Analytics dedupes repeats per player.
+	for _, m in room.members do
+		local plr = Players:GetPlayerByUserId(m.userId)
+		if plr then Telemetry.funnel(plr, "KenopsiaRetention", 2, "RouletteSeen") end
+	end
 	-- P0.3: the roulette hold lives in Pacing.Timing.LobbyReveal (6.4 s), not here.
 	task.wait(Pacing.Timing.LobbyReveal or 6.4)
 	if room.phase ~= "Waiting" or #room.members == 0 then return end
@@ -443,6 +488,13 @@ local function preFlow(room)
 		task.wait(Config.Match.RematchGrace or 6)
 		if room.phase ~= "Waiting" or room.token ~= waitingToken then return end
 		RoomServiceRef.carryReady(rematch.userIds)
+		-- Phase 4a funnel: still seated after the grace = the rematch taken.
+		for _, m in room.members do
+			if rematch.userIds[m.userId] then
+				local plr = Players:GetPlayerByUserId(m.userId)
+				if plr then Telemetry.funnel(plr, "KenopsiaRetention", 5, "RematchAccepted") end
+			end
+		end
 	end
 end
 
@@ -730,6 +782,9 @@ local function runMatch(room)
 		cleaned = true
 		if ctx then
 			setActiveTrial(ctx, "")
+			-- Every exit route, including the aborted one: a session that dies
+			-- mid-Canteen must not leave the emote button switched off forever.
+			setTrialId(ctx, "")
 			if activeTrial and activeTrial.module.cleanup then
 				pcall(activeTrial.module.cleanup, ctx)
 			end
@@ -796,6 +851,10 @@ local function runMatch(room)
 			sessionTotals[uid] = 0
 		end
 
+		-- Phase 4a: how many rounds this session actually ran, across all its
+		-- trials -- the verdict write feeds it to the profile XP math.
+		local roundsRun = 0
+
 		-- P1.4 Machine voice, session-scoped. Drawn from the session seed, so
 		-- the same seed prints the same lines; firstdeath is spoken once.
 		local voice = {
@@ -812,6 +871,9 @@ local function runMatch(room)
 
 			local trialCtx = session:newTrial(trial.id, trialIndex, #order)
 			activeTrial = trial
+			-- Trial-scoped, unlike setActiveTrial: it survives the gaps between
+			-- this trial's rounds. See setTrialId.
+			setTrialId(ctx, trial.id)
 			ctx.effectScope = ("%s:%s"):format(ctx.sessionId, trial.id)
 			-- P1.3: the last trial of a multi-trial session is the FINAL AUDIT and
 			-- pays double, so the session is open until its last minute.
@@ -831,6 +893,25 @@ local function runMatch(room)
 				legIndex = RoomServiceRef.CLEAR,
 				legCount = RoomServiceRef.CLEAR,
 			})
+			-- MP-08 S9 (26.08.2026, user): das Roulette lief nur EINMAL pro
+			-- Session, in preFlow vor dem Match. Jeder Trial-Wechsel bekommt es
+			-- jetzt auch -- dieselbe Praesentation, mit der die Lobby die erste
+			-- Wahl zeigt, statt eines stummen Sprungs auf die naechste Infokarte.
+			--
+			-- Der erste Trial ueberspringt es: preFlow hat sein Roulette schon
+			-- gezeigt (room.preShown, und der Seed von dort ist derselbe, den
+			-- runMatch verbraucht -- die Lobby kann der Schleife also nicht
+			-- widersprechen). Zweimal dasselbe Rad waere hier nur Wartezeit.
+			--
+			-- Kosten: Pacing.Timing.TrialReveal (6.4 s) pro Wechsel, bei drei
+			-- Trials also +12.8 s pro Session.
+			if not (trialIndex == 1 and room.preShown) then
+				local icons, chosenIdx = iconsFor(trial)
+				tell(ctx, { kind = "selection", icons = icons, chosen = chosenIdx,
+					name = trial.displayName })
+				if not hold(ctx, Pacing.Timing.TrialReveal) then return end
+			end
+
 			-- "info", NOT a new kind. The client dispatches on a fixed set --
 			-- selection / info / status / round / score / announce / hide -- and
 			-- an unknown kind renders NOTHING. The first cut of this loop sent
@@ -940,10 +1021,35 @@ local function runMatch(room)
 				roundCtx.cleanup:run()
 				-- 24.08.2026 (user): a short BLACKOUT closes every round --
 				-- reach the exit, cut to black, then the next round card.
-				tell(ctx, { kind = "cover", seconds = 0.7 })
-				if not hold(ctx, 0.7) then return end
+				--
+				-- 27.08.2026 (user): LONG, and HELD. `hold = true` means the
+				-- client keeps the black frame up until the round system fires
+				-- its next card, instead of lifting it on a 0.7 s timer of its
+				-- own. That timer was a race the server could only lose: the
+				-- standings below are typed by a client that has to finish
+				-- hideAll() first, so whatever the packet took to arrive was
+				-- spent looking at the arena being torn down.
+				--
+				-- What clears it is the NEXT tell() on this path -- the
+				-- standings card below on any round but the last, the trial's
+				-- score board after it, {kind="hide"} if the session is
+				-- cancelled from cleanup(). Every one of them is a known kind,
+				-- and the client's screen funnel lifts the cover for all of
+				-- them, so no route out of a round can strand the black frame.
+				-- maxSeconds is only the client's own safety net.
+				tell(ctx, { kind = "cover", hold = true,
+					maxSeconds = Pacing.Timing.BlackoutMax })
+				if not hold(ctx, Pacing.Timing.RoundBlackout or 0.7) then return end
 				for uid, value in scores do
 					trialTotals[uid] = (trialTotals[uid] or 0) + value
+				end
+				roundsRun += 1
+				-- Phase 4a funnel: the first round of the first trial is done.
+				if trialIndex == 1 and roundIndex == 1 then
+					for _, uid in ctx.participantUserIds do
+						local plr = Players:GetPlayerByUserId(uid)
+						if plr then Telemetry.funnel(plr, "KenopsiaRetention", 3, "Round1Done") end
+					end
 				end
 				if timedOut then break end
 				if roundIndex < rounds then
@@ -990,6 +1096,15 @@ local function runMatch(room)
 				})
 			end
 
+			-- Phase 4a: lifetime trial stats. The board rows are the only
+			-- tie-aware placement record (voice.trialWins counts sole tops
+			-- only) and they exist nowhere else -- consume them here. `won`
+			-- is place == 1, so a shared top counts for everyone on it.
+			for _, row in ipairs(board) do
+				pcall(Profiles.recordTrial, row.userId, trial.id,
+					row.place == 1, trialTotals[row.userId] or 0)
+			end
+
 			RoomServiceRef.setStage(ctx.sessionId, "Score")
 			-- P1.4: the trial's closing standings count as its last round's top.
 			table.insert(trialVoice.roundTops, soleTop(ranking) or false)
@@ -1018,6 +1133,7 @@ local function runMatch(room)
 			if trial.module.cleanup then pcall(trial.module.cleanup, ctx) end
 			trialCtx:cancel()
 			activeTrial = nil
+			setTrialId(ctx, "")
 		end
 
 		-- FINAL SCORE. Highest cumulative total is VIABLE, everyone else
@@ -1059,6 +1175,26 @@ local function runMatch(room)
 		-- The board is out and the attributes are written. Nothing after this
 		-- point may downgrade the result: the holds below are presentation only.
 		scoresCommitted = true
+
+		-- Phase 4a (retention): the profile write rides the committed result --
+		-- after scoresCommitted, before the presentation holds a quitter can
+		-- cancel. `band` is the shared final-board place: ties keep the same
+		-- number, the way Scoring.rankRound shares them. Profiles.flush is
+		-- fire-and-forget, so none of this delays the verdict stamp.
+		local place, prevScore = 0, nil
+		for i, e in ipairs(final) do
+			if e.score ~= prevScore then place, prevScore = i, e.score end
+			pcall(Profiles.recordSession, e.userId, {
+				viable = e.verdict == "VIABLE",
+				band = place,
+				roundsPlayed = roundsRun,
+				trialsWon = voice.trialWins[e.userId] or 0,
+			})
+			pcall(Profiles.flush, e.userId)
+			local plr = Players:GetPlayerByUserId(e.userId)
+			if plr then Telemetry.funnel(plr, "KenopsiaRetention", 4, "VerdictSeen") end
+		end
+
 		if not hold(ctx, Pacing.Timing.FinalScore) then return end
 
 		-- P1.3 PODIUM (MASTERPLAN section 2: stamp 6 s + podium 8 s). The top
