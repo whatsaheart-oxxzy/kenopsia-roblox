@@ -1043,6 +1043,54 @@ local function runMatch(room)
 				-- zum Countdown -- nicht zum Teleport.
 				tell(ctx, { kind = "cover", hold = true,
 					maxSeconds = Pacing.Timing.BlackoutMax })
+				-- 31.08.2026 (user: "sometimes the character doesnt show up in
+				-- Bird Hunting and in Dead Zone"): JEDER BEKOMMT EINEN KOERPER,
+				-- BEVOR die Runde stellt.
+				--
+				-- Round:place holt sich TrialKit.livingOf(room) und macht aus
+				-- jedem Mitglied OHNE lebenden Charakter still ein `ps.done`
+				-- (TrialKit: `if not s then ps.done = true end`). Wer beim
+				-- Rundenstart gerade respawnt, sass die ganze Runde koerperlos
+				-- daneben -- und im Server lief nirgends ein LoadCharacter, das
+				-- ihn zurueckgeholt haette. Das Zeitfenster ist real: Roblox
+				-- respawnt mit Players.RespawnTime (3 s), und wer kurz vor dem
+				-- Rundenende stirbt, ist beim Stellen der naechsten Runde noch
+				-- nicht wieder da.
+				--
+				-- Fehlende oder tote Charaktere werden hier angefordert und
+				-- dann GEWARTET -- gedeckelt, damit ein Spieler, der gerade
+				-- geht, die Session nicht aufhaelt. Der Schirm ist waehrend
+				-- dieser Zeit ohnehin schwarz (der Cover direkt darueber), der
+				-- Respawn ist also unsichtbar.
+				do
+					local function bodyOf(uid)
+						local plr = Players:GetPlayerByUserId(uid)
+						local ch = plr and plr.Character
+						local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+						local root = ch and ch:FindFirstChild("HumanoidRootPart")
+						if plr and ch and ch.Parent and hum and root and hum.Health > 0 then
+							return plr, true
+						end
+						return plr, false
+					end
+					for _, m in room.members do
+						local plr, alive = bodyOf(m.userId)
+						if plr and not alive then
+							pcall(function() plr:LoadCharacter() end)
+						end
+					end
+					local deadline = os.clock() + (Pacing.Timing.RespawnGrace or 5)
+					while os.clock() < deadline do
+						if ctx.cancelled() then return end
+						local missing = false
+						for _, m in room.members do
+							local _, alive = bodyOf(m.userId)
+							if not alive then missing = true break end
+						end
+						if not missing then break end
+						task.wait(0.1)
+					end
+				end
 				setActiveTrial(ctx, trial.id)
 				local deaths = watchDeaths(ctx)
 

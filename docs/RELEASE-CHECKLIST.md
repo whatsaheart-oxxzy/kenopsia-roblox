@@ -71,13 +71,16 @@ deliberately not built. Per-phase evidence lives in `docs/QA/`.
    **unmerged `worktree-mp-08-death-and-spectate` branch** byte-for-byte, so that branch's fate is
    part of this decision. **A Rojo push from `studio-src/` today would overwrite live work.** This
    wants one deliberate commit off a live dump, not a drive-by.
-8. **Remove the authoring rigs from the place**: `Anim_PushFall`, `Player_Rig`, `Headbutt`,
+8. **The lobby needs nothing from you any more (31.08).** It was place geometry for one day;
+   `Services/Lobby.luau` now builds the holding cell + `workspace.SpawnLocation` at every server
+   boot, idempotently, so it cannot be lost by not saving. Publishing still ships *code* as always.
+9. **Remove the authoring rigs from the place**: `Anim_PushFall`, `Player_Rig`, `Headbutt`,
    `Injured Walking`, `Death Fall`, `Dancing`, `Rifle Aiming Idle`, `Sneak Walk`, `Zombie Crawl`,
    `Fall Flat` — ten models used only to author clips. (`Workspace.EmoteRigs`, the six emote preview
    rigs, is already gone from the place.)
-9. **Purge `RBX_ANIMSAVES`** (29,785 instances ≈ 74 % of the datamodel) **from the published place
+10. **Purge `RBX_ANIMSAVES`** (29,785 instances ≈ 74 % of the datamodel) **from the published place
    only**, after a live-server clip verification pass. Keep a Studio authoring save.
-10. **Save & Publish** after every session that pushes scripts (parity is verified each time).
+11. **Save & Publish** after every session that pushes scripts (parity is verified each time).
 
 ### Test debt — needs Play, which I could not drive
 The official `Roblox_Studio` MCP has been dead all session (no Play control, no input injection; it

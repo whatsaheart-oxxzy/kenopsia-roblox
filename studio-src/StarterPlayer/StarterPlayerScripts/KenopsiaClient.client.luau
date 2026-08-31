@@ -1125,11 +1125,13 @@ local function setRunnerTouch(on)
 	local punch = touchControls:FindFirstChild("Btn_PUNCH")
 	if punch then punch.Visible = on and charPushAllowed() end
 	refreshCrouchBtn()
+	-- 31.08.2026 (user: "2 Sonar"): Btn_SCAN bleibt AUS. Der Sonar-Knopf des
+	-- Spiels ist Btn_PULSE aus StarterPlayerScripts.SonarClient (eigenes
+	-- ScreenGui, >= 64 px). Hier stand die Sichtbarkeitsregel des alten
+	-- Sonars (an, sobald XBotMoves "scan" enthaelt) -- genau die hat den
+	-- zweiten Knopf neben den neuen gestellt.
 	local sb = touchControls:FindFirstChild("Btn_SCAN")
-	if sb then
-		local char = player.Character
-		sb.Visible = on and char ~= nil and string.find(char:GetAttribute("XBotMoves") or "", "scan") ~= nil
-	end
+	if sb then sb.Visible = false end
 	if on then
 		touchControls.Btn_FIRE.Visible = false
 		touchControls.Btn_SCOPE.Visible = false
@@ -1197,6 +1199,11 @@ local function spawnWave(root)
 end
 
 local function firePulse()
+	-- 31.08.2026: stillgelegt, siehe setScanHeld weiter unten. Ohne dieses
+	-- return schickte der alte Pfad einen ZWEITEN "pulse" auf dasselbe
+	-- TrialInput-Remote und malte zusaetzlich einen nur lokal sichtbaren Ring
+	-- (spawnWave) neben die Server-Aufdeckung des SonarClient.
+	do return end
 	if not charScanAllowed() then return end
 	local now = os.clock()
 	if now < pulseReadyAt then return end
@@ -1228,6 +1235,21 @@ local scanHeld = false
 local scanHoldGeneration = 0
 
 local function setScanHeld(on)
+	-- 31.08.2026 (user: "there are 2 Sonar. Remove one."): DER ALTE SONAR IST
+	-- STILLGELEGT. Seit Phase 3b (30.08.) besitzt StarterPlayerScripts
+	-- .SonarClient den Sonar: E / ButtonX / Btn_PULSE, drei Pulse pro Runde
+	-- als SERVER-Oekonomie, und die Aufdeckung besteht aus Server-Teilen, die
+	-- JEDER sieht. Dieser Pfad hier ist der Vorgaenger: F / ButtonY /
+	-- Btn_SCAN, Dauerfeuer solange gehalten, mit einem nur lokal sichtbaren
+	-- Ring. Beide liefen nebeneinander -- zwei Knoepfe, zwei Ringe, doppelte
+	-- Pulse auf demselben Remote.
+	--
+	-- Stillgelegt statt geloescht: dieses Skript steht bei ~185/200
+	-- Luau-Locals, und ein Ausschneiden von ~90 Zeilen mitten aus der
+	-- Hauptkette ist das riskantere Aendern. Die Eingaben (F/ButtonY/Btn_SCAN)
+	-- laufen bewusst weiter hierher und enden hier folgenlos; der Knopf wird
+	-- in setRunnerTouch dauerhaft ausgeblendet.
+	do return end
 	on = on == true
 	if on and not charScanAllowed() then return end
 	if scanHeld == on then return end
