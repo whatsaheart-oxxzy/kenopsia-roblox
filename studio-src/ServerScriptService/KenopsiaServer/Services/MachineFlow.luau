@@ -1027,6 +1027,22 @@ local function runMatch(room)
 					if not hold(ctx, Pacing.Timing.RoleCard or 1.6) then return end
 				end
 				tell(ctx, { kind = "hide" })
+				-- 31.08.2026 (user): "reappear again till the countdown with
+				-- 3,2,1". Zwischen der letzten Karte und dem Countdown lag der
+				-- Schirm bisher OFFEN: `hide` raeumt die Karte weg und loescht
+				-- dabei (jede bekannte Kind-Nachricht tut das) auch noch den
+				-- Blackout -- und genau in diesem Fenster teleportiert
+				-- Round:place die Spieler und baut die Arena auf. Man sah also
+				-- den Umbau, den der Blackout verstecken soll.
+				--
+				-- Also NACH dem hide erneut zuhalten. Aufgehoben wird es nicht
+				-- von einem Timer, sondern vom Countdown selbst: bei "3" macht
+				-- der Client hideAll() + Overlay.black() und blendet die Arena
+				-- unter den Ziffern ein (Feel.Fade.ArenaIn). Der Schirm ist
+				-- damit exakt bis 3-2-1 schwarz, und die Einblendung gehoert
+				-- zum Countdown -- nicht zum Teleport.
+				tell(ctx, { kind = "cover", hold = true,
+					maxSeconds = Pacing.Timing.BlackoutMax })
 				setActiveTrial(ctx, trial.id)
 				local deaths = watchDeaths(ctx)
 

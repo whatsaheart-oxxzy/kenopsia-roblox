@@ -94,6 +94,71 @@ local briefing = machine:WaitForChild("Briefing")
 local scoreScreen = machine:WaitForChild("Score")
 local announceScreen = machine:WaitForChild("Announce")
 local faderFrame = machine:WaitForChild("Fader")
+
+-- VOLLBILD-SCHWARZ (31.08.2026, user: "still no full blackscreen") ------------
+--
+-- Der Fader ist ein Frame INNERHALB von KenopsiaMachine, und diese ScreenGui
+-- hat DisplayOrder 50. Zwei Oberflaechen liegen darueber und blieben deshalb
+-- bei jedem Blackout sichtbar:
+--   * KenopsiaTrialHud (TrialClientKit) -- DisplayOrder machine+1 = 51: Uhr,
+--     LEG-Zaehler, Touch-Pads, Faehigkeiten-Panel;
+--   * KenopsiaNotice -- DisplayOrder 900: die Hinweiszeile.
+-- Dazu die Roblox-Topbar, die ueber JEDER ScreenGui liegt und nur ueber
+-- SetCore("TopbarEnabled") verschwindet. Das Ergebnis war ein "schwarzer"
+-- Schirm, auf dem die halbe HUD weiterlief.
+--
+-- Statt die Aufrufer umzubauen SPIEGELT dieser Block den Fader: eine eigene
+-- ScreenGui bei DisplayOrder 950 -- ueber HUD (51) und Notice (900), aber
+-- UNTER der Abbruchkarte (AbortScreen, 1000), die immer oberste Instanz
+-- bleiben muss. Sie folgt Sichtbarkeit UND Transparenz des Faders, also auch
+-- jedem Tween (der Arena-Einblendung bei "3"), ohne dass eine einzige
+-- bestehende Fader-Zeile angefasst werden muss. Overlay, Countdown,
+-- Spectate-Schnitt und GO bleiben unveraendert.
+do
+	local coverGui = Instance.new("ScreenGui")
+	coverGui.Name = "KenopsiaCover"
+	coverGui.IgnoreGuiInset = true
+	coverGui.ScreenInsets = Enum.ScreenInsets.None
+	coverGui.DisplayOrder = 950
+	coverGui.ResetOnSpawn = false
+	coverGui.Enabled = false
+	coverGui.Parent = machine.Parent
+
+	local coverFrame = Instance.new("Frame")
+	coverFrame.Name = "Black"
+	coverFrame.Size = UDim2.fromScale(1, 1)
+	coverFrame.Position = UDim2.fromScale(0, 0)
+	coverFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+	coverFrame.BackgroundTransparency = 0
+	coverFrame.BorderSizePixel = 0
+	coverFrame.Active = true -- schluckt Klicks/Taps, solange es schwarz ist
+	coverFrame.Parent = coverGui
+
+	-- Die Topbar nur dann anfassen, wenn sich der Zustand wirklich aendert:
+	-- SetCore ist ein teurer Aufruf und darf nicht pro Tween-Frame laufen.
+	local topbarHidden = false
+	local function topbar(hidden)
+		if topbarHidden == hidden then return end
+		topbarHidden = hidden
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("TopbarEnabled", not hidden)
+		end)
+	end
+
+	local function sync()
+		local on = faderFrame.Visible
+		coverGui.Enabled = on
+		coverFrame.BackgroundTransparency = faderFrame.BackgroundTransparency
+		-- Erst ausblenden, wenn der Schirm wieder frei ist: waehrend der
+		-- Einblendung (Transparency laeuft gegen 1) soll die Topbar schon
+		-- zurueckkommen, sobald man die Welt ohnehin sieht.
+		topbar(on and faderFrame.BackgroundTransparency < 0.5)
+	end
+
+	faderFrame:GetPropertyChangedSignal("Visible"):Connect(sync)
+	faderFrame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(sync)
+	sync()
+end
 local scopeGui = machine:WaitForChild("Scope")
 local hipCross = machine:WaitForChild("HipCross")
 local touchControls = machine:WaitForChild("TouchControls")
