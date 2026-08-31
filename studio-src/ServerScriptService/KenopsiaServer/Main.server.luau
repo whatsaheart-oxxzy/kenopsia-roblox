@@ -9,8 +9,10 @@ local Telemetry = require(Services.Telemetry)
 local Profiles = require(Services.Profiles)
 local EmoteService = require(Services.EmoteService)
 local Lobby = require(Services.Lobby)
+local SoloExit = require(Services.SoloExit)
 
 Lobby.start() -- 31.08.2026: baut Warteraum + workspace.SpawnLocation, falls sie fehlen. MUSS zuerst laufen: CharacterAutoLoads spawnt den ersten Spieler sofort, und ohne SpawnLocation faellt er ins Nichts
+SoloExit.start() -- 31.08.2026: wer allein zurueckbleibt, faehrt sofort ins MainMenu-Place zurueck
 RoomService.start() -- creates ReplicatedStorage.Kenopsia.Remotes; everything below waits on it
 Telemetry.start()
 Profiles.start() -- Phase 4a: volatile-first profiles; loaded before MachineFlow can reach a verdict
