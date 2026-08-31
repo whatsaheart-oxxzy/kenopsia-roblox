@@ -1588,7 +1588,12 @@ local function buildCanteenHud()
 	ration.Font = Enum.Font.Code
 	ration.TextSize = 20
 	ration.TextColor3 = K.CP_IDLE
-	ration.Text = "PLATE 20    EATEN 00/20" -- placeholder until the first cpstate; PEAS_TOTAL is 20 since 23.08.2026
+	-- 31.08.2026 (user): DIE "WIE VIELE ERBSEN NOCH"-ANZEIGE IST AUS, auf jedem
+	-- Geraet. Das Label BLEIBT bestehen und unsichtbar: cpSetState (Text) und
+	-- der cpmiss-Blitz (TextColor3) sprechen es weiter an, ein Loeschen wuerde
+	-- dort nil indizieren. Unsichtbar kostet einen string.format pro Paket.
+	ration.Text = ""
+	ration.Visible = false
 	ration.ZIndex = 8
 	ration.Parent = panel
 

@@ -98,15 +98,18 @@ CanteenProtocol._guardOwner = nil :: string?
 
 local ROUND_TIME = Pacing.RoundSeconds.canteen or 60
 
--- 23.08.2026: 16 -> 20 peas (five full forks instead of four). CanteenProps
--- builds the plate from this number through `opts.peas`; nothing else counts.
-local PEAS_TOTAL = 20
+-- 31.08.2026 (user): 20 -> 35 peas. CanteenProps builds the plate from this
+-- number through `opts.peas`; nothing else counts. 35 is ~9 full forks, and it
+-- only fits inside the 60 s round because MIN_PLATE_INTERVAL dropped to 0.2 s
+-- in the same pass -- at the old 1.0 s, 35 stabs alone cost 35 s.
+-- (23.08.2026 had taken it 16 -> 20.)
+local PEAS_TOTAL = 35
 local FORK_CAPACITY = 4
 
 -- Server-side minimum intervals. These are the rate limit, not a rhythm: they
 -- exist so a macro cannot empty a plate in one frame, and they are checked on
 -- the SERVER clock so a client cannot argue about them.
-local MIN_PLATE_INTERVAL = 1.0 -- 24.08.2026 (user): one pea per second, the stab reads
+local MIN_PLATE_INTERVAL = 0.2 -- 31.08.2026 (user): 1.0 -> 0.2, stabbing is quick now
 local MIN_MOUTH_INTERVAL = 0.50
 
 -- How long a swallow stays detectable. An eating window that overlaps the
