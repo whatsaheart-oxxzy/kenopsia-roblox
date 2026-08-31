@@ -1,0 +1,7 @@
+F3-ready-visibility = PARTIAL
+WHO IS READY -> REFUTED. publicState:104 ships per-member ready; live client 2487-2526 updateRoster
+  paints Row1..4 Check.Fill; GUI Row1..4 + Check.Fill confirmed live under Info.Roster.
+WHY NOT STARTING -> CONFIRMED. maybeAutoStart 311-317 returns silently x2.
+  "NOT ENOUGH PLAYERS"/"ALL PLAYERS MUST BE READY" live behind RoomStartRequest = fired by 0 of 115 scripts.
+  p.countdown broadcast, never read. MachineVoice.Lines.idle has no consumer (pick called once, lastdiner).
+  minPlayers never sent to client (only maxPlayers).

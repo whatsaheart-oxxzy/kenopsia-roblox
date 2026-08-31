@@ -1,0 +1,3760 @@
+--!nonstrict
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+local GuiService = game:GetService("GuiService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local AMBER = Color3.fromHex("FFBA3C")
+-- 23.08.2026: one-shot constants live in one table -- Luau allows 200 live
+-- locals per function and the main chunk went over it after the P1 merge.
+local K = {
+	SNIPER_BASE_FOV = 70,
+	ZOOMS = { { fov = 35, label = "x2" }, { fov = 18, label = "x4" } },
+	FIRE_COOLDOWN = 2.2,
+	MARK_LIFETIME = 1.0,
+	MARK_POOL_MAX = 64,
+	CP_PLATE_COOLDOWN = 1.0, -- 24.08.2026 (user): one stab per second
+	CP_MOUTH_COOLDOWN = 0.35,
+	CP_FORK_CAPACITY = 4,
+	CP_IDLE = Color3.fromRGB(130, 170, 192),
+	CP_WARN = Color3.fromRGB(255, 176, 40),
+	CP_DANGER = Color3.fromRGB(255, 58, 44),
+	CP_SAFE = Color3.fromRGB(120, 208, 128),
+	CP_PIP_EMPTY = Color3.fromRGB(36, 70, 87),
+	PODIUM_ORDINAL = { "1ST", "2ND", "3RD" },
+	SETTING_ATTR = { Crt = "KenopsiaCRT" },
+	SFX_POOLS = { Click = "Clicks", Submit = "Submits" },
+	FORWARD_BIND = "KenopsiaForwardOnly",
+	KNOWN_KINDS = { selection = true, info = true, status = true, round = true, score = true, announce = true, hide = true, rolecard = true },
+}
+K.Theme = require(script.Parent:WaitForChild("IceTheme"))
+local PHOSPHOR = K.Theme.C.Cyan
+local IDLE = K.Theme.C.Text
+local DIM = K.Theme.C.Muted
+-- P2.4 (23.08.2026): the glyph helper rides K (no new top-level local -- this
+-- chunk sits at Luau's live-local ceiling). No wait: StarterPlayerScripts is
+-- copied as one; a place without the module keeps the authored hint texts,
+-- with one warn.
+K.Glyphs = (function()
+	local m = script.Parent:FindFirstChild("Glyphs")
+	if not m then warn("[Kenopsia] Glyphs module missing - hints keep their authored text") end
+	return m and require(m) or nil
+end)()
+K.GlyphResolver = K.Glyphs and K.Glyphs.robloxResolver(UserInputService) or nil
+
+local remotes = ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Remotes")
+local RoomState = remotes:WaitForChild("RoomState")
+local MachineState = remotes:WaitForChild("MachineState")
+local ReadyReq = remotes:WaitForChild("RoomReadyRequest")
+local SniperFire = remotes:FindFirstChild("SniperFire")
+local SniperAim = remotes:FindFirstChild("SniperAim")
+task.spawn(function()
+	SniperFire = SniperFire or remotes:WaitForChild("SniperFire")
+	SniperAim = SniperAim or remotes:WaitForChild("SniperAim")
+end)
+-- Crouch stays optional and off the critical boot path. Headbutt is owned by
+-- RunnerClient through TrialInput; the stranded XBotPush remote is retired.
+local XBotCrouch = remotes:FindFirstChild("XBotCrouch")
+task.spawn(function()
+	XBotCrouch = XBotCrouch or remotes:WaitForChild("XBotCrouch", 15)
+end)
+
+local machine = playerGui:WaitForChild("KenopsiaMachine")
+-- P1.5: every cps, tween duration, easing, shake and flicker number the
+-- screens use comes from Shared/Config/FeelConfig (the timing bible). ONE
+-- local on purpose -- this chunk sits near Luau's 200-local ceiling.
+local Feel = require(ReplicatedStorage:WaitForChild("Kenopsia"):WaitForChild("Shared")
+	:WaitForChild("Config"):WaitForChild("FeelConfig"))
+
+-- MachineLayout stamps the detected platform on the gui; touch buttons show
+-- on mobile always, on desktop only when a touchscreen exists, never on console
+local function touchAllowed()
+	local p = machine:GetAttribute("Platform")
+	if p == "Console" then return false end
+	if p == "Mobile" then return true end
+	return UserInputService.TouchEnabled
+end
+local selection = machine:WaitForChild("Selection")
+local info = machine:WaitForChild("Info")
+local statusScreen = machine:WaitForChild("Status")
+local roundCard = machine:WaitForChild("RoundCard")
+local briefing = machine:WaitForChild("Briefing")
+local scoreScreen = machine:WaitForChild("Score")
+local announceScreen = machine:WaitForChild("Announce")
+local faderFrame = machine:WaitForChild("Fader")
+
+-- VOLLBILD-SCHWARZ (31.08.2026, user: "still no full blackscreen") ------------
+--
+-- Der Fader ist ein Frame INNERHALB von KenopsiaMachine, und diese ScreenGui
+-- hat DisplayOrder 50. Zwei Oberflaechen liegen darueber und blieben deshalb
+-- bei jedem Blackout sichtbar:
+--   * KenopsiaTrialHud (TrialClientKit) -- DisplayOrder machine+1 = 51: Uhr,
+--     LEG-Zaehler, Touch-Pads, Faehigkeiten-Panel;
+--   * KenopsiaNotice -- DisplayOrder 900: die Hinweiszeile.
+-- Dazu die Roblox-Topbar, die ueber JEDER ScreenGui liegt und nur ueber
+-- SetCore("TopbarEnabled") verschwindet. Das Ergebnis war ein "schwarzer"
+-- Schirm, auf dem die halbe HUD weiterlief.
+--
+-- Statt die Aufrufer umzubauen SPIEGELT dieser Block den Fader: eine eigene
+-- ScreenGui bei DisplayOrder 950 -- ueber HUD (51) und Notice (900), aber
+-- UNTER der Abbruchkarte (AbortScreen, 1000), die immer oberste Instanz
+-- bleiben muss. Sie folgt Sichtbarkeit UND Transparenz des Faders, also auch
+-- jedem Tween (der Arena-Einblendung bei "3"), ohne dass eine einzige
+-- bestehende Fader-Zeile angefasst werden muss. Overlay, Countdown,
+-- Spectate-Schnitt und GO bleiben unveraendert.
+do
+	local coverGui = Instance.new("ScreenGui")
+	coverGui.Name = "KenopsiaCover"
+	coverGui.IgnoreGuiInset = true
+	coverGui.ScreenInsets = Enum.ScreenInsets.None
+	coverGui.DisplayOrder = 950
+	coverGui.ResetOnSpawn = false
+	coverGui.Enabled = false
+	coverGui.Parent = machine.Parent
+
+	local coverFrame = Instance.new("Frame")
+	coverFrame.Name = "Black"
+	coverFrame.Size = UDim2.fromScale(1, 1)
+	coverFrame.Position = UDim2.fromScale(0, 0)
+	coverFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+	coverFrame.BackgroundTransparency = 0
+	coverFrame.BorderSizePixel = 0
+	coverFrame.Active = true -- schluckt Klicks/Taps, solange es schwarz ist
+	coverFrame.Parent = coverGui
+
+	-- Die Topbar nur dann anfassen, wenn sich der Zustand wirklich aendert:
+	-- SetCore ist ein teurer Aufruf und darf nicht pro Tween-Frame laufen.
+	local topbarHidden = false
+	local function topbar(hidden)
+		if topbarHidden == hidden then return end
+		topbarHidden = hidden
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("TopbarEnabled", not hidden)
+		end)
+	end
+
+	local function sync()
+		local on = faderFrame.Visible
+		coverGui.Enabled = on
+		coverFrame.BackgroundTransparency = faderFrame.BackgroundTransparency
+		-- Erst ausblenden, wenn der Schirm wieder frei ist: waehrend der
+		-- Einblendung (Transparency laeuft gegen 1) soll die Topbar schon
+		-- zurueckkommen, sobald man die Welt ohnehin sieht.
+		topbar(on and faderFrame.BackgroundTransparency < 0.5)
+	end
+
+	faderFrame:GetPropertyChangedSignal("Visible"):Connect(sync)
+	faderFrame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(sync)
+	sync()
+end
+
+-- OVERLAY: THE TWO THINGS DRAWN OVER THE WORLD ------------------------------
+-- The held round-end blackout and the in-round HUD, in ONE do-block behind ONE
+-- top-level name. They are unrelated in what they do and related in what they
+-- cost: the main chunk of this script sits within a couple of registers of
+-- Luau's 200-per-function limit, and it counts the main chunk as one function.
+-- Blackout and the HUD as two separate names compiled to
+-- "Out of local registers when trying to allocate hit" and killed the whole
+-- LocalScript. A block's own locals are freed at its `end`, so anything added
+-- here from now on costs nothing at this level -- add it INSIDE, not beside.
+
+-- HELD BLACKOUT --------------------------------------------------------------
+-- 27.08.2026 (user): the cut to black that closes a round is long, and it ends
+-- when the ROUND SYSTEM says so, not when a local timer runs out. MachineFlow
+-- sends {kind="cover", hold=true} the moment a round is over -- death, escape
+-- or the clock -- and the frame stays black until the next Machine card lands
+-- (the standings, the trial's score board, the next round card, or the hide of
+-- a cancelled session). A timer here could only ever guess when that would be,
+-- and every guess that came in short showed the arena mid-teardown.
+--
+-- `held` is the latch. `token` invalidates the delayed callbacks of an older
+-- cover, so a second cover -- or anything else that takes the frame over --
+-- cannot be switched off by the first one's timer.
+--
+-- TWO WAYS OUT, and every path that touches faderFrame must take one of them:
+--   Overlay.black()   claim the frame and paint it black, dropping the latch.
+--                     For code about to drive the fader itself: the 3-2-1
+--                     fade-in, the spectate cut, this module's own cover.
+--   Overlay.clear()   drop the latch AND take the frame down. That is the
+--                     screen funnel's route: any known Machine kind lifts the
+--                     blackout.
+-- Overlay.release() is black() without the paint, for GO, which wants the frame
+-- gone rather than claimed.
+local Overlay
+do
+	local held = false
+	local token = 0
+	local BACKSTOP = 25
+
+	local function release()
+		held = false
+		token += 1
+	end
+
+	local function clear()
+		if not held then return end
+		release()
+		faderFrame.Visible = false
+		faderFrame.BackgroundTransparency = 0
+	end
+
+	local function black()
+		release()
+		faderFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+		faderFrame.BackgroundTransparency = 0
+		faderFrame.Visible = true
+	end
+
+	-- Lift the frame after `seconds`, unless something else claimed it since.
+	local function liftAfter(seconds)
+		local mine = token
+		task.delay(seconds, function()
+			if token ~= mine then return end
+			faderFrame.Visible = false
+			faderFrame.BackgroundTransparency = 0
+		end)
+	end
+
+	-- {kind="cover"}. With `hold` the blackout is open-ended and only the round
+	-- system's next card takes it down (see clear() in the screen funnel);
+	-- `maxSeconds` is the backstop for a card that never arrives. Without
+	-- `hold` it is the old fixed beat.
+	local function show(hold, seconds, maxSeconds)
+		black()
+		if not hold then
+			liftAfter(seconds or 0.7)
+			return
+		end
+		held = true
+		local mine = token
+		task.delay(maxSeconds or BACKSTOP, function()
+			if token ~= mine then return end
+			warn("[Kenopsia] held blackout hit its backstop - no Machine card arrived")
+			clear()
+		end)
+	end
+
+	-- THE TRIAL HUD (27.08.2026, user) ---------------------------------------
+-- What a running round tells you about itself. Bird Hunting ran a 60 s leg with
+-- NOTHING on screen: no clock, no leg counter, no sense of how far the exit
+-- was. RoomService has broadcast legIndex / legCount on every round since Gate
+-- 1 and no client has ever read them; the time was carried by nothing at all.
+--
+-- Deliberately GENERIC -- {kind="hud"}, every field optional, each one drawn
+-- only when it is present -- so the other trials can adopt it a line at a time.
+-- Bird Hunting is the first sender. Dead Zone needs no clock (the compactor IS
+-- the clock, by design) and the Canteen already has its own HUD.
+--
+	-- A SIBLING under `machine`, like CountText and RunnerYou, not one of the
+	-- screens: hideAll() clears the screens and this has to outlive it -- there
+	-- is no screen up during a round. It leaves with the round instead, when
+	-- KenopsiaActiveTrial clears, so no packet is needed to take it down.
+	--
+	-- ZIndex 5: over the world, under the Fader at 70, so the round-end blackout
+	-- covers it like everything else.
+	local hud, legLabel, clockLabel, leftLabel, track, fill
+
+	local function build()
+		if hud then return end
+		hud = Instance.new("Frame")
+		hud.Name = "TrialHud"
+		hud.AnchorPoint = Vector2.new(0.5, 0)
+		hud.Position = UDim2.new(0.5, 0, 0, 16)
+		hud.Size = UDim2.new(0, 340, 0, 100)
+		hud.BackgroundTransparency = 1
+		hud.ZIndex = 5
+		hud.Visible = false
+		hud.Parent = machine
+
+		local function line(y, h, size, colour)
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.new(0, 0, 0, y)
+			l.Size = UDim2.new(1, 0, 0, h)
+			l.Font = Enum.Font.RobotoMono
+			l.TextSize = size
+			l.TextColor3 = colour
+			l.TextXAlignment = Enum.TextXAlignment.Center
+			-- The HUD sits on the WORLD, not on a Machine screen, and it has no
+			-- panel of its own to sit on. Over the Dead Zone's black it read
+			-- fine; over Bird Hunting's bright sky band -- which is exactly where
+			-- the top of that arena's frame is -- phosphor on pale blue washed
+			-- out. The stroke is what buys legibility over both without putting a
+			-- box around the numbers.
+			l.TextStrokeColor3 = Color3.new(0, 0, 0)
+			l.TextStrokeTransparency = 0.35
+			l.Text = ""
+			l.ZIndex = 5
+			l.Parent = hud
+			return l
+		end
+		-- IDLE, not DIM, for the two small lines: DIM is a panel colour and it
+		-- disappears against a lit sky. The 42 px clock is what carries the
+		-- hierarchy here, not the tint of the lines beside it.
+		legLabel = line(0, 16, 14, IDLE)
+		clockLabel = line(18, 48, 42, PHOSPHOR)
+		leftLabel = line(66, 16, 14, IDLE)
+
+		track = Instance.new("Frame")
+		track.Name = "Track"
+		track.AnchorPoint = Vector2.new(0.5, 0)
+		track.Position = UDim2.new(0.5, 0, 0, 90)
+		track.Size = UDim2.new(0, 260, 0, 4)
+		track.BackgroundColor3 = Color3.new(0, 0, 0)
+		track.BackgroundTransparency = 0.35
+		track.BorderSizePixel = 0
+		track.ZIndex = 5
+		track.Parent = hud
+		fill = Instance.new("Frame")
+		fill.Name = "Fill"
+		fill.Size = UDim2.new(0, 0, 1, 0)
+		fill.BackgroundColor3 = PHOSPHOR
+		fill.BorderSizePixel = 0
+		fill.ZIndex = 6
+		fill.Parent = track
+	end
+
+	local function showHud(p)
+		build()
+		if p.leg and p.legs then
+			legLabel.Text = ("LEG %d/%d"):format(p.leg, p.legs)
+			legLabel.Visible = true
+		else
+			legLabel.Visible = false
+		end
+		local t = tonumber(p.clock)
+		if t then
+			local secs = math.max(0, math.floor(t + 0.5))
+			clockLabel.Text = ("%d:%02d"):format(secs // 60, secs % 60)
+			-- The last ten seconds go amber. Nothing else on this HUD moves, so
+			-- the colour is the only warning there is.
+			clockLabel.TextColor3 = secs <= 10 and AMBER or PHOSPHOR
+			clockLabel.Visible = true
+		else
+			clockLabel.Visible = false
+		end
+		if p.left and p.of then
+			-- The hunter is counting the same bodies from the other side, so the
+			-- number is the same and only the noun changes.
+			leftLabel.Text = ("%s%s %d/%d"):format(
+				p.role == "out" and "OUT   " or "",
+				p.role == "hunter" and "TARGETS" or "RUNNERS",
+				p.left, p.of)
+			leftLabel.Visible = true
+		else
+			leftLabel.Visible = false
+		end
+		-- The lane bar belongs to whoever is running it. A hunter has no lane of
+		-- their own and a dead runner's is finished either way.
+		local prog = tonumber(p.progress)
+		track.Visible = prog ~= nil and p.role == "runner"
+		if track.Visible then
+			fill.Size = UDim2.new(math.clamp(prog, 0, 1), 0, 1, 0)
+		end
+		hud.Visible = true
+	end
+
+	local function hideHud()
+		if hud then hud.Visible = false end
+	end
+
+	-- The round owns the HUD's life. KenopsiaActiveTrial is set for the duration
+	-- of a ROUND and cleared after it (see setTrialId's note in MachineFlow), so
+	-- it is exactly the flag that says "something is being played right now".
+	player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(function()
+		if (player:GetAttribute("KenopsiaActiveTrial") or "") == "" then
+			hideHud()
+		end
+	end)
+
+	Overlay = { release = release, clear = clear, black = black,
+		liftAfter = liftAfter, show = show,
+		showHud = showHud, hideHud = hideHud }
+end
+
+local scopeGui = machine:WaitForChild("Scope")
+local hipCross = machine:WaitForChild("HipCross")
+local touchControls = machine:WaitForChild("TouchControls")
+
+-- Hunter pre-leg look-speed setup, matching the reference control step while
+-- keeping the visual language original to Kenopsia.
+local lookSpeedLevel = 5
+local lookSensitivity = 0.005
+local hunterSetupActive = false
+local lookPanel = Instance.new("Frame")
+lookPanel.Name = "HunterLookSetup"
+lookPanel.Size = UDim2.fromScale(1, 1)
+lookPanel.BackgroundColor3 = Color3.fromRGB(5, 13, 24)
+lookPanel.BackgroundTransparency = 1
+lookPanel.BorderSizePixel = 0
+lookPanel.ZIndex = 80
+lookPanel.Visible = false
+-- P2.4: a SelectionGroup that Stops on every edge, so gamepad focus cannot
+-- leave the panel (MachineLayout wires the shipped panels the same way).
+lookPanel.SelectionGroup = true
+lookPanel.SelectionBehaviorUp = Enum.SelectionBehavior.Stop
+lookPanel.SelectionBehaviorDown = Enum.SelectionBehavior.Stop
+lookPanel.SelectionBehaviorLeft = Enum.SelectionBehavior.Stop
+lookPanel.SelectionBehaviorRight = Enum.SelectionBehavior.Stop
+lookPanel.Parent = machine
+
+local function addSizeLimits(gui, minSize, maxSize)
+	local constraint = Instance.new("UISizeConstraint")
+	constraint.MinSize = minSize
+	constraint.MaxSize = maxSize
+	constraint.Parent = gui
+end
+do
+	local lookTitle = Instance.new("TextLabel")
+	lookTitle.Name = "Title"
+	lookTitle.AnchorPoint = Vector2.new(0.5, 0.5)
+	lookTitle.Position = UDim2.fromScale(0.5, 0.77)
+	lookTitle.Size = UDim2.new(0.88, 0, 0, 42)
+	lookTitle.BackgroundTransparency = 1
+	lookTitle.Font = Enum.Font.RobotoMono
+	lookTitle.Text = "ADJUST LOOK SPEED"
+	lookTitle.TextColor3 = PHOSPHOR
+	lookTitle.TextSize = 24
+	lookTitle.ZIndex = 81
+	lookTitle.Parent = lookPanel
+	addSizeLimits(lookTitle, Vector2.new(260, 42), Vector2.new(520, 42))
+
+	local lookHint = Instance.new("TextLabel")
+	lookHint.Name = "Hint"
+	lookHint.AnchorPoint = Vector2.new(0.5, 0.5)
+	lookHint.Position = UDim2.fromScale(0.5, 0.91)
+	lookHint.Size = UDim2.new(0.9, 0, 0, 28)
+	lookHint.BackgroundTransparency = 1
+	lookHint.Font = Enum.Font.RobotoMono
+	lookHint.Text = "CLICK / TAP BAR     LEFT / RIGHT"
+	lookHint.TextColor3 = DIM
+	lookHint.TextSize = 16
+	lookHint.ZIndex = 81
+	lookHint.Parent = lookPanel
+	addSizeLimits(lookHint, Vector2.new(280, 28), Vector2.new(540, 28))
+end
+
+local lookTrack = Instance.new("TextButton")
+lookTrack.Name = "Track"
+lookTrack.AnchorPoint = Vector2.new(0.5, 0.5)
+lookTrack.Position = UDim2.fromScale(0.5, 0.84)
+lookTrack.Size = UDim2.new(0.76, 0, 0, 50)
+lookTrack.BackgroundColor3 = Color3.fromRGB(16, 43, 64)
+lookTrack.BorderColor3 = DIM
+lookTrack.BorderSizePixel = 2
+lookTrack.AutoButtonColor = false
+lookTrack.Font = Enum.Font.RobotoMono
+lookTrack.TextColor3 = IDLE
+lookTrack.TextSize = 24
+lookTrack.ZIndex = 81
+lookTrack.Parent = lookPanel
+
+addSizeLimits(lookTrack, Vector2.new(250, 50), Vector2.new(440, 50))
+
+local scopeLook = Instance.new("TextLabel")
+scopeLook.Name = "ScopeLookSpeed"
+scopeLook.AnchorPoint = Vector2.new(0.5, 1)
+scopeLook.Position = UDim2.new(0.5, 0, 1, -24)
+scopeLook.Size = UDim2.new(0.72, 0, 0, 32)
+scopeLook.BackgroundColor3 = Color3.fromRGB(11, 31, 48)
+scopeLook.BackgroundTransparency = 0.18
+scopeLook.BorderColor3 = DIM
+scopeLook.BorderSizePixel = 1
+scopeLook.Font = Enum.Font.RobotoMono
+scopeLook.TextColor3 = IDLE
+scopeLook.TextSize = 16
+scopeLook.ZIndex = 82
+scopeLook.Visible = false
+scopeLook.Parent = machine
+addSizeLimits(scopeLook, Vector2.new(220, 32), Vector2.new(360, 32))
+
+local youLabel = Instance.new("TextLabel")
+youLabel.Name = "RunnerYou"
+youLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+youLabel.Position = UDim2.fromScale(0.5, 0.72)
+youLabel.Size = UDim2.fromOffset(180, 42)
+youLabel.BackgroundTransparency = 1
+youLabel.Font = Enum.Font.RobotoMono
+youLabel.Text = "[  YOU  ]"
+youLabel.TextColor3 = PHOSPHOR
+youLabel.TextSize = 26
+youLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+youLabel.TextStrokeTransparency = 0.25
+youLabel.ZIndex = 70
+youLabel.Visible = false
+youLabel.Parent = machine
+
+local function setLookSpeed(level)
+	lookSpeedLevel = math.clamp(math.floor(level + 0.5), 1, 10)
+	lookSensitivity = 0.0025 + lookSpeedLevel * 0.0005
+	local cells = string.rep("■", lookSpeedLevel) .. string.rep("□", 10 - lookSpeedLevel)
+	lookTrack.Text = cells
+	scopeLook.Text = "LOOK SPEED  " .. cells
+end
+local function setHunterSetup(on)
+	hunterSetupActive = on
+	lookPanel.Visible = on
+	if on then
+		setLookSpeed(lookSpeedLevel)
+		-- P2.4: device-correct hint (LEFT / RIGHT keys, d-pad, or TAP BAR)
+		local hint = lookPanel:FindFirstChild("Hint")
+		if hint and K.Glyphs then
+			local gp = K.Glyphs.platformFor(machine:GetAttribute("Platform"))
+			hint.Text = K.Glyphs.text(K.Glyphs.LookHint[gp], gp, K.GlyphResolver)
+		end
+		if machine:GetAttribute("Platform") == "Console" then
+			pcall(function() GuiService.SelectedObject = lookTrack end)
+		end
+	elseif GuiService.SelectedObject == lookTrack then
+		GuiService.SelectedObject = nil
+	end
+end
+lookTrack.InputBegan:Connect(function(input)
+	if not hunterSetupActive then return end
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+		local alpha = math.clamp((input.Position.X - lookTrack.AbsolutePosition.X) / math.max(1, lookTrack.AbsoluteSize.X), 0, 1)
+		setLookSpeed(math.ceil(alpha * 10))
+	end
+end)
+UserInputService.InputBegan:Connect(function(input)
+	if not hunterSetupActive then return end
+	if input.KeyCode == Enum.KeyCode.Left or input.KeyCode == Enum.KeyCode.DPadLeft then
+		setLookSpeed(lookSpeedLevel - 1)
+	elseif input.KeyCode == Enum.KeyCode.Right or input.KeyCode == Enum.KeyCode.DPadRight then
+		setLookSpeed(lookSpeedLevel + 1)
+	end
+end)
+setLookSpeed(lookSpeedLevel)
+
+local session = 0
+-- P1.6: kinds the funnel renders. Anything else is logged once and IGNORED,
+-- because bumping `session` for an unknown kind cancels every typewriter and
+-- odometer mid-word (this happened once with kind = "select").
+local unknownKinds = {}
+local myReady = false
+local maxPlayers = 4
+-- C3: true while this client is on the bench (present in RoomState.spectators,
+-- absent from members). Module scope because updateReadyVisual() is also called
+-- from showInfo(), which never sees a RoomState payload.
+local amSpectator = false
+-- Captured on first use so the spectator notice can be undone without assuming
+-- what the GUI ships in TopTicker.Text.
+local tickerDefaultText = nil
+-- C1.a: this round's server-issued token. Arrives on the role payload and must
+-- be echoed on every TrialInput packet; the server rejects anything that does
+-- not match. Cleared on role="none" so a stale token can never be replayed.
+local trialRoundToken = nil
+local pendingRunner = false
+-- MP-05 ROUTER. Packets with kind="trial" are dispatched to
+-- StarterPlayerScripts.TrialClients.<id> through TrialClientKit; this file only
+-- lends closures over its own locals (built after the helpers exist, right
+-- before the funnel). The WaitForChild is bounded so a place where the kit has
+-- not been pushed yet still boots -- router disabled, one warn.
+local trialKitModule = script.Parent:FindFirstChild("TrialClientKit")
+	or script.Parent:WaitForChild("TrialClientKit", 10)
+local TrialClientKit = trialKitModule and require(trialKitModule) or nil
+if not TrialClientKit then
+	warn("[KenopsiaClient] TrialClientKit missing - MP-05 trials disabled")
+end
+local trialClientsFolder = script.Parent:FindFirstChild("TrialClients")
+local trialRouter = nil
+local trialCam = nil        -- { mode = "top"|"fixed"|"follow", ... } owned by the router
+local trialWalkSpeed = 0    -- WalkSpeed while moveState == "trial"
+
+-- SESSION SETTINGS + UI AUDIO -----------------------------------------------
+
+-- P2.3: Reduce Motion in the OS pre-selects REDUCE FLICKER and REDUCE SHAKE;
+-- every setting is mirrored onto the local Player as an attribute
+-- (KenopsiaUiSound, ..., KenopsiaCRT, KenopsiaReduceShake) so UiFx can read it.
+--
+-- SimFilter is kept in this table with no row in the panel any more: its row
+-- and the script it drove (SimulationGrade, the PS1 grade) went out on
+-- 27.08.2026. The key stays only so a saved value from an older client cannot
+-- come back as nil through publishSetting.
+local uiSettings = { UiSound = true, Music = true, ReduceFlicker = GuiService.ReducedMotionEnabled == true,
+	SimFilter = true, Crt = true, ReduceShake = GuiService.ReducedMotionEnabled == true }
+local function publishSetting(key)
+	player:SetAttribute(K.SETTING_ATTR[key] or ("Kenopsia" .. key), uiSettings[key])
+end
+for key in uiSettings do publishSetting(key) end
+
+-- Click/Submit draw a random variant from their pool so repeated presses
+-- don't sound like a sample loop
+-- P0.3: a name with no Sound under SoundService.KenopsiaAudio.SFX used to be a
+-- silent no-op; now it warns ONCE per name so a typo or a missing asset shows
+-- up in the console instead of as a quiet cue.
+local sfxWarned = {}
+local function sfx(name)
+	if not uiSettings.UiSound then return end
+	local root = SoundService:FindFirstChild("KenopsiaAudio")
+	local folder = root and root:FindFirstChild("SFX")
+	if not folder then return end
+	local s
+	local poolName = K.SFX_POOLS[name]
+	local pool = poolName and folder:FindFirstChild(poolName)
+	if pool then
+		local variants = pool:GetChildren()
+		if #variants > 0 then s = variants[math.random(#variants)] end
+	end
+	s = s or folder:FindFirstChild(name)
+	if s and s.SoundId ~= "" then
+		-- P2.2: every UI cue rides the KenopsiaUI SoundGroup (built by UiFx at
+		-- boot; looked up here so the order the two scripts start in is moot).
+		if s.SoundGroup == nil then s.SoundGroup = SoundService:FindFirstChild("KenopsiaUI") end
+		SoundService:PlayLocalSound(s)
+	elseif not sfxWarned[name] then
+		sfxWarned[name] = true
+		warn((s and "[sfx] empty SoundId: " or "[sfx] unknown name: ") .. tostring(name))
+	end
+end
+
+local lobbyMusicOn = false
+local function setLobbyMusic(on)
+	lobbyMusicOn = on
+	local root = SoundService:FindFirstChild("KenopsiaAudio")
+	local loop = root and root:FindFirstChild("Music")
+	loop = loop and loop:FindFirstChild("Loop")
+	if not loop then return end
+	if on and uiSettings.Music then
+		if not loop.IsPlaying then loop:Play() end
+	else
+		loop:Stop()
+	end
+end
+
+-- Per-trial presentation is stamped on the local Player so concurrent rooms
+-- can run different trials without clobbering one global music/light state.
+local function updateTrialMusic()
+	local root = SoundService:FindFirstChild("KenopsiaAudio")
+	local trialsF = root and root:FindFirstChild("Music")
+	trialsF = trialsF and trialsF:FindFirstChild("Trials")
+	if not trialsF then return end
+	local active = player:GetAttribute("KenopsiaActiveTrial") or ""
+	for _, s in ipairs(trialsF:GetChildren()) do
+		if s:IsA("Sound") then
+			if s.Name == active and uiSettings.Music then
+				if not s.IsPlaying then s:Play() end
+			else
+				s:Stop()
+			end
+		end
+	end
+	if active ~= "" then
+		setLobbyMusic(false)
+	elseif not lobbyMusicOn then
+		setLobbyMusic(true)
+	end
+end
+player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(updateTrialMusic)
+task.defer(updateTrialMusic)
+
+-- DEAD-ZONE-LICHT: this client stopped owning it on 22.08.2026 (P3.1, moved to
+-- SimulationGrade), and on 27.08.2026 (user) SimulationGrade itself was removed
+-- along with the rest of the PS1 grade. NOTHING overrides Lighting per trial any
+-- more: the arenas are lit by Lighting as authored in Studio and by the lamps
+-- placed in the Workspace, plus the fill light CharacterService hangs above each
+-- character (GameConfig.Character.Light). The archived script is in
+-- ServerStorage.KenopsiaAuthoring.Archive if the grade is ever wanted back.
+
+local controlsModule
+task.spawn(function()
+	pcall(function()
+		local ps = player:WaitForChild("PlayerScripts", 10)
+		local pm = ps and ps:WaitForChild("PlayerModule", 10)
+		if pm then controlsModule = require(pm):GetControls() end
+	end)
+end)
+
+local function bindForwardOnly()
+	RunService:BindToRenderStep(K.FORWARD_BIND, Enum.RenderPriority.Input.Value + 1, function()
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if not hum or not controlsModule then return end
+		local mv = controlsModule:GetMoveVector()
+		-- forward and strafes only; backward input is discarded
+		hum:Move(Vector3.new(mv.X, 0, math.min(mv.Z, 0)), true)
+	end)
+end
+local function unbindForwardOnly()
+	pcall(function()
+		RunService:UnbindFromRenderStep(K.FORWARD_BIND)
+	end)
+end
+
+local function hideAll()
+	selection.Visible = false
+	info.Visible = false
+	statusScreen.Visible = false
+	roundCard.Visible = false
+	briefing.Visible = false
+	scoreScreen.Visible = false
+	announceScreen.Visible = false
+	-- P2.2: every screen swap starts here, and the swap itself stays a hard
+	-- cut. UiFx watches this counter and re-paints whatever is on screen next
+	-- through the Bayer dither steps (Feel.Dither) on the overlay layer.
+	machine:SetAttribute("DitherSeq", (machine:GetAttribute("DitherSeq") or 0) + 1)
+end
+
+-- P1.5 TYPEWRITER: time-based MaxVisibleGraphemes. The whole text is set once
+-- and the label reveals floor(elapsed * cps) graphemes per frame, so a line is
+-- the same length at the same instant at 30 and 60 fps (the old string.sub +
+-- task.wait(1/cps) loop drifted by one frame per character). utf8.len counts
+-- graphemes for the cap (nil on malformed UTF-8 -> byte length). Blocking,
+-- like before: callers sequence lines with it. `token` keeps the cancel
+-- semantics (a newer screen bumps `session`, the older typewriter stops).
+-- Scoped in a do-block so the blip helper is not another top-level local.
+local typewrite
+do
+	local function blip()
+		if not uiSettings.UiSound then return end
+		local root = SoundService:FindFirstChild("KenopsiaAudio")
+		local folder = root and root:FindFirstChild("SFX")
+		local src = folder and folder:FindFirstChild(Feel.Typewriter.BlipSfx)
+		if not src or src.SoundId == "" then return end
+		local s = src:Clone()
+		s.PlaybackSpeed = Feel.blipSpeed(math.random())
+		s.SoundGroup = SoundService:FindFirstChild("KenopsiaUI")
+		s.Parent = SoundService
+		s.Ended:Once(function() s:Destroy() end)
+		s:Play()
+	end
+	typewrite = function(label, text, cps, token)
+		local total = utf8.len(text) or #text
+		label.MaxVisibleGraphemes = 0
+		label.Text = text
+		label.Visible = true
+		local t0 = os.clock()
+		local shown = 0
+		local nextBlip = Feel.Typewriter.BlipEvery
+		while shown < total do
+			RunService.RenderStepped:Wait()
+			if session ~= token then return end
+			local n = Feel.visibleAt(os.clock() - t0, cps, total)
+			if n ~= shown then
+				shown = n
+				label.MaxVisibleGraphemes = n
+				if n >= nextBlip then
+					nextBlip = n + Feel.Typewriter.BlipEvery
+					blip()
+				end
+			end
+		end
+		label.MaxVisibleGraphemes = -1
+	end
+end
+
+-- MOVEMENT: frozen everywhere except as a runner in a live round ------------
+
+local moveState = "frozen"
+local function applyMovement()
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	-- A role/attribute refresh must not undo the server's brief FallFlat stun.
+	if (tonumber(char:GetAttribute("FieldPushStunnedUntil")) or 0) > workspace:GetServerTimeNow() then
+		hum.WalkSpeed = 0
+	elseif moveState == "runner" then
+		-- Dead Zone (Move-Set "scan"): NUR Gehen - der Compactor ist knapp langsamer.
+		-- Ueberall sonst wird sofort gerannt (kein Anlauf mehr).
+		local moves = char:GetAttribute("XBotMoves") or ""
+		-- MP-08 B-09 (26.08.2026, user): der Server schreibt CRAWL_SPEED auf den
+		-- Humanoid, sobald XBotCrawl latcht (Minefield). Diese Zeile schrieb hart
+		-- 7 zurueck und haette ihn damit ueberschrieben -- heute faellt das nicht
+		-- auf, weil waehrend einer Dead-Zone-Runde kein weiteres role-Paket kommt,
+		-- aber es ist trotzdem falsch herum. Ein Krabbler behaelt jetzt, was der
+		-- Server gesetzt hat; die Ramp-Schleife unten faehrt ihn wie jeden anderen.
+		if char:GetAttribute("XBotCrawl") ~= true then
+			hum.WalkSpeed = char:GetAttribute("Injured") == true
+				and ((Feel.Birdhunt and Feel.Birdhunt.InjuredSpeed) or 3.5)
+				or (string.find(moves, "scan") and 7 or 14)
+		end
+	elseif moveState == "trial" then
+		-- MP-05: a TrialClients module set this through kit.movement.set.
+		hum.WalkSpeed = trialWalkSpeed
+	else
+		hum.WalkSpeed = 0
+	end
+	-- no jumping anywhere in this game
+	hum.UseJumpPower = true
+	hum.JumpPower = 0
+	-- 24.08.2026 (user): the touch movement stick exists ONLY where moving is
+	-- the game -- Dead Zone and the Bird Hunting runners. Everywhere else
+	-- (lobby, canteen seats, the sniper post) it is dead weight on the screen.
+	pcall(function()
+		GuiService.TouchControlsEnabled = moveState == "runner"
+	end)
+end
+player.CharacterAdded:Connect(function()
+	task.wait(0.3)
+	applyMovement()
+end)
+
+-- 24.08.2026 (user): in the Dead Zone the runner ACCELERATES -- walk 7 for the
+-- first step, full sprint 10 after 1 s of continuous movement, reset the
+-- moment they stop, scan or crawl. PS1Animate's RUN_AT sits at 7.5, so the
+-- run cycle takes over mid-ramp and the walk->run blend lands frame-matched.
+do
+	local runT = 0
+	RunService.Heartbeat:Connect(function(dt)
+		if moveState ~= "runner" then runT = 0 return end
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if not hum then return end
+		if (tonumber(char:GetAttribute("FieldPushStunnedUntil")) or 0) > workspace:GetServerTimeNow() then
+			runT = 0
+			hum.WalkSpeed = 0
+			return
+		end
+		local moves = char:GetAttribute("XBotMoves") or ""
+		if not string.find(moves, "scan") then return end
+		-- 26.08.2026 (user, MP-08 S8): der Krabbler bleibt hier ausgenommen.
+		-- CRAWL_SPEED ist 6.0 und liegt damit UNTER dem Rampenfuss (7) -- ohne
+		-- diese Zeile wuerde die Rampe ihn sofort auf 7 heben und in einer
+		-- Sekunde auf 10 ziehen, und der Compactor (max. 6.5) waere wieder
+		-- wirkungslos. Die Rampe gehoert dem Laeufer, nicht dem Krabbler.
+		if char:GetAttribute("XBotCrawl") == true then runT = 0 return end
+		if char:GetAttribute("XBotScanning") == true or hum.MoveDirection.Magnitude < 0.2 then
+			runT = 0
+		else
+			runT = math.min(1, runT + dt)
+		end
+		local target = 7 + 3 * runT
+		if math.abs(hum.WalkSpeed - target) > 0.05 and hum.WalkSpeed > 0.5 then
+			hum.WalkSpeed = target
+		end
+	end)
+end
+task.defer(applyMovement)
+
+-- CAMERAS -------------------------------------------------------------------
+
+local camera = workspace.CurrentCamera
+local runnerCam = false
+local runnerCamDir = 1 -- +1: Bahn laeuft Richtung +Z (Bird Hunting), -1: Richtung -Z (Dead Zone)
+local runnerCamStyle = "chase" -- "top" = fast 2D-Draufsicht (Dead Zone)
+local smoothCamPos = nil
+local spectateCF = nil
+-- Who a finished player is watching. The SERVER decides who is watchable and
+-- sends the list; the client only picks one from it, because from here a
+-- living runner and someone standing at spawn look identical.
+local spectateWatch = nil   -- array of userIds, or nil for the fixed camera
+local spectateIndex = 1
+local spectateEye = nil
+
+-- Returns the root of the currently watched player, skipping anyone who has
+-- left or has not respawned yet. The list is never mutated -- it belongs to
+-- the server, and a player who is briefly characterless must not be dropped
+-- from it permanently.
+local function spectateRoot()
+	if not spectateWatch or #spectateWatch == 0 then return nil end
+	for offset = 0, #spectateWatch - 1 do
+		local idx = ((spectateIndex - 1 + offset) % #spectateWatch) + 1
+		local target = Players:GetPlayerByUserId(spectateWatch[idx])
+		local char = target and target.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		-- Ignore anyone who has left the arena. spectateCF is the arena's own
+		-- vantage point, so a target hundreds of studs from it is not in the
+		-- round any more -- typically already teleported out during teardown.
+		-- Following them there is how the baseplate ends up on screen.
+		if root and spectateCF
+			and (root.Position - spectateCF.Position).Magnitude > 600 then
+			root = nil
+		end
+		if root then
+			spectateIndex = idx
+			return root
+		end
+	end
+	return nil
+end
+
+-- 24.08.2026 (user): VIEWER MODE controls. With two or more survivors on the
+-- watch list, Q / E (gamepad LB / RB, tap left / right screen half on touch)
+-- steps through them; a phosphor caption names the watched subject. The
+-- caption label rides the machine gui and hides itself with the mode.
+--
+-- 26.08.2026 (user, MP-08 S6): the one-line caption became the OBSERVATION
+-- DECK -- the same information, but in the machine's own register (clinical,
+-- phosphor, no sports broadcast), plus a viewfinder frame around the picture
+-- so that "I am watching" is distinguishable from "I am playing" at a glance:
+--
+--   +- OBSERVATION DECK --------------------------+
+--   |  SUBJECT 03 // TAMEM         [Q] <   > [E]  |
+--   |  STATUS     ALIVE                           |
+--   |  REMAINING  2 OF 4                          |
+--   +---------------------------------------------+
+--
+-- REMAINING counts the entries of the server's own `watch` list that have a
+-- living figure right now, against the length of the list as it was sent. It
+-- is the answer to "why is this round still going".
+do
+	local deck = nil
+	local function ensureDeck()
+		if deck and deck.frame.Parent then return deck end
+		local frame = Instance.new("Frame")
+		frame.Name = "SpectateDeck"
+		frame.AnchorPoint = Vector2.new(0.5, 1)
+		frame.Position = UDim2.new(0.5, 0, 1, -38)
+		frame.Size = UDim2.new(0, 468, 0, 82)
+		frame.BackgroundColor3 = Color3.fromRGB(11, 31, 48)
+		frame.BackgroundTransparency = 0.28
+		frame.BorderSizePixel = 0
+		frame.ZIndex = 66
+		frame.Visible = false
+		frame.Parent = machine
+		local edge = Instance.new("UIStroke")
+		edge.Color = PHOSPHOR
+		edge.Thickness = 1
+		edge.Transparency = 0.4
+		edge.Parent = frame
+		-- The title sits ON the top edge, the way the machine labels its other
+		-- panels; the opaque background is what cuts the stroke behind it.
+		local head = Instance.new("TextLabel")
+		head.Name = "Head"
+		head.BackgroundColor3 = Color3.fromRGB(11, 31, 48)
+		head.BackgroundTransparency = 0
+		head.BorderSizePixel = 0
+		head.Position = UDim2.new(0, 12, 0, -8)
+		head.Size = UDim2.new(0, 158, 0, 16)
+		head.Font = Enum.Font.RobotoMono
+		head.TextSize = 12
+		head.TextColor3 = PHOSPHOR
+		head.TextXAlignment = Enum.TextXAlignment.Left
+		head.Text = " OBSERVATION DECK "
+		head.ZIndex = 67
+		head.Parent = frame
+		local function row(name, y, size, colour)
+			local l = Instance.new("TextLabel")
+			l.Name = name
+			l.BackgroundTransparency = 1
+			l.BorderSizePixel = 0
+			l.Position = UDim2.new(0, 14, 0, y)
+			l.Size = UDim2.new(1, -28, 0, size + 5)
+			l.Font = Enum.Font.RobotoMono
+			l.TextSize = size
+			l.TextColor3 = colour
+			l.TextXAlignment = Enum.TextXAlignment.Left
+			l.TextYAlignment = Enum.TextYAlignment.Center
+			l.Text = ""
+			l.ZIndex = 67
+			l.Parent = frame
+			return l
+		end
+		local keys = row("Keys", 12, 14, DIM)
+		keys.TextXAlignment = Enum.TextXAlignment.Right
+		deck = {
+			frame = frame,
+			subject = row("Subject", 12, 15, PHOSPHOR),
+			status = row("Status", 36, 13, DIM),
+			remaining = row("Remaining", 56, 13, DIM),
+			keys = keys,
+		}
+		return deck
+	end
+
+	-- The viewfinder: a hairline border with four corner brackets, in the same
+	-- language as the CRT overlays. It is the frame around the picture that
+	-- says the picture is not yours.
+	local scan = nil
+	local function ensureScan()
+		if scan and scan.Parent then return scan end
+		scan = Instance.new("Frame")
+		scan.Name = "SpectateFrame"
+		scan.Size = UDim2.fromScale(1, 1)
+		scan.BackgroundTransparency = 1
+		scan.BorderSizePixel = 0
+		scan.ZIndex = 65
+		scan.Visible = false
+		scan.Parent = machine
+		local edge = Instance.new("UIStroke")
+		edge.Color = PHOSPHOR
+		edge.Thickness = 1
+		edge.Transparency = 0.72
+		edge.Parent = scan
+		-- Eight thin bars: two arms on each of the four corners. Built once.
+		for _, cx in { 0, 1 } do
+			for _, cy in { 0, 1 } do
+				for _, horizontal in { true, false } do
+					local bar = Instance.new("Frame")
+					bar.BackgroundColor3 = PHOSPHOR
+					bar.BackgroundTransparency = 0.35
+					bar.BorderSizePixel = 0
+					bar.AnchorPoint = Vector2.new(cx, cy)
+					bar.Position = UDim2.new(cx, cx == 0 and 14 or -14, cy, cy == 0 and 14 or -14)
+					bar.Size = horizontal and UDim2.new(0, 26, 0, 2) or UDim2.new(0, 2, 0, 26)
+					bar.ZIndex = 65
+					bar.Parent = scan
+				end
+			end
+		end
+		return scan
+	end
+
+	local function cycle(dir)
+		if not spectateWatch or #spectateWatch < 2 then return end
+		spectateIndex = ((spectateIndex - 1 + dir) % #spectateWatch) + 1
+		spectateEye = nil
+		sfx("Click")
+	end
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed or not spectateWatch then return end
+		if input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonL1 then
+			cycle(-1)
+		elseif input.KeyCode == Enum.KeyCode.E or input.KeyCode == Enum.KeyCode.ButtonR1 then
+			cycle(1)
+		elseif input.UserInputType == Enum.UserInputType.Touch then
+			local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+			if vp then cycle(input.Position.X < vp.X / 2 and -1 or 1) end
+		end
+	end)
+	-- Same 0.4 s cadence as before -- it only writes more fields now.
+	task.spawn(function()
+		while true do
+			task.wait(0.4)
+			local d = ensureDeck()
+			local s = ensureScan()
+			if spectateWatch and #spectateWatch > 0 then
+				local total = #spectateWatch
+				local alive = 0
+				for _, uid in ipairs(spectateWatch) do
+					local other = Players:GetPlayerByUserId(uid)
+					local ochar = other and other.Character
+					local ohum = ochar and ochar:FindFirstChildOfClass("Humanoid")
+					if ohum and ohum.Health > 0 then alive += 1 end
+				end
+				local target = Players:GetPlayerByUserId(spectateWatch[spectateIndex] or 0)
+				local tchar = target and target.Character
+				local thum = tchar and tchar:FindFirstChildOfClass("Humanoid")
+				local up = thum and thum.Health > 0
+				d.subject.Text = target
+					and ("SUBJECT %02d // %s"):format(spectateIndex, string.upper(target.DisplayName))
+					or "SUBJECT --  // SIGNAL LOST"
+				d.status.Text = "STATUS     " .. (up and "ALIVE" or "NO SIGNAL")
+				d.status.TextColor3 = up and PHOSPHOR or Color3.fromRGB(255, 48, 32)
+				d.remaining.Text = ("REMAINING  %d OF %d"):format(alive, total)
+				d.keys.Text = total > 1 and "[Q] <   > [E]" or ""
+				d.frame.Visible = true
+				s.Visible = true
+			else
+				if d.frame.Visible then d.frame.Visible = false end
+				if s.Visible then s.Visible = false end
+			end
+		end
+	end)
+end
+
+-- MP-08 S3 (user): KILL FEED. A death in the room used to be a full-screen
+-- card broadcast to everyone -- which meant everyone lost the picture they
+-- needed (the Canteen observer above all, B-02). The room gets this instead:
+-- one line, top right, four seconds, gone. The full-screen card stays, but
+-- only for the subject it is about.
+--
+-- Deliberately NOT part of K.KNOWN_KINDS: the dispatch catches `feed` BEFORE
+-- the screen funnel, so it must not bump `session` -- a feed line arriving
+-- mid-card would otherwise cancel a running typewriter.
+local pushFeed
+do
+	local list = nil
+	local rows = {}
+	-- Monotonic, so two lines in the same second still sort newest-last.
+	local seq = 0
+	pushFeed = function(text, style)
+		if not text or text == "" then return end
+		if not (list and list.Parent) then
+			list = Instance.new("Frame")
+			list.Name = "KillFeed"
+			list.AnchorPoint = Vector2.new(1, 0)
+			list.Position = UDim2.new(1, -18, 0, 18)
+			list.Size = UDim2.new(0, 380, 0, 4 * 22)
+			list.BackgroundTransparency = 1
+			list.BorderSizePixel = 0
+			list.ZIndex = 66
+			list.Parent = machine
+			local layout = Instance.new("UIListLayout")
+			layout.FillDirection = Enum.FillDirection.Vertical
+			layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+			layout.VerticalAlignment = Enum.VerticalAlignment.Top
+			layout.SortOrder = Enum.SortOrder.LayoutOrder
+			layout.Padding = UDim.new(0, 3)
+			layout.Parent = list
+		end
+		-- Four lines maximum: the oldest goes the moment a fifth arrives, so a
+		-- chain of mines cannot paper over the arena.
+		while #rows >= 4 do
+			local oldest = table.remove(rows, 1)
+			if oldest and oldest.Parent then oldest:Destroy() end
+		end
+		local line = Instance.new("TextLabel")
+		line.Name = "FeedLine"
+		line.BackgroundColor3 = Color3.fromRGB(11, 31, 48)
+		line.BackgroundTransparency = 0.35
+		line.BorderSizePixel = 0
+		line.Size = UDim2.new(1, 0, 0, 19)
+		line.Font = Enum.Font.RobotoMono
+		line.TextSize = 13
+		line.TextColor3 = style == "death" and Color3.fromRGB(255, 48, 32) or PHOSPHOR
+		line.TextXAlignment = Enum.TextXAlignment.Right
+		line.Text = string.upper(tostring(text)) .. "  "
+		line.ZIndex = 66
+		seq += 1
+		line.LayoutOrder = seq
+		line.Parent = list
+		table.insert(rows, line)
+		task.delay(4, function()
+			if not (line and line.Parent) then return end
+			TweenService:Create(line, TweenInfo.new(Feel.Fade.HitMark or 0.4), {
+				TextTransparency = 1,
+				BackgroundTransparency = 1,
+			}):Play()
+			task.delay((Feel.Fade.HitMark or 0.4) + 0.05, function()
+				for i, r in ipairs(rows) do
+					if r == line then table.remove(rows, i) break end
+				end
+				if line and line.Parent then line:Destroy() end
+			end)
+		end)
+	end
+end
+
+local function restoreCamera()
+	camera.CameraType = Enum.CameraType.Custom
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then camera.CameraSubject = hum end
+end
+
+-- P1.3 podium / P1.7 audience camera (23.08.2026): the Machine's own fixed
+-- camera. Set from the `podium` and `audiencecam` packets, released by their
+-- clears. It is written in the RenderStepped writer below like every other
+-- camera here (a BindToRenderStep binding can never override that writer -
+-- docs/QA/2026-08-22-p3-simulation-grade.md), and it outranks the trial cams:
+-- when the Machine shows the podium nothing else may own the view.
+local machineCam = nil        -- CFrame, or nil
+local machineCamKind = nil    -- "podium" | "audiencecam"
+-- Resolved on first use, never awaited at boot: a place without the module
+-- pushed yet boots exactly as before and only these two kinds go dark.
+local MachineCamRules = nil
+local function machineCamRules()
+	if MachineCamRules == nil then
+		local rules = ReplicatedStorage:FindFirstChild("Kenopsia")
+		rules = rules and rules:FindFirstChild("Shared")
+		rules = rules and rules:FindFirstChild("Rules")
+		local m = rules and rules:FindFirstChild("MachineCam")
+		MachineCamRules = m and require(m) or false
+		if not MachineCamRules then warn("[Kenopsia] Shared.Rules.MachineCam missing - podium/audience camera off") end
+	end
+	return MachineCamRules or nil
+end
+-- The bench card (Status screen) stays up while the audience camera runs, so
+-- its opaque ground is thinned to let the arena through and put back after.
+local statusGroundDefault = nil
+local function setMachineCam(kind, p)
+	local rules = machineCamRules()
+	local pos, look = nil, nil
+	if rules then pos, look = rules.read(p) end
+	if pos and look then
+		machineCam = CFrame.lookAt(Vector3.new(pos[1], pos[2], pos[3]), Vector3.new(look[1], look[2], look[3]))
+		machineCamKind = kind
+		if kind == "audiencecam" then
+			if statusGroundDefault == nil then statusGroundDefault = statusScreen.BackgroundTransparency end
+			statusScreen.BackgroundTransparency = 0.55
+		end
+		return true
+	end
+	-- A clear for the kind we hold (a stale clear for another kind is ignored).
+	if machineCamKind == kind then
+		machineCam = nil
+		machineCamKind = nil
+		restoreCamera()
+	end
+	if kind == "audiencecam" and statusGroundDefault ~= nil then
+		statusScreen.BackgroundTransparency = statusGroundDefault
+	end
+	return false
+end
+
+-- P3.1: the PS1 position step (steps per stud, 0 = off), read from
+-- KenopsiaCamQuant. RenderStepped runs AFTER every BindToRenderStep priority, so
+-- a binding elsewhere cannot reach a camera this writer sets; the snap has to
+-- happen here, after the branches. Position only, never rotation.
+--
+-- 27.08.2026: SimulationGrade was the only publisher of that attribute and it is
+-- gone, so camQuant is 0 for the whole session and the snap below never fires.
+-- The reader is kept rather than ripped out -- it is four lines, it costs one
+-- comparison per frame, and it is the hook to re-arm if the step is ever wanted
+-- back on its own (without the grade that used to carry it).
+local camQuant = tonumber(player:GetAttribute("KenopsiaCamQuant")) or 0
+player:GetAttributeChangedSignal("KenopsiaCamQuant"):Connect(function()
+	camQuant = tonumber(player:GetAttribute("KenopsiaCamQuant")) or 0
+end)
+
+RunService.RenderStepped:Connect(function(dt)
+	if machineCam then
+		-- P1.3/P1.7: the Machine's fixed camera (podium, bench audience view).
+		-- First, because it exists only while no trial may own the view.
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = machineCam
+	elseif spectateCF then
+		camera.CameraType = Enum.CameraType.Scriptable
+		-- Follow whoever is still running. spectateCF is the fallback for the
+		-- moment nobody is watchable -- last runner down, or everyone mid
+		-- respawn -- so the camera never freezes on a dead body.
+		local root = spectateRoot()
+		if root then
+			local eye = root.Position + Vector3.new(0, 16, -16)
+			spectateEye = spectateEye and spectateEye:Lerp(eye, math.min(dt * 4, 1)) or eye
+			camera.CFrame = CFrame.lookAt(spectateEye, root.Position)
+		else
+			camera.CFrame = spectateCF
+		end
+	elseif trialCam then
+		-- MP-05: kit.camera.* modes. Spectate (above) wins over the trial cam,
+		-- so the death cam keeps working for new trials; the runner cam
+		-- below is never set by them.
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = TrialClientKit.computeCamera(trialCam, player.Character, camera, dt)
+	elseif runnerCam then
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if root then
+			camera.CameraType = Enum.CameraType.Scriptable
+			if runnerCamStyle == "top" then
+				-- 24.08.2026 (user call): 35 degrees down and LOWER -- the view
+				-- grazes the field so the grass and the buildings read, not the
+				-- floor plan. atan(7/10) = 35.0 degrees.
+				-- 24.08.2026 (evening, user test): further out, same 35 degrees.
+				local eye = root.Position + Vector3.new(0, 15, -18 * runnerCamDir)
+				smoothCamPos = smoothCamPos and smoothCamPos:Lerp(eye, math.min(dt * 6, 1)) or eye
+				camera.CFrame = CFrame.lookAt(smoothCamPos, smoothCamPos + Vector3.new(0, -7, 10 * runnerCamDir))
+			else
+				-- 24.08.2026 (user): a touch further down.
+				camera.CFrame = CFrame.lookAt(
+					root.Position + Vector3.new(0, 20, -17 * runnerCamDir),
+					root.Position + Vector3.new(0, -1, 30 * runnerCamDir))
+			end
+			-- Shiftlock only: der Charakter blickt immer in Bahnrichtung. perf
+			-- (22.08.2026): the yaw is rewritten only when physics actually turned
+			-- the root, and AutoRotate only when it came back on -- no property
+			-- write per frame in the steady state.
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum and hum.AutoRotate then hum.AutoRotate = false end
+			local look = root.CFrame.LookVector
+			local wantZ = runnerCamDir == 1 and 1 or -1
+			if math.abs(look.Z - wantZ) > 0.02 or math.abs(look.X) > 0.02 then
+				root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, runnerCamDir == 1 and math.pi or 0, 0)
+			end
+		end
+	end
+	if camQuant > 0 and camera.CameraType == Enum.CameraType.Scriptable then
+		local cf = camera.CFrame
+		local pos = cf.Position
+		local q = Vector3.new(
+			math.floor(pos.X * camQuant + 0.5) / camQuant,
+			math.floor(pos.Y * camQuant + 0.5) / camQuant,
+			math.floor(pos.Z * camQuant + 0.5) / camQuant)
+		if q ~= pos then camera.CFrame = cf.Rotation + q end
+		-- (the 30 Hz camera hold lived here for a day -- the user's test read
+		-- it as stutter, so the camera runs at full rate again.)
+	end
+end)
+
+-- SNIPER INPUT --------------------------------------------------------------
+
+local sniperActive = false
+local sniperCanAim = false
+local sniperCanFire = false
+local scoped = false
+local viewmodel = nil
+local vmParts = {}
+local boltParts = {}
+local boltCycleStart = nil
+local vmAlign = CFrame.identity
+local sniperBase = nil
+local sniperYaw, sniperPitch, recoil = 0, 0, 0
+-- Unscoped view is natural FOV; the two scope levels are x2 and x4.
+local zoomIdx = 1
+
+-- Roblox recreates CurrentCamera after death/respawn; never trust the old one
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	local newCam = workspace.CurrentCamera
+	if newCam then
+		camera = newCam
+		if viewmodel then viewmodel.Parent = camera end
+	end
+end)
+
+-- THE CROSSHAIR MUST SIT WHERE THE BULLET GOES, and the bullet goes along
+-- `camera.CFrame.LookVector` (see the SniperAim fire below) -- dead centre of
+-- the viewport. An authored scale position cannot promise that: it is measured
+-- in the ScreenGui's own space, which is displaced by the GUI inset and
+-- DeviceSafeInsets, and then shrunk again by MachineLayout's UIScale. Measured
+-- on a 932x576 viewport the authored {0.524, 0.498} landed 22 px right and
+-- 59 px ABOVE the aim point -- the player was aiming by a crosshair that lied.
+--
+-- So do not compute where it should go; measure where it IS and cancel the
+-- error. AbsolutePosition already carries every inset and scale in the chain,
+-- so one corrective offset lands it exactly, whatever the platform did.
+local function alignHipCross()
+	if not hipCross.Visible then return end
+	local centre = hipCross.AbsolutePosition + hipCross.AbsoluteSize / 2
+	local target = camera.ViewportSize / 2
+	local dx, dy = target.X - centre.X, target.Y - centre.Y
+	-- Sub-pixel residue is not worth a property write every frame.
+	if math.abs(dx) < 0.5 and math.abs(dy) < 0.5 then return end
+	hipCross.Position = hipCross.Position + UDim2.fromOffset(dx, dy)
+end
+
+-- Checked every frame rather than wired to one event: a resize, a platform
+-- change (MachineLayout re-applies its UIScale asynchronously) and a fresh
+-- camera after respawn all move the target, and the function above costs two
+-- vector reads and returns immediately while the crosshair is hidden or already
+-- within half a pixel.
+RunService.RenderStepped:Connect(alignHipCross)
+
+local function applyScope()
+	local targetFov = scoped and K.ZOOMS[zoomIdx].fov or (sniperActive and K.SNIPER_BASE_FOV or 70)
+	TweenService:Create(camera, TweenInfo.new(Feel.Scope.ZoomSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = targetFov }):Play()
+	scopeGui.Visible = scoped
+	local zl = scopeGui:FindFirstChild("ZoomLabel")
+	if zl then zl.Text = K.ZOOMS[zoomIdx].label end
+	local zb = touchControls:FindFirstChild("Btn_ZOOM")
+	if zb then
+		zb.Visible = scoped
+		zb.Text = K.ZOOMS[zoomIdx].label
+	end
+	hipCross.Visible = sniperActive and not scoped
+	alignHipCross()
+	scopeLook.Visible = sniperActive and scoped
+	for part, tr in vmParts do
+		part.Transparency = scoped and 1 or tr
+	end
+end
+
+local function destroyViewmodel()
+	if viewmodel then viewmodel:Destroy() end
+	viewmodel = nil
+	vmParts = {}
+	boltParts = {}
+	boltCycleStart = nil
+end
+
+local function buildViewmodel()
+	destroyViewmodel()
+	-- custom procedural rifle, authored along -Z with the pivot at the grip
+	local src = ReplicatedStorage:FindFirstChild("KenopsiaAssets")
+	src = src and src:FindFirstChild("SniperRifle")
+	if not src then return end
+	local vm = src:Clone()
+	vm.Name = "SniperViewmodel"
+	for _, d in vm:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CastShadow = false
+			vmParts[d] = d.Transparency
+		end
+	end
+	local lampHost = vm:FindFirstChild("Receiver") or vm:FindFirstChildWhichIsA("BasePart", true)
+	if lampHost then
+		local lamp = Instance.new("PointLight")
+		-- 24.08.2026 (user): the rifle read too dark against the dusk grade.
+		lamp.Brightness = 2.2
+		lamp.Range = 11
+		lamp.Color = Color3.fromRGB(255, 234, 196)
+		lamp.Shadows = false
+		lamp.Parent = lampHost
+	end
+	pcall(function() vm:ScaleTo(0.62) end)
+	vmAlign = CFrame.identity
+	local pivot = vm:GetPivot()
+	for _, name in { "BoltKnob", "BoltStub" } do
+		local part = vm:FindFirstChild(name, true)
+		if part and part:IsA("BasePart") then
+			boltParts[part] = pivot:ToObjectSpace(part.CFrame)
+		end
+	end
+	vm.Parent = workspace
+	viewmodel = vm
+end
+
+local function muzzleFlash(atCF)
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Material = Enum.Material.Neon
+	p.Color = Color3.fromRGB(255, 214, 120)
+	p.Size = Vector3.new(0.55, 0.55, 1.1)
+	p.CFrame = atCF
+	p.Parent = workspace
+	task.delay(0.06, function() p:Destroy() end)
+end
+
+local function setOwnBodyHidden(hidden)
+	local char = player.Character
+	if not char then return end
+	for _, d in char:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = hidden and 1 or 0
+		end
+	end
+end
+
+local function setSniperRig(on)
+	-- Roles arrive before the setup card/countdown. Local weapon input only
+	-- becomes live on the server's GO event.
+	sniperCanAim = false
+	sniperCanFire = false
+	if on then
+		buildViewmodel()
+		setOwnBodyHidden(true)
+		-- clamped turret view: fixed at the post, facing down the lane;
+		-- retry briefly in case the arena has not replicated yet
+		sniperBase = nil
+		task.spawn(function()
+			for _ = 1, 30 do
+				if not sniperActive then return end
+				local arena = workspace:FindFirstChild("Bird Hunting")
+				local post = arena and arena:FindFirstChild("SniperPost")
+				local start = arena and arena:FindFirstChild("Start")
+				if post and start then
+					sniperBase = CFrame.lookAt(post.Position, Vector3.new(start.Position.X, start.Position.Y + 4, start.Position.Z))
+					if not viewmodel then buildViewmodel() end
+					return
+				end
+				task.wait(0.2)
+			end
+		end)
+		sniperYaw, sniperPitch, recoil = 0, 0, 0
+		zoomIdx = 1
+		touchControls.Btn_FIRE.Visible = true
+		touchControls.Btn_SCOPE.Visible = true
+		local pb = touchControls:FindFirstChild("Btn_PUNCH")
+		local cb = touchControls:FindFirstChild("Btn_CROUCH")
+		if pb then pb.Visible = false end
+		if cb then cb.Visible = false end
+		touchControls.Visible = touchAllowed()
+	else
+		setOwnBodyHidden(false)
+		destroyViewmodel()
+		sniperBase = nil
+		touchControls.Visible = false
+		pcall(function()
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			UserInputService.MouseDeltaSensitivity = 1
+		end)
+	end
+	scoped = false
+	applyScope()
+end
+
+local lastFireAt = -10
+local function fireShot()
+	if not sniperActive or not sniperCanFire or not SniperFire then return end
+	if os.clock() - lastFireAt < K.FIRE_COOLDOWN then return end
+	lastFireAt = os.clock()
+	SniperFire:FireServer()
+	if scoped then
+		scoped = false
+		applyScope()
+	end
+	boltCycleStart = os.clock()
+	recoil = 1
+	if viewmodel then
+		local mz = viewmodel:FindFirstChild("Muzzle")
+		if mz then
+			muzzleFlash(CFrame.new(mz.Position) * (camera.CFrame - camera.CFrame.Position) * CFrame.new(0, 0, -0.35))
+		else
+			muzzleFlash(viewmodel:GetPivot() * CFrame.new(0, 0, -3.2))
+		end
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed or not sniperActive or not sniperCanFire then return end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		fireShot()
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+		scoped = not scoped
+		applyScope()
+	elseif input.KeyCode == Enum.KeyCode.ButtonR2 then
+		-- gamepad: right trigger fires
+		fireShot()
+	elseif input.KeyCode == Enum.KeyCode.ButtonL2 then
+		-- gamepad: left trigger toggles the scope
+		scoped = not scoped
+		applyScope()
+	elseif input.KeyCode == Enum.KeyCode.ButtonY and scoped then
+		-- gamepad: Y cycles zoom while scoped
+		zoomIdx = zoomIdx % #K.ZOOMS + 1
+		applyScope()
+	end
+end)
+
+-- touch: drag anywhere to aim; on-screen buttons fire, scope and zoom
+local touchAim = Vector2.zero
+UserInputService.TouchMoved:Connect(function(input, gameProcessed)
+	if gameProcessed or not sniperActive then return end
+	touchAim += Vector2.new(input.Delta.X, input.Delta.Y)
+end)
+
+-- gamepad: right stick deflection aims at a steady angular rate
+local gamepadAim = Vector2.zero
+UserInputService.InputChanged:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.Thumbstick2 then
+		local v = Vector2.new(input.Position.X, input.Position.Y)
+		gamepadAim = v.Magnitude > 0.15 and v or Vector2.zero
+	end
+end)
+touchControls.Btn_FIRE.Activated:Connect(fireShot)
+touchControls.Btn_SCOPE.Activated:Connect(function()
+	if not sniperActive or not sniperCanFire then return end
+	scoped = not scoped
+	applyScope()
+end)
+touchControls.Btn_ZOOM.Activated:Connect(function()
+	if not sniperActive or not sniperCanFire or not scoped then return end
+	zoomIdx = zoomIdx % #K.ZOOMS + 1
+	applyScope()
+end)
+
+-- Runner crouch is a toggle. Headbutt lives in FieldPushGui/RunnerClient, so
+-- the old punch button must stay hidden even if another move list says push.
+local crouchToggled = false
+local function setCrouchTouch(on)
+	crouchToggled = on
+	if XBotCrouch then XBotCrouch:FireServer(on) end
+	local b = touchControls:FindFirstChild("Btn_CROUCH")
+	if b then
+		b.BackgroundColor3 = on and Color3.fromRGB(16, 66, 90) or Color3.fromRGB(11, 31, 48)
+		b.TextColor3 = on and PHOSPHOR or IDLE
+	end
+end
+-- sneaking is a per-trial move; the button only shows where it works
+local runnerTouchOn = false
+local function charSneakAllowed()
+	local char = player.Character
+	return char ~= nil and string.find(char:GetAttribute("XBotMoves") or "", "sneak", 1, true) ~= nil
+end
+local function refreshCrouchBtn()
+	local cr = touchControls:FindFirstChild("Btn_CROUCH")
+	if cr then cr.Visible = runnerTouchOn and charSneakAllowed() end
+	local punch = touchControls:FindFirstChild("Btn_PUNCH")
+	if punch then punch.Visible = false end
+end
+local function watchMoves(char)
+	char:GetAttributeChangedSignal("XBotMoves"):Connect(function()
+		refreshCrouchBtn()
+		applyMovement()
+	end)
+end
+player.CharacterAdded:Connect(watchMoves)
+if player.Character then watchMoves(player.Character) end
+
+local function setRunnerTouch(on)
+	runnerTouchOn = on
+	local punch = touchControls:FindFirstChild("Btn_PUNCH")
+	if punch then punch.Visible = false end
+	refreshCrouchBtn()
+	-- 31.08.2026 (user: "2 Sonar"): Btn_SCAN bleibt AUS. Der Sonar-Knopf des
+	-- Spiels ist Btn_PULSE aus StarterPlayerScripts.SonarClient (eigenes
+	-- ScreenGui, >= 64 px). Hier stand die Sichtbarkeitsregel des alten
+	-- Sonars (an, sobald XBotMoves "scan" enthaelt) -- genau die hat den
+	-- zweiten Knopf neben den neuen gestellt.
+	local sb = touchControls:FindFirstChild("Btn_SCAN")
+	if sb then sb.Visible = false end
+	if on then
+		touchControls.Btn_FIRE.Visible = false
+		touchControls.Btn_SCOPE.Visible = false
+		touchControls.Btn_ZOOM.Visible = false
+		touchControls.Visible = touchAllowed()
+	elseif not sniperActive then
+		touchControls.Visible = false
+	end
+	if not on and crouchToggled then setCrouchTouch(false) end
+end
+local function toggleCrouch()
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not (char and hum) then return end
+	if not crouchToggled and not charSneakAllowed() then return end
+	if not crouchToggled and hum.WalkSpeed <= 0 then return end
+	setCrouchTouch(not crouchToggled)
+end
+touchControls.Btn_CROUCH.Activated:Connect(toggleCrouch)
+-- P3.3: the same toggle on keyboard (C / Left Ctrl) and gamepad (B); the server
+-- gates it on the trial's sneak permission, the rig plays the Crouch clip.
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.C or input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.ButtonB then
+		toggleCrouch()
+	end
+end)
+
+-- FELDSCANNER (Dead Zone): hold to emit repeating sonar pulses.
+local TrialInput = remotes:WaitForChild("TrialInput", 20)
+local pulseReadyAt = 0
+
+local function charScanAllowed()
+	local char = player.Character
+	return char ~= nil and string.find(char:GetAttribute("XBotMoves") or "", "scan") ~= nil
+end
+
+local function spawnWave(root)
+	local tpl = ReplicatedStorage:FindFirstChild("KenopsiaAssets")
+	tpl = tpl and tpl:FindFirstChild("MF_SonarRing")
+	if not tpl then return end
+	local ring = tpl:Clone()
+	ring:PivotTo(CFrame.new(root.Position.X, root.Position.Y - 2.4, root.Position.Z))
+	ring.Parent = workspace
+	task.spawn(function()
+		-- Welle deckt jetzt den 8-Studs-Scanradius ab
+		for i = 1, 14 do
+			ring:ScaleTo(0.5 + i * 0.6)
+			for _, seg in ipairs(ring:GetChildren()) do
+				if seg:IsA("BasePart") and seg.Name ~= "Center" and seg.Name ~= "PivotRoot" then
+					seg.Transparency = 0.25 + (i / 14) * 0.75
+				end
+			end
+			task.wait(0.045)
+		end
+		ring:Destroy()
+	end)
+end
+
+local function firePulse()
+	-- 31.08.2026: stillgelegt, siehe setScanHeld weiter unten. Ohne dieses
+	-- return schickte der alte Pfad einen ZWEITEN "pulse" auf dasselbe
+	-- TrialInput-Remote und malte zusaetzlich einen nur lokal sichtbaren Ring
+	-- (spawnWave) neben die Server-Aufdeckung des SonarClient.
+	do return end
+	if not charScanAllowed() then return end
+	local now = os.clock()
+	if now < pulseReadyAt then return end
+	pulseReadyAt = now + 0.9
+	if TrialInput then
+		-- C1.a: echo this round's token. Without it the server rejects the pulse.
+		TrialInput:FireServer({
+			trialId = "minefield",
+			action = "pulse",
+			roundToken = trialRoundToken,
+		})
+	end
+	sfx("Click")
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if root then spawnWave(root) end
+	local sb = touchControls:FindFirstChild("Btn_SCAN")
+	if sb then
+		sb.BackgroundColor3 = Color3.fromRGB(64, 28, 24)
+		sb.TextColor3 = Color3.fromRGB(255, 120, 100)
+		task.delay(0.25, function()
+			sb.BackgroundColor3 = Color3.fromRGB(11, 31, 48)
+			sb.TextColor3 = IDLE
+		end)
+	end
+end
+
+local scanHeld = false
+local scanHoldGeneration = 0
+
+local function setScanHeld(on)
+	-- 31.08.2026 (user: "there are 2 Sonar. Remove one."): DER ALTE SONAR IST
+	-- STILLGELEGT. Seit Phase 3b (30.08.) besitzt StarterPlayerScripts
+	-- .SonarClient den Sonar: E / ButtonX / Btn_PULSE, drei Pulse pro Runde
+	-- als SERVER-Oekonomie, und die Aufdeckung besteht aus Server-Teilen, die
+	-- JEDER sieht. Dieser Pfad hier ist der Vorgaenger: F / ButtonY /
+	-- Btn_SCAN, Dauerfeuer solange gehalten, mit einem nur lokal sichtbaren
+	-- Ring. Beide liefen nebeneinander -- zwei Knoepfe, zwei Ringe, doppelte
+	-- Pulse auf demselben Remote.
+	--
+	-- Stillgelegt statt geloescht: dieses Skript steht bei ~185/200
+	-- Luau-Locals, und ein Ausschneiden von ~90 Zeilen mitten aus der
+	-- Hauptkette ist das riskantere Aendern. Die Eingaben (F/ButtonY/Btn_SCAN)
+	-- laufen bewusst weiter hierher und enden hier folgenlos; der Knopf wird
+	-- in setRunnerTouch dauerhaft ausgeblendet.
+	do return end
+	on = on == true
+	if on and not charScanAllowed() then return end
+	if scanHeld == on then return end
+	scanHeld = on
+	scanHoldGeneration += 1
+	local generation = scanHoldGeneration
+	if not on then return end
+
+	task.spawn(function()
+		-- 24.08.2026 (user): the scan reads like RADAR -- a thin neon beam
+		-- sweeps a full turn around the runner while the key is held, stepped
+		-- on the 12 fps grid; the sonar ring keeps marking the actual range.
+		local beam = Instance.new("Part")
+		beam.Name = "ScanBeam"
+		beam.Size = Vector3.new(0.15, 0.05, 8)
+		beam.Material = Enum.Material.Neon
+		beam.Color = Color3.fromRGB(140, 232, 174)
+		beam.Transparency = 0.35
+		beam.Anchored = true
+		beam.CanCollide = false
+		beam.CanQuery = false
+		beam.CanTouch = false
+		beam.Parent = workspace
+		local a0 = os.clock()
+		while scanHeld and generation == scanHoldGeneration and charScanAllowed() do
+			firePulse()
+			for _ = 1, 11 do
+				local char = player.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				if root then
+					local ang = (os.clock() - a0) * 2 * math.pi / 0.9
+					ang = math.floor(ang * 12) / 12
+					beam.CFrame = CFrame.new(root.Position.X, root.Position.Y - 2.2, root.Position.Z)
+						* CFrame.Angles(0, ang, 0) * CFrame.new(0, 0, -4)
+				end
+				task.wait(0.08)
+			end
+		end
+		beam:Destroy()
+	end)
+end
+
+local function refreshScannerHud()
+	if not charScanAllowed() then setScanHeld(false) end
+end
+player.CharacterAdded:Connect(function(char)
+	char:GetAttributeChangedSignal("XBotMoves"):Connect(refreshScannerHud)
+	task.defer(refreshScannerHud)
+end)
+if player.Character then
+	player.Character:GetAttributeChangedSignal("XBotMoves"):Connect(refreshScannerHud)
+	refreshScannerHud()
+end
+
+-- aufgedeckte Minen: rote Bodenmarken mit kurzer Lebensdauer
+local revealMarks = {}
+-- POOLED. Every sonar pulse used to Instance.new a Part per revealed mine and
+-- Destroy it a moment later; a held scan over a dense field churns dozens of
+-- instances a second for marks that all look identical. They are recycled
+-- instead, so a round allocates roughly as many parts as the widest single
+-- reveal and none after that.
+local markPool = {}
+-- Plan: markers clear within a second. Was 1.6, which left the field readable
+-- long after the pulse that lit it and made a single scan worth more than the
+-- risk of standing still to cast it.
+-- Bounded so a pathological round cannot turn the pool into a leak. Past this
+-- the surplus is destroyed rather than kept.
+
+-- 24.08.2026 (user): the sonar mark grew up -- a ground disc plus a floating
+-- neon shard that spins and breathes on the 12 fps grid. One Model per mark,
+-- still pooled; the animator below touches only parked marks (<= 48 live).
+local function acquireMark()
+	local mark = table.remove(markPool)
+	if mark then return mark end
+	mark = Instance.new("Model")
+	mark.Name = "SonarMark"
+	local disc = Instance.new("Part")
+	disc.Name = "Disc"
+	disc.Shape = Enum.PartType.Cylinder
+	disc.Size = Vector3.new(0.12, 2.9, 2.9)
+	disc.Material = Enum.Material.Neon
+	disc.Color = Color3.fromRGB(255, 60, 50)
+	disc.Transparency = 0.55
+	disc.Anchored = true
+	disc.CanCollide = false
+	disc.CanQuery = false
+	disc.CanTouch = false
+	disc.Parent = mark
+	local ring = disc:Clone()
+	ring.Name = "Halo"
+	ring.Size = Vector3.new(0.06, 3.9, 3.9)
+	ring.Transparency = 0.85
+	ring.Parent = mark
+	local shard = Instance.new("Part")
+	shard.Name = "Shard"
+	shard.Size = Vector3.new(0.55, 0.9, 0.55)
+	shard.Material = Enum.Material.Neon
+	shard.Color = Color3.fromRGB(255, 84, 64)
+	shard.Anchored = true
+	shard.CanCollide = false
+	shard.CanQuery = false
+	shard.CanTouch = false
+	shard.Parent = mark
+	mark.PrimaryPart = disc
+	return mark
+end
+
+local function releaseMark(mark)
+	mark.Parent = nil
+	if #markPool < K.MARK_POOL_MAX then
+		table.insert(markPool, mark)
+	else
+		mark:Destroy()
+	end
+end
+local function showMines(list)
+	for _, e in list do
+		local key = math.floor(e[1]) .. ":" .. math.floor(e[3])
+		local mark = revealMarks[key]
+		if not mark then
+			mark = acquireMark()
+			-- Set on every acquire, not only on creation: a recycled mark
+			-- arrives wherever it was last used.
+			mark.Disc.CFrame = CFrame.new(e[1], e[2] + 0.12, e[3]) * CFrame.Angles(0, 0, math.rad(90))
+			mark.Halo.CFrame = mark.Disc.CFrame
+			mark:SetAttribute("BaseY", e[2])
+			mark.Parent = workspace
+			revealMarks[key] = mark
+		end
+		local hot = e[4] == true
+		mark:SetAttribute("Hot", hot)
+		mark.Disc.Transparency = hot and 0.1 or 0.55
+		mark.Shard.Color = hot and Color3.fromRGB(255, 140, 60) or Color3.fromRGB(255, 84, 64)
+		mark:SetAttribute("DieAt", os.clock() + K.MARK_LIFETIME)
+	end
+end
+-- the shard animator: spin + breathe, whole-pixel steps, 12 fps, marks only
+task.spawn(function()
+	while true do
+		task.wait(Feel.stepSeconds and Feel.stepSeconds() or 1 / 12)
+		local t = os.clock()
+		for _, mark in pairs(revealMarks) do
+			local disc = mark:FindFirstChild("Disc")
+			local shard = mark:FindFirstChild("Shard")
+			if disc and shard then
+				local hot = mark:GetAttribute("Hot") == true
+				local speed = hot and 6 or 2.5
+				local bob = 1.15 + 0.18 * math.sin(t * (hot and 9 or 4))
+				local pos = disc.Position
+				shard.CFrame = CFrame.new(pos.X, (mark:GetAttribute("BaseY") or pos.Y) + bob, pos.Z)
+					* CFrame.Angles(math.rad(45), t * speed % (2 * math.pi), math.rad(45))
+				local halo = mark:FindFirstChild("Halo")
+				if halo then halo.Transparency = 0.7 + 0.25 * math.sin(t * 3) end
+			end
+		end
+	end
+end)
+task.spawn(function()
+	while true do
+		task.wait(0.4)
+		for key, mark in pairs(revealMarks) do
+			if (mark:GetAttribute("DieAt") or 0) < os.clock() then
+				revealMarks[key] = nil
+				releaseMark(mark)
+			end
+		end
+	end
+end)
+
+-- Hold F (PC), Y (gamepad), or the touch button for repeating sonar.
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.F then
+		setScanHeld(true)
+	elseif input.KeyCode == Enum.KeyCode.ButtonY and not sniperActive then
+		setScanHeld(true)
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.F or input.KeyCode == Enum.KeyCode.ButtonY then
+		setScanHeld(false)
+	end
+end)
+local scanBtn = touchControls:FindFirstChild("Btn_SCAN")
+if scanBtn then
+	scanBtn.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			setScanHeld(true)
+		end
+	end)
+	scanBtn.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			setScanHeld(false)
+		end
+	end)
+end
+
+-- CANTEEN PROTOCOL: the eating readout and its input.
+--
+-- The plate, the peas, the fork and the descending Observer are REAL PARTS,
+-- built and driven by the server (Services/CanteenProps). This HUD is a second,
+-- deliberately redundant readout -- not the only one. The props can be hidden
+-- by a camera angle or another player, and the watching phase has to be
+-- readable WITHOUT looking away from your own plate, which is what the screen
+-- edge is for.
+--
+-- Nothing here decides anything. Every number arrives from the server, and the
+-- server alone rules on whether a swallow was seen. A client that lies about
+-- the phase changes only what its own player sees.
+-- #50: the compactor's march runs CLIENT-SIDE. The server tags the authored
+-- model (CollectionService "MF_Compactor") and publishes a motion state as
+-- attributes -- MF_Z0/MF_T0 (position at a server timestamp), MF_Speed
+-- (signed studs/s), plus static MF_X/MF_Y/MF_Yaw. Each client integrates z
+-- against GetServerTimeNow() and pivots the model locally at render rate:
+-- smooth 60 fps motion, no per-tick CFrame replication for 18 MeshParts.
+do
+	local CollectionService = game:GetService("CollectionService")
+	local active = {}
+	local bound = false
+	local BIND = "KenopsiaCompactor"
+	local function step()
+		local any = false
+		for model in pairs(active) do
+			if not model.Parent then
+				active[model] = nil
+			else
+				any = true
+				local z0 = model:GetAttribute("MF_Z0")
+				local t0 = model:GetAttribute("MF_T0")
+				local x = model:GetAttribute("MF_X")
+				if z0 and t0 and x then
+					local z = z0 + (model:GetAttribute("MF_Speed") or 0) * (workspace:GetServerTimeNow() - t0)
+					model:PivotTo(CFrame.new(x, model:GetAttribute("MF_Y") or 0, z)
+						* CFrame.Angles(0, math.rad(model:GetAttribute("MF_Yaw") or 0), 0))
+				end
+			end
+		end
+		if not any and bound then
+			bound = false
+			RunService:UnbindFromRenderStep(BIND)
+		end
+	end
+	local function add(model)
+		active[model] = true
+		if not bound then
+			bound = true
+			RunService:BindToRenderStep(BIND, Enum.RenderPriority.Camera.Value - 1, step)
+		end
+	end
+	for _, m in ipairs(CollectionService:GetTagged("MF_Compactor")) do add(m) end
+	CollectionService:GetInstanceAddedSignal("MF_Compactor"):Connect(add)
+	CollectionService:GetInstanceRemovedSignal("MF_Compactor"):Connect(function(m)
+		active[m] = nil
+	end)
+end
+
+local canteenActive = false
+local canteenHud = nil
+local cpPlateReadyAt = 0
+local cpMouthReadyAt = 0
+-- 26.08.2026 (user): der Client merkt sich jetzt, was der Observer gerade tut
+-- und wie voll die Gabel ist. Beides zusammen entscheidet, was der Prompt sagt
+-- (siehe cpApplyPrompt) -- vorher wusste die Gabel nichts vom Observer und rief
+-- "EAT", waehrend er zusah. cpPhaseToken bricht den Herzschlag-Puls ab, wenn
+-- die Phase wechselt.
+--
+-- Alle vier in EINER Anweisung, cpApplyPrompt hier nur deklariert und weiter
+-- unten zugewiesen: tests/glyphs.lua deckelt diese Datei auf 180 top-level
+-- `local`-ANWEISUNGEN (nicht Namen), weil der Chunk nahe an Luaus 200er-Grenze
+-- fuer lebende Locals sitzt. Vier eigene Zeilen haetten den Deckel gerissen.
+local cpPhase, cpForkLoad, cpPhaseToken, cpApplyPrompt = nil, 0, 0, nil
+
+-- Matched to the server MIN_PLATE_INTERVAL / MIN_MOUTH_INTERVAL. These exist to
+-- stop the client spamming a remote it already knows will be refused; they are
+-- NOT the rule. The server re-checks both on its own clock, so editing these
+-- numbers locally buys nothing.
+
+
+local function charEatAllowed()
+	local char = player.Character
+	return char ~= nil and string.find(char:GetAttribute("XBotMoves") or "", "eat") ~= nil
+end
+
+local function buildCanteenHud()
+	if canteenHud then return canteenHud end
+
+	local f = Instance.new("Frame")
+	f.Name = "CanteenHud"
+	f.BackgroundTransparency = 1
+	f.Size = UDim2.new(1, 0, 1, 0)
+	f.Visible = false
+	-- 66, with HipCross -- NOT a low number. KenopsiaMachine uses
+	-- ZIndexBehavior.Sibling, so only the top-level container's ZIndex decides
+	-- what draws over what, and Scope.Mask sits at 65 painting opaque letterbox
+	-- bars over the left, right and bottom of the screen. At the ZIndex 6 this
+	-- started with, the edge glow -- which lives at the very screen edge, under
+	-- those bars -- was invisible. The warning the whole minigame is played on
+	-- would never have been seen.
+	f.ZIndex = 66
+
+	-- Peripheral warning. A screen-edge glow is readable without looking at it,
+	-- which is the whole point: your eyes are on the plate, not on a label.
+	local edge = Instance.new("Frame")
+	edge.Name = "Edge"
+	edge.BackgroundTransparency = 1
+	edge.Size = UDim2.new(1, 0, 1, 0)
+	edge.ZIndex = 6
+	local glow = Instance.new("UIStroke")
+	glow.Name = "Glow"
+	glow.Thickness = 12
+	glow.Color = K.CP_DANGER
+	glow.Transparency = 1
+	glow.Parent = edge
+	edge.Parent = f
+
+	local phase = Instance.new("TextLabel")
+	phase.Name = "Phase"
+	phase.AnchorPoint = Vector2.new(0.5, 0)
+	phase.Position = UDim2.new(0.5, 0, 0, 24)
+	phase.Size = UDim2.new(0, 460, 0, 34)
+	phase.BackgroundTransparency = 1
+	phase.Font = Enum.Font.RobotoMono
+	phase.TextSize = 26
+	phase.TextColor3 = K.CP_IDLE
+	phase.Text = ""
+	phase.ZIndex = 7
+	phase.Parent = f
+
+	local panel = Instance.new("Frame")
+	panel.Name = "Panel"
+	panel.AnchorPoint = Vector2.new(0.5, 1)
+	panel.Position = UDim2.new(0.5, 0, 1, -28)
+	panel.Size = UDim2.new(0, 300, 0, 74)
+	panel.BackgroundColor3 = Color3.fromRGB(11, 31, 48)
+	panel.BackgroundTransparency = 0.25
+	panel.BorderSizePixel = 0
+	panel.ZIndex = 7
+	panel.Parent = f
+
+	local ration = Instance.new("TextLabel")
+	ration.Name = "Ration"
+	ration.Position = UDim2.new(0, 0, 0, 6)
+	ration.Size = UDim2.new(1, 0, 0, 26)
+	ration.BackgroundTransparency = 1
+	ration.Font = Enum.Font.RobotoMono
+	ration.TextSize = 20
+	ration.TextColor3 = K.CP_IDLE
+	ration.Text = "PLATE 20    EATEN 00/20" -- placeholder until the first cpstate; PEAS_TOTAL is 20 since 23.08.2026
+	ration.ZIndex = 8
+	ration.Parent = panel
+
+	-- Fork capacity as pips: four of them, because the fork holds four. Reading
+	-- a number means looking at it; reading four dots does not.
+	local fork = Instance.new("Frame")
+	fork.Name = "Fork"
+	fork.AnchorPoint = Vector2.new(0.5, 0)
+	fork.Position = UDim2.new(0.5, 0, 0, 38)
+	fork.Size = UDim2.new(0, K.CP_FORK_CAPACITY * 30, 0, 24)
+	fork.BackgroundTransparency = 1
+	fork.ZIndex = 8
+	fork.Parent = panel
+	for i = 1, K.CP_FORK_CAPACITY do
+		local pip = Instance.new("Frame")
+		pip.Name = "Pip" .. i
+		pip.AnchorPoint = Vector2.new(0.5, 0.5)
+		pip.Position = UDim2.new(0, (i - 0.5) * 30, 0.5, 0)
+		pip.Size = UDim2.new(0, 18, 0, 18)
+		pip.BackgroundColor3 = K.CP_PIP_EMPTY
+		pip.BorderSizePixel = 0
+		pip.ZIndex = 8
+		local round = Instance.new("UICorner")
+		round.CornerRadius = UDim.new(1, 0)
+		round.Parent = pip
+		pip.Parent = fork
+	end
+
+	f.Parent = machine
+	canteenHud = f
+	return f
+end
+
+-- 26.08.2026 (user): DER PROMPT DARF NICHT INS MESSER SCHICKEN.
+--
+-- Er stand auf "EAT", sobald die Gabel voll war -- unabhaengig davon, ob der
+-- Observer gerade zusieht. Genau dann ist Schlucken aber die eine Handlung, die
+-- einen umbringt: das HUD forderte also im gefaehrlichsten Moment die toedliche
+-- Eingabe. Jetzt entscheiden Gabel UND Phase gemeinsam, und unter Beobachtung
+-- sagt dasselbe Label HOLD in Rot.
+--
+-- Aufgerufen aus cpSetState (Gabel aendert sich) und cpSetPhase (Observer
+-- aendert sich), damit es nie eine Kombination gibt, die niemand nachzieht.
+-- Zuweisung, kein `local` -- der Name ist oben schon deklariert, siehe dort.
+cpApplyPrompt = function()
+	local hud = canteenHud
+	local panel = hud and hud:FindFirstChild("Panel")
+	local prompt = panel and panel:FindFirstChild("EatPrompt")
+	if not prompt then return end
+	local watched = cpPhase == "watching"
+	prompt.Visible = cpForkLoad >= K.CP_FORK_CAPACITY
+	prompt.Text = watched and "HOLD" or "EAT"
+	prompt.TextColor3 = watched and K.CP_DANGER or K.CP_SAFE
+end
+
+local function cpSetState(peas, forkLoad, eaten, total)
+	local hud = buildCanteenHud()
+	hud.Panel.Ration.Text = string.format("PLATE %02d    EATEN %02d/%02d", peas, eaten, total)
+	for i = 1, K.CP_FORK_CAPACITY do
+		local pip = hud.Panel.Fork:FindFirstChild("Pip" .. i)
+		if pip then
+			pip.BackgroundColor3 = (i <= forkLoad) and K.CP_SAFE or K.CP_PIP_EMPTY
+		end
+	end
+	-- 24.08.2026 (user): a full fork tells the player to swallow.
+	local prompt = hud.Panel:FindFirstChild("EatPrompt")
+	if not prompt then
+		prompt = Instance.new("TextLabel")
+		prompt.Name = "EatPrompt"
+		prompt.AnchorPoint = Vector2.new(0.5, 0)
+		prompt.Position = UDim2.new(0.5, 0, 0, 64)
+		prompt.Size = UDim2.new(0, 120, 0, 18)
+		prompt.BackgroundTransparency = 1
+		prompt.Font = Enum.Font.RobotoMono
+		prompt.Text = "EAT"
+		prompt.TextSize = 16
+		prompt.TextColor3 = K.CP_DANGER
+		prompt.ZIndex = 8
+		prompt.Parent = hud.Panel
+	end
+	cpForkLoad = forkLoad
+	cpApplyPrompt()
+end
+
+local function cpSetPhase(phaseName)
+	local hud = buildCanteenHud()
+	local glow = hud.Edge.Glow
+	-- 26.08.2026 (user): DIE BEIDEN OBSERVER-TEXTE SIND WEG.
+	--
+	-- Hier stand "OBSERVER DESCENDING" und "OBSERVED - DO NOT SWALLOW". Beides
+	-- war Doppelung: der Observer SENKT SICH SICHTBAR ab, sein Gesicht springt
+	-- auf Angry, und waehrend er zusieht schwenkt er gestuft nach rechts, links,
+	-- Mitte (CanteenBoss.applyPhase). Das ist der Tell -- mit den Augen lesbar,
+	-- ohne eine Zeile Client-Code, und von einem Client nicht vor sich selbst zu
+	-- verstecken. Ein Untertitel darueber nimmt dem Raum die Arbeit ab und sagt
+	-- dem Spieler, er solle aufs HUD schauen statt an den Tisch.
+	--
+	-- Was bleibt, ist der Rand: Farbe fuer die Phase, und im Beobachtet-Zustand
+	-- ein langsamer Puls. Ein Puls ist naemlich das Einzige am Bildschirmrand,
+	-- was man im peripheren Blick bemerkt, waehrend man auf den Teller schaut --
+	-- und er sagt nichts, er macht nur Druck.
+	--
+	-- Das Phase-Label selbst bleibt bestehen: cpdone und cpout schreiben dort
+	-- ihr Ergebnis hinein ("RATION COMPLETE", "PROTOCOL VIOLATION"). Das sind
+	-- Urteile, keine Erzaehlung -- die duerfen bleiben.
+	cpPhase = phaseName
+	cpPhaseToken += 1
+	local token = cpPhaseToken
+	cpApplyPrompt()
+	if phaseName == "lowering" then
+		glow.Color = K.CP_WARN
+		TweenService:Create(glow, TweenInfo.new(Feel.panel(machine:GetAttribute("Platform"))), { Transparency = 0.45 }):Play()
+	elseif phaseName == "watching" then
+		glow.Color = K.CP_DANGER
+		-- Snappier than the wind-up on purpose: the warning may fade in slowly,
+		-- the danger may not.
+		TweenService:Create(glow, TweenInfo.new(Feel.Feedback.Jolt), { Transparency = 0 }):Play()
+		task.spawn(function()
+			task.wait(Feel.Feedback.Jolt)
+			-- Herzschlag, bis die Phase weiterzieht. Gegen cpPhaseToken
+			-- gesichert, damit ein alter Puls nicht in die naechste Phase
+			-- hineinblinkt.
+			while cpPhaseToken == token do
+				TweenService:Create(glow, TweenInfo.new(0.42), { Transparency = 0.3 }):Play()
+				task.wait(0.42)
+				if cpPhaseToken ~= token then break end
+				TweenService:Create(glow, TweenInfo.new(0.28), { Transparency = 0 }):Play()
+				task.wait(0.28)
+			end
+		end)
+	else
+		TweenService:Create(glow, TweenInfo.new(Feel.panel(machine:GetAttribute("Platform"))), { Transparency = 1 }):Play()
+	end
+end
+
+local function cpSend(action)
+	if not canteenActive or not charEatAllowed() then return end
+	if not TrialInput then return end
+	local now = os.clock()
+	if action == "plate" then
+		if now < cpPlateReadyAt then return end
+		cpPlateReadyAt = now + K.CP_PLATE_COOLDOWN
+	else
+		if now < cpMouthReadyAt then return end
+		cpMouthReadyAt = now + K.CP_MOUTH_COOLDOWN
+	end
+	-- Echo this round token. Without it the server refuses the action, which is
+	-- what stops a packet from an earlier round landing in a later one.
+	TrialInput:FireServer({
+		trialId = "canteen",
+		action = action,
+		roundToken = trialRoundToken,
+	})
+	sfx("Click")
+end
+
+-- Touch controls, built here rather than reusing TouchControls.Btn_EAT: that
+-- button belonged to the deleted rhythm mechanic, and PLATE / MOUTH need two
+-- targets side by side, big enough to hit under time pressure.
+local function buildCanteenTouch()
+	local existing = machine:FindFirstChild("CanteenTouch")
+	if existing then return existing end
+
+	local pad = Instance.new("Frame")
+	pad.Name = "CanteenTouch"
+	pad.BackgroundTransparency = 1
+	pad.Size = UDim2.new(1, 0, 1, 0)
+	pad.Visible = false
+	-- 68, exactly matching TouchControls, which this replaces for this minigame.
+	-- Every shipped touch button deliberately sits ON the letterbox bars -- that
+	-- black margin is thumb space outside the play area. Sitting there only
+	-- works above the mask at 65; below it the buttons are painted over and the
+	-- player has no controls at all.
+	pad.ZIndex = 68
+
+	local function button(name, text, corner, colour)
+		local b = Instance.new("TextButton")
+		b.Name = name
+		-- 24.08.2026 (user, phone test): 110 px mid-screen read as two huge
+		-- slabs on a 390-high viewport. 84 px now, pinned INTO the bottom
+		-- corners where the thumbs already rest -- max spread, less cover.
+		b.AnchorPoint = Vector2.new(corner, 1)
+		b.Position = UDim2.new(corner, corner == 0 and 24 or -24, 1, -24)
+		b.Size = UDim2.new(0, 84, 0, 84)
+		b.BackgroundColor3 = Color3.fromRGB(16, 43, 64)
+		b.BackgroundTransparency = 0.2
+		b.BorderSizePixel = 0
+		b.Font = Enum.Font.RobotoMono
+		b.TextSize = 18
+		b.TextColor3 = colour
+		b.Text = text
+		b.ZIndex = 9
+		local round = Instance.new("UICorner")
+		round.CornerRadius = UDim.new(0, 12)
+		round.Parent = b
+		b.Parent = pad
+		return b
+	end
+
+	button("Btn_PLATE", "PLATE", 0, K.CP_IDLE).Activated:Connect(function()
+		cpSend("plate")
+	end)
+	button("Btn_MOUTH", "MOUTH", 1, K.CP_SAFE).Activated:Connect(function()
+		cpSend("mouth")
+	end)
+
+	pad.Parent = machine
+	return pad
+end
+
+local function cpShowHud()
+	canteenActive = true
+	local hud = buildCanteenHud()
+	hud.Visible = true
+	local pad = buildCanteenTouch()
+	pad.Visible = touchAllowed()
+end
+
+local function cpHideHud()
+	canteenActive = false
+	if canteenHud then
+		canteenHud.Edge.Glow.Transparency = 1
+		canteenHud.Phase.Text = ""
+		canteenHud.Visible = false
+	end
+	local pad = machine:FindFirstChild("CanteenTouch")
+	if pad then pad.Visible = false end
+end
+
+-- LMB / left trigger loads the fork; RMB / right trigger eats. The guard on
+-- canteenActive is what keeps this from fighting the sniper handler above,
+-- which claims the same two buttons behind its own sniperActive guard.
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed or not canteenActive then return end
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.KeyCode == Enum.KeyCode.ButtonL2 then
+		cpSend("plate")
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2
+		or input.KeyCode == Enum.KeyCode.ButtonR2 then
+		cpSend("mouth")
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input, gameProcessed)
+	if gameProcessed or not sniperActive or not scoped then return end
+	if input.UserInputType == Enum.UserInputType.MouseWheel then
+		local newIdx = math.clamp(zoomIdx + (input.Position.Z > 0 and 1 or -1), 1, #K.ZOOMS)
+		if newIdx ~= zoomIdx then
+			zoomIdx = newIdx
+			applyScope()
+		end
+	end
+end)
+
+-- Sniper-Licht: Suchscheinwerfer an der Kamera + hellere Belichtung, damit
+-- der Schuetze das Feld auch bei Dunkelheit lesen kann (nur client-seitig)
+local Lighting = game:GetService("Lighting")
+local sniperLamp = nil
+local savedExposure = nil
+local function setSniperLight(on)
+	if on then
+		if savedExposure == nil then
+			savedExposure = Lighting.ExposureCompensation
+			Lighting.ExposureCompensation = savedExposure + 0.75
+		end
+		if not sniperLamp then
+			local p = Instance.new("Part")
+			p.Name = "SniperLamp"
+			p.Size = Vector3.new(0.2, 0.2, 0.2)
+			p.Transparency = 1
+			p.Anchored = true
+			p.CanCollide = false
+			p.CanQuery = false
+			p.CanTouch = false
+			p.CastShadow = false
+			local spot = Instance.new("SpotLight")
+			spot.Name = "Beam"
+			spot.Angle = 75
+			spot.Range = 60
+			spot.Brightness = 6
+			spot.Color = Color3.fromRGB(255, 236, 200)
+			spot.Face = Enum.NormalId.Front
+			spot.Shadows = false
+			spot.Parent = p
+			p.Parent = camera
+			sniperLamp = p
+		end
+	else
+		if savedExposure ~= nil then
+			Lighting.ExposureCompensation = savedExposure
+			savedExposure = nil
+		end
+		if sniperLamp then
+			sniperLamp:Destroy()
+			sniperLamp = nil
+		end
+	end
+end
+
+local lastAim = 0
+RunService.RenderStepped:Connect(function(dt)
+	if not sniperActive then return end
+	if hunterSetupActive then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		touchAim = Vector2.zero
+		gamepadAim = Vector2.zero
+		if sniperBase then
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = sniperBase
+			if sniperLamp then sniperLamp.CFrame = sniperBase end
+			if viewmodel then
+				viewmodel:PivotTo(sniperBase * CFrame.new(0.34, -0.42, -1.25) * CFrame.Angles(0, -0.05, 0) * vmAlign)
+			end
+		end
+		return
+	end
+	if sniperBase then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+		local delta = UserInputService:GetMouseDelta()
+		local dx = delta.X + touchAim.X + gamepadAim.X * 460 * dt
+		local dy = delta.Y + touchAim.Y - gamepadAim.Y * 460 * dt
+		touchAim = Vector2.zero
+		local sens = lookSensitivity * (camera.FieldOfView / 70)
+		sniperYaw = math.clamp(sniperYaw - dx * sens, -0.7, 0.7)
+		sniperPitch = math.clamp(sniperPitch - dy * sens, -0.6, 0.25)
+		-- 24.08.2026 (user): MOBILE AIM ASSIST, medium pull. Touch players get
+		-- a magnet toward the nearest living runner inside a small cone: the
+		-- aim angles ease toward the target every frame (framerate-safe
+		-- exponential), stronger while scoped, never a snap, never on PC.
+		if touchAllowed() then
+			local baseRot = sniperBase - sniperBase.Position
+			local camPos = sniperBase.Position
+			local bestYaw, bestPitch, bestAng
+			for _, other in ipairs(Players:GetPlayers()) do
+				if other ~= player then
+					local ch = other.Character
+					local head = ch and (ch:FindFirstChild("Head") or ch:FindFirstChild("HumanoidRootPart"))
+					local hum2 = ch and ch:FindFirstChildOfClass("Humanoid")
+					if head and hum2 and hum2.Health > 0 then
+						local lv = baseRot:VectorToObjectSpace((head.Position - camPos).Unit)
+						local wantYaw = math.atan2(-lv.X, -lv.Z)
+						local wantPitch = math.asin(math.clamp(lv.Y, -1, 1))
+						local ang = math.sqrt((wantYaw - sniperYaw) ^ 2 + (wantPitch - sniperPitch) ^ 2)
+						if ang < (scoped and math.rad(6) or math.rad(8)) and (bestAng == nil or ang < bestAng) then
+							bestYaw, bestPitch, bestAng = wantYaw, wantPitch, ang
+						end
+					end
+				end
+			end
+			if bestYaw then
+				-- 24.08.2026 (user): "bisschen staerker" -- 7/4.5 -> 9.5/6.5.
+				-- 30.08.2026 (user): HALB-AUTOAIM fuer Touch/iPad -- Zugkraft
+				-- halbiert (9.5/6.5 -> 4.75/3.25). Der Suchkegel oben bleibt
+				-- unveraendert: der Magnet hilft dem Daumen, er zielt nicht
+				-- mehr von selbst.
+				local alpha = 1 - math.exp(-dt * (scoped and 4.75 or 3.25))
+				sniperYaw = sniperYaw + (bestYaw - sniperYaw) * alpha
+				sniperPitch = sniperPitch + (bestPitch - sniperPitch) * alpha
+			end
+		end
+		camera.CameraType = Enum.CameraType.Scriptable
+
+		-- Keep the camera origin identical to the authoritative server ray.
+		-- This also removes a descendant scan from every render frame.
+		local aim = CFrame.new(sniperBase.Position)
+			* (sniperBase - sniperBase.Position)
+			* CFrame.Angles(0, sniperYaw, 0)
+			* CFrame.Angles(sniperPitch - recoil * 0.05, 0, 0)
+		if scoped then
+			-- gentle breathing drift; keep it calm even at deep zoom
+			local t = os.clock()
+			local mag = 0.0004 * (70 / camera.FieldOfView)
+			aim = aim * CFrame.Angles(math.sin(t * 0.5) * mag, math.sin(t * 0.4) * mag, 0)
+		end
+		camera.CFrame = aim
+		if sniperLamp then sniperLamp.CFrame = camera.CFrame end
+
+		-- shouldered rifle: rides the aim line, kicks on recoil, hidden in scope
+		if viewmodel then
+			if scoped then
+				for part in vmParts do part.LocalTransparencyModifier = 1 end
+			else
+				for part in vmParts do part.LocalTransparencyModifier = 0 end
+				viewmodel:PivotTo(camera.CFrame
+					* CFrame.new(0.34, -0.42 + 0.05 * recoil, -1.25 + 0.28 * recoil)
+					* CFrame.Angles(0.08 * recoil, -0.05, 0)
+					* vmAlign)
+				local boltAlpha = 0
+				if boltCycleStart then
+					local bt = (os.clock() - boltCycleStart) / K.FIRE_COOLDOWN
+					if bt >= 1 then
+						boltCycleStart = nil
+					elseif bt > 0.12 and bt < 0.34 then
+						boltAlpha = math.clamp((bt - 0.12) / 0.22, 0, 1)
+					elseif bt <= 0.58 and bt >= 0.34 then
+						boltAlpha = 1
+					elseif bt > 0.58 then
+						boltAlpha = 1 - math.clamp((bt - 0.58) / 0.24, 0, 1)
+					end
+				end
+				local pivot = viewmodel:GetPivot()
+				for part, base in boltParts do
+					if part.Parent then
+						part.CFrame = pivot * CFrame.new(0, 0, 0.42 * boltAlpha) * base
+					end
+				end
+			end
+		end
+	end
+	recoil = math.max(0, recoil - dt * 3)
+	local now = os.clock()
+	if sniperCanAim and SniperAim and now - lastAim > 0.05 then
+		lastAim = now
+		SniperAim:FireServer(camera.CFrame.LookVector)
+	end
+end)
+
+-- READY PANEL ---------------------------------------------------------------
+
+local function updateReadyVisual()
+	-- C3: three states now - DIM while benched, AMBER when ready, PHOSPHOR when
+	-- seated and not ready. DIM is the same inert colour vacant roster rows use.
+	local colour = amSpectator and DIM or (myReady and AMBER or PHOSPHOR)
+	local stroke = info.Btn_READY:FindFirstChildOfClass("UIStroke")
+	info.Btn_READY.TextColor3 = colour
+	if stroke then stroke.Color = colour end
+	-- FindFirstChildOfClass is not recursive, so the stroke above never reaches
+	-- Btn_READY.Inner.UIStroke; paint it too or the dimming reads wrong.
+	local inner = info.Btn_READY:FindFirstChild("Inner")
+	local innerStroke = inner and inner:FindFirstChildOfClass("UIStroke")
+	if innerStroke then innerStroke.Color = colour end
+	-- A benched player must not fire ReadyReq, and on console must not hold
+	-- gamepad focus either: MachineLayout.focusScreen filters candidates on
+	-- .Selectable, NOT .Active, so clearing Active alone would park console
+	-- selection on a dead button and re-select it on every Info.Visible change.
+	info.Btn_READY.Active = not amSpectator
+	info.Btn_READY.Selectable = not amSpectator
+	if amSpectator and GuiService.SelectedObject == info.Btn_READY then
+		GuiService.SelectedObject = info:FindFirstChild("Btn_SETTINGS")
+	end
+	-- MachineLayout parents an A-button glyph named PadHint into this button on
+	-- console; hide it while the button is dead so it stops advertising a prompt.
+	local hint = info.Btn_READY:FindFirstChild("PadHint")
+	if hint then
+		hint.Visible = (not amSpectator) and machine:GetAttribute("Platform") == "Console"
+	end
+	K.Theme.readyButton(info.Btn_READY, myReady, amSpectator)
+end
+
+local function updateRoster(members)
+	local roster = info:FindFirstChild("Roster")
+	if not roster then return end
+	-- rank seats by running session score, like the reference roster
+	local ranked = {}
+	for _, m in members do
+		local plr = Players:GetPlayerByUserId(m.userId)
+		table.insert(ranked, {
+			displayName = m.displayName,
+			ready = m.ready,
+			userId = m.userId,
+			score = (plr and plr:GetAttribute("KenopsiaSessionScore")) or 0,
+		})
+	end
+	table.sort(ranked, function(a, b) return a.score > b.score end)
+	for i = 1, 4 do
+		local row = roster["Row" .. i]
+		local m = ranked[i]
+		row.Visible = i <= maxPlayers
+		if m then
+			row.NameLabel.Text = m.displayName or ""
+			row.NameLabel.TextColor3 = IDLE
+			row.ScoreLabel.Text = string.format("%04d", math.clamp(m.score, 0, 9999))
+			row.ScoreLabel.TextColor3 = PHOSPHOR
+			row.RankLabel.TextColor3 = PHOSPHOR
+			row.Check.Fill.Visible = m.ready == true
+			local cst = row.Check:FindFirstChildOfClass("UIStroke")
+			if cst then cst.Color = PHOSPHOR end
+		else
+			row.NameLabel.Text = "vacant"
+			row.NameLabel.TextColor3 = DIM
+			row.ScoreLabel.Text = "----"
+			row.ScoreLabel.TextColor3 = DIM
+			row.RankLabel.TextColor3 = DIM
+			row.Check.Fill.Visible = false
+			local cst = row.Check:FindFirstChildOfClass("UIStroke")
+			if cst then cst.Color = DIM end
+		end
+	end
+end
+
+info.Btn_READY.Activated:Connect(function()
+	-- C3: guard BEFORE sfx, so a benched player gets no confirmation sound for
+	-- a press that does nothing. The server's own rejection arrives on
+	-- LobbyError, which IS connected now -- see the notice line at the end of
+	-- this file.
+	if amSpectator then return end
+	sfx("Submit")
+	ReadyReq:FireServer(not myReady)
+end)
+
+
+RoomState.OnClientEvent:Connect(function(p)
+	if type(p) ~= "table" then return end
+	maxPlayers = p.maxPlayers or 4
+	-- C3: seat vs bench is decided from THIS payload only, never from stale
+	-- state. p.spectators is an ARRAY OF USERIDS (RoomService.publicState builds
+	-- it with table.insert over the spectator set), NOT a map - never index it
+	-- by UserId.
+	local inMembers = false
+	for _, m in p.members or {} do
+		if m.userId == player.UserId then
+			inMembers = true
+			myReady = m.ready == true
+		end
+	end
+	local inSpectators = false
+	for _, id in p.spectators or {} do
+		if id == player.UserId then inSpectators = true end
+	end
+	if not inMembers then
+		-- The old loop only wrote myReady from inside the members scan, so a
+		-- benched player kept whatever value it held when last seated and the
+		-- button could stay lit AMBER. A bench player holds no ready flag.
+		myReady = false
+	end
+	amSpectator = inSpectators and not inMembers
+	-- TopTicker is a TextLabel under Info that no script writes, so it can carry
+	-- the notice with no contention. NextLabel cannot: showInfo() typewrites
+	-- into it from a task.spawn and would overwrite this within ~1s.
+	local ticker = info:FindFirstChild("TopTicker")
+	if ticker then
+		if tickerDefaultText == nil then tickerDefaultText = ticker.Text end
+		ticker.Text = amSpectator and "SPECTATING // NEXT MATCH" or tickerDefaultText
+	end
+	updateRoster(p.members or {})
+	updateReadyVisual()
+end)
+
+-- SELECTION: flicker roulette ----------------------------------------------
+
+local function setTileLit(tile, lit)
+	K.Theme.tileState(tile, lit)
+	for _, d in tile:GetDescendants() do
+		if d:GetAttribute("IceDecoration") then continue end
+		if d:IsA("Frame") and d.BackgroundTransparency < 1 then
+			d.BackgroundColor3 = lit and PHOSPHOR or DIM
+		elseif d:IsA("UIStroke") then
+			d.Color = lit and PHOSPHOR or DIM
+		end
+	end
+end
+
+local function showSelection(p, token)
+	hideAll()
+	selection.Visible = true
+	local pool = selection:FindFirstChild("IconPool")
+	local tiles = {}
+	for i = 1, 3 do
+		local t = selection.Tiles["Tile" .. i]
+		t.Visible = false
+		t.Icon:ClearAllChildren()
+		local src = pool and pool:FindFirstChild(p.icons and p.icons[i] or "Crosshair")
+		if src then
+			local ic = src:Clone()
+			ic.Visible = true
+			ic.Position = UDim2.fromScale(0.5, 0.5)
+			ic.Parent = t.Icon
+		end
+		tiles[i] = t
+	end
+	selection.CrossH.Visible = false
+	selection.CrossV.Visible = false
+	selection.BootText.Visible = false
+
+	task.spawn(function()
+		local R = Feel.Roulette
+		task.wait(R.Lead)
+		for _, t in tiles do
+			if session ~= token then return end
+			t.Visible = true
+			task.wait(R.TileGap)
+		end
+		task.wait(R.Pause)
+		if session ~= token then return end
+
+		-- symbols flicker, then the machine locks its choice. P1.5: on the
+		-- flicker rule (Feel.Flicker: <= 3 changes/s, dim channel only) -- the
+		-- icons stay put, the tile chrome steps between DIM and PHOSPHOR every
+		-- Hold seconds instead of strobing visibility at 14 Hz.
+		if uiSettings.ReduceFlicker then
+			task.wait(R.ReducedChaos)
+			if session ~= token then return end
+		else
+			local deadline = os.clock() + R.Chaos
+			while os.clock() < deadline do
+				if session ~= token then return end
+				for i = 1, 3 do
+					setTileLit(tiles[i], math.random() < 0.4)
+				end
+				task.wait(Feel.Flicker.Hold)
+			end
+		end
+		for i = 1, 3 do
+			tiles[i].Icon.Visible = true
+			setTileLit(tiles[i], i == (p.chosen or 1))
+			-- 24.08.2026 (user): no caption text on the lock -- the pick speaks
+			-- through light alone: losers dim to ghosts, the winner burns.
+			local oldTag = tiles[i]:FindFirstChild("SimTag")
+			if oldTag then oldTag:Destroy() end
+			if i == (p.chosen or 1) then
+				for _, d in ipairs(tiles[i].Icon:GetDescendants()) do
+					if d:IsA("GuiObject") then d.BackgroundTransparency = math.min(d.BackgroundTransparency, 0.1) end
+				end
+			else
+				for _, d in ipairs(tiles[i].Icon:GetDescendants()) do
+					if d:IsA("GuiObject") and d.BackgroundTransparency < 0.6 then d.BackgroundTransparency = 0.72 end
+				end
+			end
+		end
+
+		-- lock-in blinks, each state held the flicker minimum
+		local chosenTile = tiles[p.chosen or 1]
+		for _ = 1, (uiSettings.ReduceFlicker and 1 or R.LockBlinks) do
+			if session ~= token then return end
+			setTileLit(chosenTile, false)
+			task.wait(Feel.Flicker.Hold)
+			setTileLit(chosenTile, true)
+			task.wait(Feel.Flicker.Hold)
+		end
+
+		-- The selected tile supplies the focus; no screen-wide camera reticle.
+		local center = chosenTile.AbsolutePosition + chosenTile.AbsoluteSize / 2
+		local layoutScale = selection:FindFirstChild("KenopsiaScale")
+		layoutScale = layoutScale and layoutScale.Scale or 1
+		local visualPlatform = machine:GetAttribute("Platform") or "Desktop"
+		selection.CrossH.Visible = false
+		selection.CrossV.Visible = false
+		task.wait(R.BootDelay)
+		if session ~= token then return end
+		-- BootText shipped as 16x200 and was placed directly on CrossH, so the
+		-- scan rail struck through the copy and the label clipped at the right
+		-- edge. Use screen-space bounds, then convert back through KenopsiaScale.
+		-- Touch/tablet stacks below the cards; desktop/console stays beside the
+		-- tile group, with an automatic below-card fallback near an edge.
+		local boot = selection.BootText
+		local viewLeft, viewTop = selection.AbsolutePosition.X, selection.AbsolutePosition.Y
+		local viewWidth, viewHeight = selection.AbsoluteSize.X, selection.AbsoluteSize.Y
+		local marginPx = visualPlatform == "Console" and 32 or 18
+		local gapPx = visualPlatform == "Console" and 22 or 18
+		local bootWidthPx = math.min(visualPlatform == "Console" and 330
+			or visualPlatform == "Tablet" and 280
+			or visualPlatform == "Mobile" and 260 or 270, viewWidth - 2 * marginPx)
+		local bootHeightPx = visualPlatform == "Console" and 32 or 26
+		local stackBelow = visualPlatform == "Mobile" or visualPlatform == "Tablet" or viewWidth < 700
+		local groupRight = 0
+		for _, tile in ipairs(tiles) do
+			groupRight = math.max(groupRight, tile.AbsolutePosition.X + tile.AbsoluteSize.X)
+		end
+		local bootX = groupRight + gapPx
+		local bootY = center.Y + (visualPlatform == "Console" and 18 or 14)
+		if stackBelow or bootX + bootWidthPx > viewLeft + viewWidth - marginPx then
+			bootX = viewLeft + (viewWidth - bootWidthPx) / 2
+			bootY = chosenTile.AbsolutePosition.Y + chosenTile.AbsoluteSize.Y + gapPx
+		end
+		if bootY + bootHeightPx > viewTop + viewHeight - marginPx then
+			bootY = math.max(viewTop + marginPx,
+				chosenTile.AbsolutePosition.Y - gapPx - bootHeightPx)
+		end
+		boot.AnchorPoint = Vector2.zero
+		boot.Position = UDim2.fromOffset(
+			math.round((bootX - viewLeft) / layoutScale),
+			math.round((bootY - viewTop) / layoutScale))
+		boot.Size = UDim2.fromOffset(
+			math.ceil(bootWidthPx / layoutScale),
+			math.ceil(bootHeightPx / layoutScale))
+		boot.TextXAlignment = Enum.TextXAlignment.Left
+		boot.TextYAlignment = Enum.TextYAlignment.Center
+		boot.TextWrapped = false
+		boot.ZIndex = math.max(boot.ZIndex, chosenTile.ZIndex + 1)
+		typewrite(boot, "Simulation bootst:", Feel.Typewriter.BodyCps, token)
+	end)
+end
+
+local function showInfo(p, token)
+	hideAll()
+	info.Visible = true
+	local holder = info.SelIcon.Holder
+	for _, c in holder:GetChildren() do
+		if not c:IsA("UIScale") then c:Destroy() end
+	end
+	local pool = selection:FindFirstChild("IconPool")
+	local src = pool and pool:FindFirstChild(p.icon or "Crosshair")
+	if src then
+		local ic = src:Clone()
+		ic.Visible = true
+		ic.Position = UDim2.fromScale(0.5, 0.5)
+		ic.Parent = holder
+	end
+	info.NextLabel.Text = "NEXT SIMULATION: "
+	task.spawn(function()
+		typewrite(info.NextLabel, "NEXT SIMULATION: " .. (p.name or "?"), Feel.Typewriter.BodyCps, token)
+	end)
+	updateReadyVisual()
+end
+
+-- STATUS / ROUND / SCORE ----------------------------------------------------
+
+-- THE STATUS BOARD (27.08.2026, user) ---------------------------------------
+-- The Status screen carries the three most-shown cards of a session: the
+-- briefing before a trial, the standings after every round, and a trial's
+-- closing board. All three used to render into TypeLine1..7 -- seven 13 px rows
+-- pinned at x 46 / y 30. At the desktop scale that is about ten pixels of type
+-- in the top-left corner of 710 px of black, and since the round-end blackout
+-- landed it is also the card the blackout cuts to.
+--
+-- SAME PACKET, NO SERVER CHANGE. The payload is still `lines`, and all three
+-- cards already share one shape: a HEADER, a body, then the Machine's voice
+-- line. A line matching "<n>. " is a RANK ROW -- MachineFlow's standingsLines
+-- and the trial board are the two things that emit that -- and anything else is
+-- a body line. So the briefing's prose and the standings' ladder come out of
+-- one renderer without either end knowing about the other.
+--
+-- Built in code rather than authored into StarterGui, like voiceLabel below:
+-- the block is measured per payload and CENTRED, so its height depends on how
+-- many rows the packet carries and there is nothing fixed to author.
+--
+-- ONE top-level local, in a do-block -- see the note on the Blackout block for
+-- why this file cannot afford more names at this level.
+local StatusBoard
+do
+	local MARGIN = 46          -- the left margin UiFx's TermChrome already uses
+	-- The block is a COLUMN, not a full-width table. Left at the chrome's margin
+	-- and capped here: run it to both edges and four short names leave the
+	-- rise/fall marks stranded ~1400 px from the names they belong to. 620 is
+	-- about half the authored 1264-px width and comfortably clears the longest
+	-- header the three cards send ("STANDINGS - ROUND 10/10" at 30 px).
+	local WIDTH = 620
+	local HEAD_H, RULE_GAP = 40, 16
+	local ROW_H, ROW_GAP = 34, 4
+	local BODY_H, BODY_GAP = 26, 2
+	local VOICE_H, VOICE_GAP = 22, 20
+	local MAX_ROWS, MAX_BODY = 6, 6   -- 4 players + headroom; briefing sends 4 body lines
+
+	local board, head, rule, voice
+	local rows, bodies = {}, {}
+
+	local function label(parent, size, colour, align)
+		local l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1
+		l.Font = Enum.Font.RobotoMono
+		l.TextSize = size
+		l.TextColor3 = colour
+		l.TextXAlignment = align or Enum.TextXAlignment.Left
+		l.TextYAlignment = Enum.TextYAlignment.Center
+		l.Text = ""
+		-- ZIndex 1: TermGrid sits at 0 and TermChrome at 2, so the board belongs
+		-- between them exactly where the TypeLines used to be.
+		l.ZIndex = 1
+		l.Parent = parent
+		return l
+	end
+
+	local function build()
+		if board then return end
+		board = Instance.new("Frame")
+		board.Name = "Board"
+		board.AnchorPoint = Vector2.new(0, 0.5)
+		-- Vertically centred; horizontally on the chrome's own margin, so the
+		-- header lines up with the USER line above it. Biased 8 px up: the
+		-- chrome's KeyStrip owns the bottom edge, so a block centred dead-on
+		-- reads as sitting low.
+		board.Position = UDim2.new(0, MARGIN, 0.5, -8)
+		board.BackgroundTransparency = 1
+		board.ZIndex = 1
+		board.Parent = statusScreen
+
+		head = label(board, 30, PHOSPHOR)
+		head.Name = "Head"
+		head.Size = UDim2.new(1, 0, 0, HEAD_H)
+
+		rule = Instance.new("Frame")
+		rule.Name = "Rule"
+		rule.BackgroundColor3 = DIM
+		rule.BorderSizePixel = 0
+		rule.Size = UDim2.new(1, 0, 0, 1)
+		rule.ZIndex = 1
+		rule.Parent = board
+
+		for i = 1, MAX_ROWS do
+			local r = Instance.new("Frame")
+			r.Name = "Row" .. i
+			r.BackgroundColor3 = Color3.fromRGB(11, 31, 48)
+			r.BorderSizePixel = 0
+			r.Size = UDim2.new(1, 0, 0, ROW_H)
+			r.ZIndex = 1
+			r.Parent = board
+			local accent = Instance.new("Frame")
+			accent.Name = "Accent"
+			accent.BackgroundColor3 = AMBER
+			accent.BorderSizePixel = 0
+			accent.Size = UDim2.new(0, 3, 1, 0)
+			accent.ZIndex = 1
+			accent.Parent = r
+			local place = label(r, 24, DIM)
+			place.Name = "Place"
+			place.Position = UDim2.new(0, 16, 0, 0)
+			place.Size = UDim2.new(0, 44, 1, 0)
+			-- NOT "Name": that is the Frame's own property and `r.Name` would
+			-- return the string, not the label. The Machine calls players
+			-- subjects anyway.
+			local subject = label(r, 24, PHOSPHOR)
+			subject.Name = "Subject"
+			subject.Position = UDim2.new(0, 64, 0, 0)
+			subject.Size = UDim2.new(1, -190, 1, 0)
+			local mark = label(r, 16, DIM, Enum.TextXAlignment.Right)
+			mark.Name = "Mark"
+			mark.Position = UDim2.new(1, -110, 0, 0)
+			mark.Size = UDim2.new(0, 110, 1, 0)
+			rows[i] = r
+		end
+
+		for i = 1, MAX_BODY do
+			local b = label(board, 20, IDLE)
+			b.Name = "Body" .. i
+			b.Size = UDim2.new(1, 0, 0, BODY_H)
+			bodies[i] = b
+		end
+
+		voice = label(board, 17, DIM)
+		voice.Name = "VoiceLine"
+		voice.Size = UDim2.new(1, 0, 0, VOICE_H)
+	end
+
+	-- Lay the payload out, hidden, and hand back the reveal order. Everything is
+	-- positioned BEFORE a character is typed so the block never reflows while it
+	-- is writing itself.
+	local function layout(lines, voiceText)
+		build()
+		for _, r in rows do r.Visible = false end
+		for _, b in bodies do b.Visible = false end
+		voice.Visible = false
+		voice.Text = ""
+		head.Visible = false
+		head.Text = ""
+		rule.Visible = false
+
+		lines = lines or {}
+		local seq = {}
+		local y = 0
+		head.Position = UDim2.new(0, 0, 0, y)
+		table.insert(seq, { show = head, label = head, text = lines[1] or "", cps = Feel.Typewriter.BodyCps })
+		y += HEAD_H
+		rule.Position = UDim2.new(0, 0, 0, y)
+		y += 1 + RULE_GAP
+
+		local nRow, nBody, lastGap = 0, 0, 0
+		for i = 2, #lines do
+			local text = lines[i] or ""
+			local place, rest = text:match("^%s*(%d+)%.%s*(.+)$")
+			if place and nRow < MAX_ROWS then
+				nRow += 1
+				local r = rows[nRow]
+				r.Position = UDim2.new(0, 0, 0, y)
+				-- standingsLines glues the rise/fall mark onto the name with two
+				-- spaces ("NAME  UP"). Split it back out so it can have its own
+				-- right-hand column instead of trailing the name.
+				local subject, mark = rest:match("^(.-)%s%s+(UP)$")
+				if not subject then subject, mark = rest:match("^(.-)%s%s+(DOWN)$") end
+				subject = subject or rest
+				r.Place.Text = place .. "."
+				r.Mark.Text = mark == "UP" and "\u{25B2} UP" or (mark == "DOWN" and "\u{25BC} DOWN" or "")
+				r.Mark.TextColor3 = mark == "UP" and PHOSPHOR or AMBER
+				-- Only the leader gets the bar and the accent. Banding every row
+				-- would say nothing; banding one says who is winning.
+				local lead = place == "1"
+				r.BackgroundTransparency = lead and 0.45 or 1
+				r.Accent.Visible = lead
+				r.Place.TextColor3 = lead and AMBER or DIM
+				r.Subject.Text = ""
+				table.insert(seq, { show = r, label = r.Subject, text = subject, cps = Feel.Typewriter.StatusCps })
+				y += ROW_H + ROW_GAP
+				lastGap = ROW_GAP
+			elseif nBody < MAX_BODY then
+				nBody += 1
+				local b = bodies[nBody]
+				b.Position = UDim2.new(0, 0, 0, y)
+				b.Text = ""
+				-- A blank line is spacing, not a row to type.
+				if text:match("%S") then
+					table.insert(seq, { show = b, label = b, text = text, cps = Feel.Typewriter.StatusCps })
+				end
+				y += BODY_H + BODY_GAP
+				lastGap = BODY_GAP
+			end
+		end
+		y -= lastGap
+
+		if voiceText and voiceText ~= "" then
+			voice.Position = UDim2.new(0, 0, 0, y + VOICE_GAP)
+			y += VOICE_GAP + VOICE_H
+		end
+		board.Size = UDim2.new(0, WIDTH, 0, y)
+		K.Theme.statusBoard(board, seq)
+		return seq
+	end
+
+	StatusBoard = {
+		-- Position everything, then type it in order on one thread. The rule is
+		-- drawn with the header so the card has a shape from the first frame.
+		show = function(p, token)
+			local seq = layout(p.lines, p.line)
+			task.spawn(function()
+				for _, item in seq do
+					if session ~= token then return end
+					item.show.Visible = true
+					if item.label == head then rule.Visible = true end
+					typewrite(item.label, item.text, item.cps, token)
+					task.wait(Feel.Typewriter.LineGap)
+				end
+			end)
+		end,
+		-- The dispatcher calls showStatusLine right after showStatus, in the same
+		-- tick, so the slot layout() reserved is already there to fill.
+		setVoice = function(text)
+			build()
+			voice.Text = text or ""
+			voice.Visible = text ~= nil and text ~= ""
+		end,
+	}
+end
+
+local function showStatus(p, token)
+	hideAll()
+	statusScreen.Visible = true
+	StatusBoard.show(p, token)
+end
+
+local function showRound(p, token)
+	hideAll()
+	roundCard.Visible = true
+	roundCard.Title.Text = ("Round %d/%d"):format(p.n or 1, p.total or 3)
+	roundCard.Verbs.Text = ""
+	task.spawn(function()
+		typewrite(roundCard.Verbs, (p.verbs or "") .. "_", Feel.Typewriter.BodyCps, token)
+	end)
+end
+
+local function rollDigit(cell, target, delay, token)
+	task.spawn(function()
+		task.wait(delay)
+		local value = cell.Value
+		-- P1.5: the odometer is stepped UI motion -- one digit per frame of the
+		-- Feel.Step grid, not an ad-hoc ramp.
+		local spins = 14 + delay * 10
+		for _ = 1, spins do
+			if session ~= token then return end
+			value.Text = tostring(math.random(0, 9))
+			task.wait(1 / Feel.Step.Fps)
+		end
+		if session ~= token then return end
+		value.Text = target
+		value.TextColor3 = PHOSPHOR
+	end)
+end
+
+local function showScore(p, token)
+	hideAll()
+	scoreScreen.Visible = true
+	-- P1.3 (22.08.2026): the final board is a VERDICT, not another number.
+	local myVerdict = nil
+	for _, e in p.board or {} do
+		if e.userId == player.UserId then myVerdict = e.verdict end
+	end
+	local conclusion = scoreScreen:FindFirstChild("ConclusionLabel")
+	local scoreName = scoreScreen:FindFirstChild("ScoreName")
+	if p.final and myVerdict then
+		if conclusion then conclusion.Text = "FINAL AUDIT CONCLUDED" end
+		if scoreName then
+			scoreName.Text = "SUBJECT STATUS\n" .. myVerdict
+			scoreName.TextColor3 = myVerdict == "VIABLE" and PHOSPHOR or Color3.fromRGB(255, 24, 24)
+		end
+		sfx(myVerdict == "VIABLE" and "Confirm" or "Reject")
+	else
+		if conclusion then conclusion.Text = "SIMULATION CONCLUSION" end
+		if scoreName then
+			scoreName.Text = "OPERATOR\nPERFORMANCE SCORE"
+			scoreName.TextColor3 = PHOSPHOR
+		end
+	end
+
+	local ticker = scoreScreen.Ticker.Text
+	task.spawn(function()
+		while session == token and scoreScreen.Visible do
+			ticker.Position = UDim2.new(0, scoreScreen.AbsoluteSize.X, 0, 0)
+			local w = ticker.TextBounds.X + scoreScreen.AbsoluteSize.X
+			local tw = TweenService:Create(ticker, TweenInfo.new(w / 120, Enum.EasingStyle.Linear), {
+				Position = UDim2.new(0, -ticker.TextBounds.X, 0, 0),
+			})
+			tw:Play()
+			tw.Completed:Wait()
+		end
+	end)
+
+	local myScore = 0
+	for _, e in p.board or {} do
+		if e.userId == player.UserId then myScore = e.score end
+	end
+	local digits = string.format("%04d", myScore)
+	for i = 1, 4 do
+		local cell = scoreScreen.Odometer["Digit" .. i]
+		cell.Value.Text = "0"
+		cell.Value.TextColor3 = IDLE
+		if uiSettings.ReduceFlicker then
+			cell.Value.Text = string.sub(digits, i, i)
+			cell.Value.TextColor3 = PHOSPHOR
+		else
+			rollDigit(cell, string.sub(digits, i, i), (i - 1) * 0.45, token)
+		end
+	end
+
+	for i = 1, 4 do
+		scoreScreen.RankList["Row" .. i].Visible = false
+	end
+	task.spawn(function()
+		task.wait(2.4)
+		for i = 1, 4 do
+			if session ~= token then return end
+			local row = scoreScreen.RankList["Row" .. i]
+			local e = p.board and p.board[i]
+			if e then
+				row.ScoreLabel.Text = string.format("%04d", e.score)
+				row.NameLabel.Text = e.displayName
+				row.Visible = true
+				for c = 1, 2 do
+					local check = row["Check" .. c]
+					local fill = check:FindFirstChild("Fill")
+					if not fill then
+						fill = Instance.new("Frame")
+						fill.Name = "Fill"
+						fill.BackgroundColor3 = PHOSPHOR
+						fill.BorderSizePixel = 0
+						fill.Position = UDim2.fromOffset(3, 3)
+						fill.Size = UDim2.new(1, -6, 1, -6)
+						fill.Parent = check
+					end
+					fill.Visible = false
+					task.delay(0.25 * c, function()
+						if session == token then fill.Visible = true end
+					end)
+				end
+				task.wait(0.5)
+			end
+		end
+	end)
+end
+
+-- MACHINE VOICE (P1.4) ------------------------------------------------------
+-- One comment line under the rows of the standings card (Status screen) and
+-- of the score card, from `p.line`. The label is built once per screen at
+-- runtime in the screen's own row style, so the place GUI needs no new
+-- instance; the dispatcher calls these right after showStatus / showScore.
+
+local function voiceLabel(screen, template, position, size, textSize)
+	local l = screen:FindFirstChild("VoiceLine")
+	if l then return l end
+	if template then
+		l = template:Clone()
+	else
+		l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1
+		l.Font = Enum.Font.RobotoMono
+		l.TextXAlignment = Enum.TextXAlignment.Left
+	end
+	l.Name = "VoiceLine"
+	l.Text = ""
+	l.TextColor3 = PHOSPHOR
+	if position then l.Position = position end
+	if size then l.Size = size end
+	if textSize then l.TextSize = textSize end
+	l.Visible = false
+	l.Parent = screen
+	return l
+end
+
+-- Standings: one line under the rows, plain (the rows above are already typing;
+-- two typewriters at once read as noise). The board reserved its slot in
+-- layout(), so this only fills it -- nothing moves when the line arrives.
+local function showStatusLine(p)
+	StatusBoard.setVoice(p.line)
+end
+
+-- Score: under the rank rows, typed at the status rate while the odometer
+-- rolls (the rows themselves only appear at 2.4 s).
+local function showScoreLine(p, token)
+	local rl = scoreScreen:FindFirstChild("RankList")
+	local pos = rl and UDim2.new(rl.Position.X.Scale, rl.Position.X.Offset,
+		rl.Position.Y.Scale + rl.Size.Y.Scale, rl.Position.Y.Offset + rl.Size.Y.Offset + 14)
+		or UDim2.new(0.55, 0, 0.12, 150)
+	local size = rl and UDim2.new(rl.Size.X.Scale, rl.Size.X.Offset, 0, 22) or UDim2.new(0.4, 0, 0, 22)
+	local l = voiceLabel(scoreScreen, nil, pos, size, 16)
+	l.Text = ""
+	l.Visible = false
+	if not p.line or p.line == "" then return end
+	task.spawn(function()
+		task.wait(Feel.Typewriter.ScoreLeadIn)
+		if session ~= token then return end
+		typewrite(l, p.line, Feel.Typewriter.StatusCps, token)
+	end)
+end
+
+-- ROLE CARD (P1.4): one sentence, full screen, phosphor on black, hard cut in
+-- and out, for p.seconds (1.6 s). Reuses the Announce screen so hideAll() and
+-- the server's follow-up "hide" both clear it.
+local function showRoleCard(p, token)
+	hideAll()
+	announceScreen.BackgroundTransparency = 0
+	announceScreen.Line.TextColor3 = PHOSPHOR
+	announceScreen.Line.Text = p.text or ""
+	announceScreen.Visible = true
+	task.delay(tonumber(p.seconds) or 1.6, function()
+		if session == token then hideAll() end
+	end)
+end
+
+local function showAnnounce(p, token)
+	hideAll()
+	if p.style == "death" then
+		-- GTA-style: the world stays visible behind the card, text in blood red;
+		-- then full black before the respawn, so spawn is never seen
+		announceScreen.BackgroundTransparency = 0.4
+		announceScreen.Line.TextColor3 = Color3.fromRGB(255, 48, 32)
+		task.delay(Feel.Death.Hold, function()
+			if session == token and announceScreen.Visible then
+				TweenService:Create(announceScreen, TweenInfo.new(Feel.Death.Fade), { BackgroundTransparency = 0 }):Play()
+			end
+		end)
+	else
+		announceScreen.BackgroundTransparency = 0
+		announceScreen.Line.TextColor3 = PHOSPHOR
+	end
+	announceScreen.Visible = true
+	announceScreen.Line.Text = ""
+	-- MP-08 B-08: showRoleCard und showPodium raeumen sich selbst ab,
+	-- showAnnounce war die einzige Ausnahme -- eine Karte blieb stehen, bis
+	-- irgendwann ein anderes Paket hideAll() ausloeste. Ein Sender, der weiss
+	-- wie lange sie stehen soll, sagt es jetzt. Gegen `token` gesichert, damit
+	-- ein spaeterer Screen nicht von diesem Timer abgeraeumt wird.
+	local secs = tonumber(p.seconds)
+	if secs and secs > 0 then
+		task.delay(secs, function()
+			if session == token then hideAll() end
+		end)
+	end
+	task.spawn(function()
+		task.wait(Feel.Typewriter.LeadIn)
+		if session ~= token then return end
+		typewrite(announceScreen.Line, p.text or "", Feel.Typewriter.BodyCps, token)
+	end)
+end
+
+-- P1.3 PODIUM (23.08.2026): its own beat after the verdict stamp, NOT part of
+-- showScore. The screens go away so the world shows the stage through the
+-- Machine's fixed camera (set by the funnel before this runs); all that stays
+-- on the glass is a phosphor caption, rank + name, bottom centre. Released by
+-- the server's clear packet, with a local deadline as the backstop.
+local podiumCaption = nil
+local function showPodium(p, token)
+	hideAll()
+	if not podiumCaption then
+		podiumCaption = Instance.new("TextLabel")
+		podiumCaption.Name = "PodiumCaption"
+		podiumCaption.AnchorPoint = Vector2.new(0.5, 1)
+		podiumCaption.Position = UDim2.fromScale(0.5, 0.92)
+		podiumCaption.Size = UDim2.new(0.8, 0, 0, 96)
+		podiumCaption.BackgroundTransparency = 1
+		podiumCaption.Font = Enum.Font.RobotoMono
+		podiumCaption.TextColor3 = PHOSPHOR
+		podiumCaption.TextSize = 24
+		podiumCaption.TextStrokeColor3 = Color3.new(0, 0, 0)
+		podiumCaption.TextStrokeTransparency = 0.25
+		podiumCaption.TextXAlignment = Enum.TextXAlignment.Center
+		podiumCaption.TextYAlignment = Enum.TextYAlignment.Bottom
+		podiumCaption.ZIndex = 70
+		podiumCaption.Visible = false
+		podiumCaption.Parent = machine
+	end
+	local lines = {}
+	for _, r in ipairs(p.rows or {}) do
+		local ord = K.PODIUM_ORDINAL[r.place] or (tostring(r.place) .. "TH")
+		lines[#lines + 1] = ("%s  %s"):format(ord, string.upper(tostring(r.displayName or "?")))
+	end
+	podiumCaption.Text = table.concat(lines, "\n")
+	podiumCaption.Visible = #lines > 0
+	local deadline = os.clock() + (tonumber(p.seconds) or 8) + 2
+	task.spawn(function()
+		while session == token and machineCamKind == "podium" and os.clock() < deadline do
+			task.wait(0.1)
+		end
+		podiumCaption.Visible = false
+		-- Out of the loop on a new Machine screen or on the deadline with the
+		-- camera still ours (the clear never came): release it here, or the
+		-- writer would hold the podium view under every screen that follows.
+		if machineCamKind == "podium" then setMachineCam("podium", {}) end
+	end)
+end
+
+-- GORE-FX: sehr aggressiver Kamera-Shake + Blutspritzer auf dem Schirm ------
+-- Trauma-Modell: Events laden auf, quadratische Staerke, schneller Abfall.
+-- Die Connection steht NACH den Kamera-Writern (Runner/Sniper/Spectate),
+-- damit der Shake auf deren CFrame draufmultipliziert wird.
+local trauma = 0
+local shakeSeed = math.random() * 100
+RunService.RenderStepped:Connect(function(dt)
+	if trauma <= 0 then return end
+	local S = Feel.Shake
+	trauma = math.max(0, trauma - dt * S.Decay) -- volle Ladung schuettelt ~3 Sekunden
+	-- P2.3: the SHAKE settings row scales the amplitude, never to zero.
+	local mag = trauma * trauma * (uiSettings.ReduceShake and S.ReduceFactor or 1)
+	local t = os.clock() * S.NoiseHz
+	local nx = math.noise(shakeSeed, t)
+	local ny = math.noise(shakeSeed + 17, t)
+	local nz = math.noise(shakeSeed + 43, t)
+	-- 26.08.2026 (user): DER ABWAERTS-SCHLAG, getrennt vom Rumpeln.
+	--
+	-- Das Rauschen oben ist symmetrisch und hat deshalb keine Richtung -- es
+	-- ruettelt, aber es schlaegt nicht. `kick` faellt steiler ab als `mag`
+	-- (trauma^3 gegen trauma^2), sitzt also im ersten Moment und ist wieder weg,
+	-- waehrend das Rumpeln noch ausklingt: ein Schlag, kein Dauerdruck.
+	--
+	-- Minus auf Y ist in Kamerakoordinaten nach unten. Das Nicken ebenfalls
+	-- negativ, damit der Blick MIT nach unten kippt statt gegenzuhalten.
+	local kick = trauma * trauma * trauma * (uiSettings.ReduceShake and S.ReduceFactor or 1)
+	camera.CFrame = camera.CFrame
+		* CFrame.new(nx * S.Translate * mag, ny * S.Translate * mag - S.Down * kick, 0)
+		* CFrame.Angles(nx * S.Tilt * mag - S.DownPitch * kick, ny * S.Tilt * mag, nz * S.Roll * mag)
+end)
+
+-- GORE-BUDGET (Schirm) -- 30.08.2026, user: "weniger Blut". Satellit des
+-- GORE-Blocks in StarterPlayerScripts.GoreClient; dieselbe E6-Entscheidung
+-- (mild, ~14+), KEINE Perf-Massnahme. Blut auf der LINSE ist der lauteste
+-- Gore-Reiz, den das Spiel hat -- es klebt im Bild statt in der Welt und
+-- fuellt auf dem Handy den halben Schirm. Deshalb faellt es hier am
+-- deutlichsten aus: weniger Tropfen, kleinere Tropfen, duennerer Schleier,
+-- kuerzere Standzeit, und ab rund 31.6 Studs gar keiner mehr (Gate; die
+-- Naehe-Kurve spannt 30 Studs, 0.28 entspricht damit 31.6 statt 34).
+--
+-- Der Block liegt in einem do-Ende: die Hauptkette dieses LocalScripts steht
+-- nahe an Luaus 200-Locals-Grenze. Ein do-Block gibt seine Register wieder
+-- frei, nach aussen geht nur der eine Name screenBlood -- genau wie vorher.
+--
+-- FadeScale statt eines neuen Feel-Werts: die Standzeit gehoerte eigentlich
+-- nach Feel.Fade.ScreenBlood, FeelConfig ist fuer diesen Durchgang gesperrt.
+local screenBlood
+do
+	local G = {
+		Veil      = 0.72,  -- war 0.62 -- Transparenz fern (hoeher = duenner)
+		VeilGain  = 0.26,  -- war 0.34 -- Zuschlag bei Naehe; nah 0.28 -> 0.46
+		FadeScale = 0.65,  -- war 1.0  -- x Feel.Fade.ScreenBlood: 0.55 -> 0.36 s
+		Blobs     = 3,     -- war 5
+		BlobsGain = 5,     -- war 9    -- 5-14 Tropfen -> 3-8
+		BlobSize  = 14,    -- war 18
+		BlobGrow  = 55,    -- war 90   -- groesster Tropfen 108 px -> 69 px
+		BlobLife  = 0.8,   -- war 1.1
+		BlobVar   = 1.0,   -- war 1.7  -- laengste Standzeit 2.8 s -> 1.8 s
+		Gate      = 0.28,  -- war 0.2 (stand unten in applyGoreFx)
+	}
+	function screenBlood(strength)
+		-- Die Naehe-Schwelle steht jetzt hier, nicht mehr am Aufrufer: eine
+		-- Explosion weiter als rund 31.6 Studs weg malt die Linse nicht mehr
+		-- an (near = clamp(1 - (dist - 10) / 30, 0, 1), 0.28 -> 31.6 Studs;
+		-- vorher 0.2 -> 34). Der Shake laeuft trotzdem -- trauma wird davor
+		-- gerechnet und haengt nicht an diesem Gate.
+		if (tonumber(strength) or 0) <= G.Gate then return end
+		local fade = Feel.Fade.ScreenBlood * G.FadeScale
+		local v = Instance.new("Frame")
+		-- 26.08.2026 (user): ROT. Der Schleier lag fest auf 0.55 -- ein Streifschuss
+		-- und eine Hinrichtung direkt vor der Nase faerbten den Schirm gleich blass.
+		-- Er haengt jetzt an der Naehe: weit weg bleibt es die alte Ahnung, ganz nah
+		-- schlaegt der Schirm richtig zu. Die Farbe zieht mit ins Sattere, sonst
+		-- wird aus mehr Deckkraft nur ein grauerer Schleier.
+		local k = math.clamp(tonumber(strength) or 0, 0, 1)
+		v.BackgroundColor3 = Color3.fromRGB(120 + math.floor(50 * k), 8, 6)
+		v.BackgroundTransparency = G.Veil - G.VeilGain * k
+		v.BorderSizePixel = 0
+		v.Size = UDim2.fromScale(1, 1)
+		v.ZIndex = 60
+		v.Parent = machine
+		TweenService:Create(v, TweenInfo.new(fade), { BackgroundTransparency = 1 }):Play()
+		task.delay(fade + 0.05, function() v:Destroy() end)
+		local n = math.floor(G.Blobs + strength * G.BlobsGain)
+		for _ = 1, n do
+			local b = Instance.new("Frame")
+			local s = G.BlobSize + math.random(0, G.BlobGrow) * strength
+			b.BackgroundColor3 = (math.random() < 0.5) and Color3.fromRGB(96, 8, 6) or Color3.fromRGB(140, 14, 10)
+			b.BorderSizePixel = 0
+			b.Size = UDim2.fromOffset(s, s)
+			b.Position = UDim2.new(math.random(), 0, math.random() * 0.9 - 0.05, 0)
+			b.BackgroundTransparency = 0.08
+			b.ZIndex = 61
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(1, 0)
+			corner.Parent = b
+			b.Parent = machine
+			local life = G.BlobLife + math.random() * G.BlobVar
+			TweenService:Create(b, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Position = b.Position + UDim2.fromScale(0, 0.25 + math.random() * 0.2),
+				BackgroundTransparency = 1,
+				Size = UDim2.fromOffset(math.floor(s * 0.7), math.floor(s * 1.6)),
+			}):Play()
+			task.delay(life + 0.1, function() b:Destroy() end)
+		end
+	end
+end
+
+local function applyGoreFx(pos, power, force)
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local ref = root and root.Position or (camera and camera.CFrame.Position)
+	if not ref then return end
+	local dist = (ref - pos).Magnitude
+	local near = math.clamp(1 - (dist - 10) / 30, 0, 1)
+	if force then near = math.max(near, 0.7) end
+	if near <= 0.05 then return end
+	trauma = math.min(1, trauma + (power or 1) * near)
+	-- Die Naehe-Schwelle steht jetzt im Schirm-Block oben (G.Gate = 0.28,
+	-- war 0.2 hier). trauma/Shake bleiben unberuehrt.
+	screenBlood(near)
+end
+
+-- MP-05 ROUTER BUILD. Every closure below exists by now (sfx, touchAllowed,
+-- applyMovement, restoreCamera, TrialInput, applyGoreFx, showAnnounce).
+if TrialClientKit then
+	trialRouter = TrialClientKit.newRouter({
+		player = player,
+		machine = machine,
+		camera = camera,
+		TrialInput = TrialInput,
+		trialClientsFolder = trialClientsFolder,
+		sfx = sfx,
+		touchAllowed = touchAllowed,
+		applyGoreFx = applyGoreFx,
+		showCard = function(text, style)
+			session += 1
+			showAnnounce({ text = text, style = style }, session)
+		end,
+		getToken = function() return trialRoundToken end,
+		setToken = function(tok) trialRoundToken = tok end,
+		setMove = function(state, speed)
+			moveState = state
+			trialWalkSpeed = speed or 0
+			applyMovement()
+		end,
+		setCam = function(tbl)
+			trialCam = tbl
+			smoothCamPos = nil
+		end,
+		clearSpectate = function()
+			spectateCF = nil
+			spectateWatch = nil
+			spectateEye = nil
+		end,
+		restoreCamera = restoreCamera,
+		hideCountText = function()
+			local c = machine:FindFirstChild("CountText")
+			if c then c.Visible = false end
+		end,
+	})
+	-- Abort backstop: MachineFlow clears KenopsiaActiveTrial on every exit
+	-- path, including the ones where the trial's own `end` packet never went
+	-- out. A module still active for a different id than the attribute is
+	-- ended here.
+	player:GetAttributeChangedSignal("KenopsiaActiveTrial"):Connect(function()
+		local id = player:GetAttribute("KenopsiaActiveTrial") or ""
+		if trialRouter and trialRouter.activeId and trialRouter.activeId ~= id then
+			trialRouter.endActive()
+		end
+	end)
+end
+
+-- DISPATCH ------------------------------------------------------------------
+
+MachineState.OnClientEvent:Connect(function(p)
+	if type(p) ~= "table" then return end
+	-- RunnerClient owns these receipts; they are feedback, never screen changes.
+	if p.kind == "fieldPush" then return end
+	-- MP-05: kind="trial" is consumed by the router; generic kinds are observed
+	-- and fall through to the legacy handlers below.
+	if trialRouter and trialRouter.handle(p) then return end
+	if p.kind == "huntersetup" then
+		setHunterSetup(sniperActive)
+		return
+	end
+	if p.kind == "mines" then
+		showMines(p.list or {})
+		return
+	end
+	-- MP-08 S3: caught HERE, before the screen funnel below. A feed line is an
+	-- overlay, not a screen: it must not bump `session` (that would cancel a
+	-- typewriter still running under it) and it must not call hideAll().
+	if p.kind == "feed" then
+		pushFeed(p.text, p.style)
+		return
+	end
+	if p.kind == "role" then
+		-- F-1 (MP-05 D14): Canteen delivers the round token INSIDE its spectate
+		-- role packet, and this handler used to return before adopting it, so
+		-- every plate/mouth was sent with a nil token and dropped. Adopt a
+		-- token whenever one is present, before the spectate early-return.
+		if p.roundToken ~= nil then trialRoundToken = p.roundToken end
+		if p.role == "spectate" then
+			-- 26.08.2026 (user, MP-08 B-01): DIE SCHEIBE ZUERST FREIRAEUMEN. Dieser
+			-- Zweig kehrt vor der Screen-Weiche am Ende des Dispatch zurueck, also
+			-- ruft fuer ihn nie jemand hideAll() -- und die Karte, die den Tod
+			-- angekuendigt hat, steht noch. showAnnounce("death") zieht bei
+			-- Feel.Death.Hold (2.5 s) auf BackgroundTransparency 0, das
+			-- spectate-Paket kommt bei 3.2 s: der Zuschauermodus lief die ganze
+			-- Zeit hinter schwarzem Glas. Gilt genauso fuer die
+			-- "SECTOR CLEARED."-Karte (B-07) und den Krabbel-Hinweis, der
+			-- ueberhaupt keinen Timer hatte.
+			hideAll()
+			-- 24.08.2026 (user): death -> a black beat -> VIEWER MODE. The
+			-- camera switches while the screen is dark, so the cut is clean.
+			-- This beat owns the fader outright, so a round-end blackout that
+			-- is somehow still latched hands it over here rather than having
+			-- its backstop pull the frame out from under the cut.
+			Overlay.black()
+			Overlay.liftAfter(0.6)
+			local pos = Vector3.new(p.pos[1], p.pos[2], p.pos[3])
+			local look = Vector3.new(p.look[1], p.look[2], p.look[3])
+			spectateCF = CFrame.lookAt(pos, look)
+			spectateWatch = p.watch
+			spectateIndex = 1
+			spectateEye = nil
+			runnerCam = false
+			-- MP-08 S7 companion: a spectator is not a runner. This branch used
+			-- to return before the moveState line further down, so moveState
+			-- stayed "runner" -- harmless only because role="none" arrived a few
+			-- seconds later and froze them. Now that the mode lasts until the
+			-- next round (B-03), the respawned body would otherwise be walking
+			-- around at full speed under a camera pointed somewhere else.
+			moveState = "frozen"
+			applyMovement()
+			return
+		end
+		spectateCF = nil
+		spectateWatch = nil
+		spectateEye = nil
+		-- C1.a: adopt this round's token, or drop it when the round ends.
+		trialRoundToken = p.roundToken
+		if p.role == "none" then
+			-- C5 companion: CountText is written by the "count" handler and
+			-- hidden ONLY by the "go" handler. An aborted leg now returns
+			-- before GO, so without this the frozen "3"/"2"/"1" stays on screen
+			-- indefinitely. hideAll() does not touch CountText - it is a
+			-- sibling under `machine`, not under the screens hideAll clears -
+			-- so MachineFlow's {kind="hide"} does not clear it either. Both
+			-- Bird's C5 bails and Dead Zone's C1 bails end with role="none".
+			local c = machine:FindFirstChild("CountText")
+			if c then c.Visible = false end
+		end
+		sniperActive = p.role == "sniper"
+		if not sniperActive then setHunterSetup(false) end
+		setSniperRig(sniperActive)
+		setSniperLight(sniperActive)
+		setRunnerTouch(p.role == "runner")
+		if p.role ~= "runner" then
+			youLabel.Visible = false
+			local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+			if h then h.AutoRotate = true end
+		end
+		runnerCam = p.role == "runner"
+		runnerCamDir = p.camDir or 1
+		runnerCamStyle = p.camStyle or "chase"
+		smoothCamPos = nil
+		pendingRunner = p.role == "runner"
+		moveState = (p.role == "runner" and not p.frozen) and "runner" or "frozen"
+		applyMovement()
+		pcall(function()
+			UserInputService.MouseIconEnabled = p.role ~= "runner"
+		end)
+		if p.role == "runner" then
+			bindForwardOnly()
+		else
+			unbindForwardOnly()
+		end
+		if not runnerCam and not sniperActive then
+			restoreCamera()
+		end
+		return
+	end
+	if p.kind == "gorefx" then
+		if p.pos then
+			applyGoreFx(Vector3.new(p.pos[1], p.pos[2], p.pos[3]), p.power, p.force)
+		end
+		return
+	end
+	-- CANTEEN PROTOCOL. Every one of these is a pure readout: the server has
+	-- already decided by the time the packet arrives.
+	if p.kind == "cpstate" then
+		cpShowHud()
+		cpSetState(p.peas or 0, p.fork or 0, p.eaten or 0, p.total or 20)
+		return
+	end
+	if p.kind == "cpobs" then
+		cpSetPhase(p.phase)
+		return
+	end
+	if p.kind == "cpmiss" then
+		-- Empty fork to the mouth. Harmless by design, so this is a nudge and
+		-- not a punishment: it says "nothing on the fork", not "you failed".
+		local hud = buildCanteenHud()
+		hud.Panel.Ration.TextColor3 = K.CP_WARN
+		TweenService:Create(hud.Panel.Ration, TweenInfo.new(Feel.Fade.Ration), { TextColor3 = K.CP_IDLE }):Play()
+		return
+	end
+	if p.kind == "cpdone" then
+		local hud = buildCanteenHud()
+		hud.Phase.Text = "RATION COMPLETE - YOU ARE SAFE"
+		hud.Phase.TextColor3 = K.CP_SAFE
+		-- Finished players cannot be caught and cannot act. Dropping
+		-- canteenActive here stops the client sending input the server would
+		-- only throw away.
+		canteenActive = false
+		local pad = machine:FindFirstChild("CanteenTouch")
+		if pad then pad.Visible = false end
+		return
+	end
+	if p.kind == "cpout" then
+		local hud = buildCanteenHud()
+		hud.Phase.Text = "PROTOCOL VIOLATION"
+		hud.Phase.TextColor3 = K.CP_DANGER
+		hud.Edge.Glow.Color = K.CP_DANGER
+		hud.Edge.Glow.Transparency = 0
+		canteenActive = false
+		local pad = machine:FindFirstChild("CanteenTouch")
+		if pad then pad.Visible = false end
+		return
+	end
+	if p.kind == "cpend" then
+		cpHideHud()
+		return
+	end
+	if p.kind == "count" then
+		sniperCanAim = sniperActive
+		sniperCanFire = false
+		setHunterSetup(false)
+		sfx("Count" .. tostring(p.n))
+		if p.n == 3 then
+			-- black card cuts away; the arena fades in under the count
+			hideAll()
+			-- The fade OWNS the frame from here. Overlay.black() releases the
+			-- round-end latch instead of clearing it: clearing would blink the
+			-- arena in for a frame before the tween puts it back to black.
+			Overlay.black()
+			TweenService:Create(faderFrame, TweenInfo.new(Feel.Fade.ArenaIn, Feel.easing(Feel.Easing.Fade, Feel.Easing.FadeInDir)), { BackgroundTransparency = 1 }):Play()
+			Overlay.liftAfter(Feel.Fade.ArenaIn + 0.05)
+		end
+		local c = machine:FindFirstChild("CountText")
+		if c then
+			c.Text = tostring(p.n)
+			c.Visible = true
+			-- P1.5: ONE 3-2-1. TrialKit Round:countdown and the three legacy
+			-- services all send {kind="count"}; the punch numbers live in Feel.
+			c.TextSize = Feel.Countdown.PunchFrom
+			TweenService:Create(c, TweenInfo.new(Feel.Countdown.PunchSeconds, Feel.easing(Feel.Easing.Snap, Feel.Easing.SnapDir)), { TextSize = Feel.Countdown.PunchTo }):Play()
+		end
+		return
+	end
+	if p.kind == "hitmark" then
+		local hm = machine:FindFirstChild("HitMark")
+		if hm then
+			-- REQ-IP-01. The previous headshot string was a borrowed catchphrase
+			-- and sat oddly against the clinical register the rest of the game
+			-- speaks in -- ACCESS DENIED, STAND CLEAR, VIABLE, REJECTED. It is
+			-- deliberately not quoted here: removing a phrase from the UI and
+			-- then writing it into a comment leaves it in the shipped source.
+			--
+			-- NOTE: nothing sends kind = "hitmark" today, so this handler never
+			-- runs. Wiring the sniper's hit feedback is its own Gate 3 step; the
+			-- string is corrected here so the phrase is not sitting in shipped
+			-- source while that waits.
+			hm.Text = p.head and "TERMINATED" or "IMPACT"
+			hm.TextColor3 = p.head and Color3.fromRGB(255, 48, 32) or PHOSPHOR
+			hm.TextSize = p.head and 46 or 30
+			hm.TextTransparency = 0
+			hm.Visible = true
+			TweenService:Create(hm, TweenInfo.new(Feel.Fade.HitMark, Feel.easing(Feel.Easing.Fade, Feel.Easing.FadeInDir)), { TextTransparency = 1 }):Play()
+			task.delay(Feel.Fade.HitMark + 0.05, function() hm.Visible = false end)
+		end
+		sfx(p.head and "AccessGranted" or "Confirm")
+		return
+	end
+	if p.kind == "go" then
+		if sniperActive then
+			sniperCanAim = true
+			sniperCanFire = true
+		end
+		setHunterSetup(false)
+		sfx("AccessGranted")
+		local c = machine:FindFirstChild("CountText")
+		if c then
+			c.Text = "GO!"
+			c.TextSize = Feel.Countdown.GoFrom
+			c.TextTransparency = 0
+			c.Visible = true
+			TweenService:Create(c, TweenInfo.new(Feel.Countdown.GoSeconds, Feel.easing(Feel.Easing.Snap, Feel.Easing.SnapDir)), {
+				TextSize = Feel.Countdown.GoTo,
+				TextTransparency = Feel.Countdown.GoTransparency,
+			}):Play()
+			task.delay(Feel.Countdown.GoHold, function()
+				if c.Text == "GO!" then c.Visible = false end
+			end)
+		end
+		-- GO is the last word on the fader: whatever was covering the screen,
+		-- the round has started and the player has to see it.
+		Overlay.release()
+		faderFrame.Visible = false
+		faderFrame.BackgroundTransparency = 0
+		if pendingRunner then
+			moveState = "runner"
+			applyMovement()
+			youLabel.TextTransparency = 0
+			youLabel.Visible = true
+			task.delay(0.85, function()
+				if not pendingRunner then return end
+				TweenService:Create(youLabel, TweenInfo.new(Feel.Fade.YouLabel), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+				task.delay(Feel.Fade.YouLabel + 0.03, function()
+					youLabel.Visible = false
+					youLabel.TextStrokeTransparency = 0.25
+				end)
+			end)
+		end
+		return
+	end
+	-- P1.3 / P1.7: the Machine's fixed cameras. A packet with its camera field
+	-- sets it, one without is the clear (Shared/Rules/MachineCam). Neither
+	-- reaches the screen funnel below: the audience view must NOT cancel the
+	-- bench card it is shown under, and the podium bumps `session` itself.
+	-- 24.08.2026 (user): the round-end blackout, before the standings card.
+	-- No session bump, no hideAll: the world simply goes dark for a beat.
+	-- 27.08.2026 (user): with `hold`, the blackout is LONG and open-ended -- it
+	-- lasts until the round system fires the next card, however long that takes,
+	-- rather than for a number of seconds picked in advance. `seconds` still
+	-- works for a fixed beat, so an old sender is unaffected.
+	if p.kind == "cover" then
+		Overlay.show(p.hold == true, tonumber(p.seconds), tonumber(p.maxSeconds))
+		return
+	end
+	-- Returns before the screen funnel: the HUD is not a screen, it does not bump
+	-- `session`, and it must not cancel whatever card is on the glass.
+	if p.kind == "hud" then
+		Overlay.showHud(p)
+		return
+	end
+	if p.kind == "podium" then
+		if setMachineCam("podium", p) then
+			session += 1
+			showPodium(p, session)
+		end
+		return
+	end
+	if p.kind == "audiencecam" then
+		setMachineCam("audiencecam", p)
+		return
+	end
+	if not K.KNOWN_KINDS[p.kind] then
+		if not unknownKinds[p.kind] then
+			unknownKinds[p.kind] = true
+			warn("[Kenopsia] unhandled MachineState kind: " .. tostring(p.kind))
+		end
+		return
+	end
+	session += 1
+	local token = session
+	-- THE ROUND SYSTEM FIRING. Every kind that reaches this point is a Machine
+	-- card, which is exactly the event the held round-end blackout waits for --
+	-- so lifting it here covers standings, score, the next round card, the info
+	-- and selection of the next trial, and the hide of a cancelled session, with
+	-- no per-kind list to keep in step with MachineFlow. Before the screens draw,
+	-- so the card is never revealed from behind a black frame.
+	Overlay.clear()
+	local cover = machine:FindFirstChild("JoinCover")
+	if cover and cover.Visible and p.kind ~= "hide" then
+		cover.Visible = false
+	end
+	local lobbyKinds = { selection = true, info = true, score = true }
+	setLobbyMusic(lobbyKinds[p.kind] == true)
+	-- MP-05 belt: a lobby screen means no trial is running.
+	if trialRouter and lobbyKinds[p.kind] then trialRouter.endActive() end
+	if p.kind == "selection" then
+		showSelection(p, token)
+	elseif p.kind == "info" then
+		if p.id then machine:SetAttribute("TrialId", p.id) end
+		showInfo(p, token)
+	elseif p.kind == "status" then
+		showStatus(p, token)
+		showStatusLine(p)
+	elseif p.kind == "round" then
+		showRound(p, token)
+	elseif p.kind == "rolecard" then
+		showRoleCard(p, token)
+	elseif p.kind == "score" then
+		showScore(p, token)
+		showScoreLine(p, token)
+	elseif p.kind == "announce" then
+		showAnnounce(p, token)
+	elseif p.kind == "hide" then
+		hideAll()
+	end
+end)
+
+-- CONTENT WARNING + SETTINGS ------------------------------------------------
+
+local warningFrame = machine:WaitForChild("Warning", 10)
+local settingsPanel = machine:WaitForChild("SettingsPanel", 10)
+
+if warningFrame then
+	local dismissed = false
+	local function dismiss()
+		if dismissed then return end
+		dismissed = true
+		warningFrame.Visible = false
+	end
