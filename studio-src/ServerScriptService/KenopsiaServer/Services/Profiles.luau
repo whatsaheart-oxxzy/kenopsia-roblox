@@ -174,6 +174,7 @@ local function sendState(plr, entry)
 	local remote = getRemote()
 	if not remote or plr.Parent ~= Players then return end
 	local data = entry.data
+	local crates = type(data.crates) == "table" and data.crates or nil
 	pcall(remote.FireClient, remote, plr, {
 		kind = "profilestate",
 		xp = data.xp,
@@ -182,6 +183,10 @@ local function sendState(plr, entry)
 		sessions = data.sessions,
 		viable = data.viableCount,
 		volatile = entry.volatile,
+		-- Supply screens (01.09.2026): the crate wallet rides the same packet.
+		-- Additive fields only -- a client from before them ignores unknown keys.
+		keys = crates and tonumber(crates.keys) or 0,
+		fragments = crates and tonumber(crates.fragments) or 0,
 	})
 end
 
@@ -611,6 +616,59 @@ function Profiles.setWheel(userId, list)
 	emotes.wheel = wheel
 	entry.dirty = true
 	return true
+end
+
+-- CRATES (supply screens, 01.09.2026) ------------------------------------------
+-- The wallet's ONLY spender. Earning stays where it always was (recordSession's
+-- fragment roll-up); this section adds the read and the decrement the crate
+-- ceremony needs, with the same normalise-once discipline as emoteState above --
+-- an externally corrupted crates table repairs itself on first touch instead of
+-- throwing inside a remote handler.
+local function crateWallet(entry)
+	local data = entry.data
+	if type(data.crates) ~= "table" then
+		data.crates = { keys = 0, fragments = 0 }
+	end
+	local crates = data.crates
+	local keys = tonumber(crates.keys) or 0
+	if not (keys >= 0 and keys < math.huge) then keys = 0 end
+	local fragments = tonumber(crates.fragments) or 0
+	if not (fragments >= 0 and fragments < math.huge) then fragments = 0 end
+	crates.keys = keys
+	crates.fragments = fragments
+	return crates
+end
+
+-- Plain numbers by value, or nil for a player this server has not seen -- the
+-- caller renders these, it never writes them back.
+function Profiles.wallet(userId)
+	local entry = live[userId]
+	if not entry then return nil end
+	local crates = crateWallet(entry)
+	return { keys = crates.keys, fragments = crates.fragments }
+end
+
+-- One key, or a clean false. Synchronous and yield-free by construction, so a
+-- caller can check-then-spend in one event handler with no interleaving window.
+-- The flush is the CALLER's job (CrateService pairs it with the grant so both
+-- land in one UpdateAsync), the dirty mark is not.
+function Profiles.spendCrateKey(userId)
+	local entry = live[userId]
+	if not entry then return false end
+	local crates = crateWallet(entry)
+	if crates.keys < 1 then return false end
+	crates.keys = crates.keys - 1
+	entry.dirty = true
+	return true
+end
+
+-- Public re-send of profilestate, for a service that just changed what the
+-- packet carries (a spent key, a fresh grant). No-op for a player who left.
+function Profiles.pushState(userId)
+	local entry = live[userId]
+	if not entry then return end
+	local plr = Players:GetPlayerByUserId(userId)
+	if plr then sendState(plr, entry) end
 end
 
 -- BOOT ------------------------------------------------------------------------
