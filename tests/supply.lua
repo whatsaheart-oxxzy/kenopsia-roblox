@@ -36,6 +36,7 @@ end
 
 local Supply = loadPure(CONFIG .. "SupplyConfig.luau")
 local Crate = loadPure(RULES .. "CrateRules.luau")
+local Promo = loadPure(RULES .. "PromoRules.luau")
 local Registry = loadPure(CONFIG .. "EmoteRegistry.luau")
 local Progression = loadPure(RULES .. "ProgressionRules.luau")
 
@@ -75,10 +76,12 @@ for _, file in ipairs({ CONFIG .. "SupplyConfig.luau", RULES .. "CrateRules.luau
 	check(text:find("EBF5EE", 1, true) == nil, file .. " never uses the reserved crosshair bone")
 end
 
--- RARITY LADDER -- covers every tier the catalog uses --------------------------
-print("\nSUPPLY CONFIG -- rarity frame ladder")
+-- RARITY LADDER -- the user's D-B decision, pinned ----------------------------
+-- COMMON grey / RARE blue / VEX yellow (01.09.2026). The registry keys stay
+-- diegetic; this asserts the decided mapping so a drive-by "improvement" of a
+-- hue or label fails the build instead of shipping.
+print("\nSUPPLY CONFIG -- rarity ladder is the decided COMMON/RARE/VEX set")
 
-local greens = { ["2E6B4A"] = true, ["8CE8AE"] = true, ["78FFAA"] = true }
 local rarityInUse = {}
 for _, id in ipairs(Registry.list()) do
 	local row = Registry.get(id)
@@ -90,11 +93,28 @@ for rarity in pairs(rarityInUse) do
 	local ladder = Supply.Rarity[rarity]
 	check(type(ladder) == "table", "Rarity ladder covers " .. rarity)
 	if type(ladder) == "table" then
-		check(greens[ladder.stroke] == true, rarity .. " stroke is an existing phosphor", tostring(ladder.stroke))
+		check(
+			type(ladder.stroke) == "string"
+				and ladder.stroke:match("^[0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]$") ~= nil,
+			rarity .. " stroke is 6-digit uppercase hex",
+			tostring(ladder.stroke)
+		)
+		check(
+			type(ladder.label) == "string" and #ladder.label > 0 and ladder.label == string.upper(ladder.label),
+			rarity .. " label is SHOUTED",
+			tostring(ladder.label)
+		)
 		check(type(ladder.pulse) == "boolean", rarity .. " pulse is boolean")
 		check(type(ladder.double) == "boolean", rarity .. " double is boolean")
 	end
 end
+check(Supply.Rarity.standard.label == "COMMON", "standard reads COMMON", Supply.Rarity.standard.label)
+check(Supply.Rarity.issue.label == "RARE", "issue reads RARE", Supply.Rarity.issue.label)
+check(Supply.Rarity.clearance.label == "VEX", "clearance reads VEX", Supply.Rarity.clearance.label)
+check(Supply.Rarity.overseer.label == "VEX", "overseer reads VEX (same top band)", Supply.Rarity.overseer.label)
+check(Supply.Rarity.issue.stroke == "4A90E2", "RARE is the decided blue", Supply.Rarity.issue.stroke)
+check(Supply.Rarity.clearance.stroke == "FFD700", "VEX is the decided yellow", Supply.Rarity.clearance.stroke)
+check(Supply.Rarity.overseer.stroke == "FFD700", "both VEX doors share the yellow", Supply.Rarity.overseer.stroke)
 
 -- CRATE ECONOMY ---------------------------------------------------------------
 print("\nSUPPLY CONFIG -- crate economy constants")
@@ -166,11 +186,40 @@ for key, value in pairs(Supply.Strings) do
 end
 check(stringCount >= 10, "the string table is real, not a stub", stringCount)
 
--- LAYOUT ----------------------------------------------------------------------
+-- LAYOUT / MOTION ---------------------------------------------------------------
 print("\nSUPPLY CONFIG -- layout numbers")
 for key, value in pairs(Supply.Layout) do
 	check(type(value) == "number" and value > 0, "Layout." .. tostring(key) .. " is positive", tostring(value))
 end
+check(
+	type(Supply.Motion.SLIDE) == "number" and Supply.Motion.SLIDE > 0 and Supply.Motion.SLIDE < 1,
+	"Motion.SLIDE is a real slide, under a second",
+	tostring(Supply.Motion.SLIDE)
+)
+
+-- PROMO RULES -- format and status, pure ----------------------------------------
+print("\nPROMO RULES -- normalize")
+
+check(Promo.normalize("kenopsia-2026") == "KENOPSIA2026", "dashes strip, case shouts")
+check(Promo.normalize("  ab c_d  ") == "ABCD", "spaces and underscores strip")
+check(Promo.normalize("ab") == nil, "too short is nil")
+check(Promo.normalize(string.rep("A", 25)) == nil, "too long is nil")
+check(Promo.normalize("h!x$") == nil, "non-alphanumerics are nil, not stripped")
+check(Promo.normalize(123) == nil, "a non-string is nil")
+check(Promo.normalize(string.rep("Z", 24)) == string.rep("Z", 24), "max length passes exactly")
+
+print("\nPROMO RULES -- status")
+
+local rows = {
+	GOOD1 = { reward = { keys = 1 } },
+	OLD99 = { reward = { keys = 1 }, expires = 1000 },
+}
+check(Promo.status(rows, {}, "NOPE1", 500) == "INVALID", "unknown code is INVALID")
+check(Promo.status(rows, { GOOD1 = true }, "GOOD1", 500) == "USED", "redeemed code is USED")
+check(Promo.status(rows, {}, "OLD99", 2000) == "EXPIRED", "past expiry is EXPIRED")
+check(Promo.status(rows, {}, "OLD99", 500) == "OK", "before expiry is OK")
+check(Promo.status(rows, {}, "GOOD1", 2000) == "OK", "no expiry never expires")
+check(Promo.status(nil, {}, "GOOD1", 500) == "INVALID", "no rows table fails closed")
 
 -- CRATE RULES -- pool ---------------------------------------------------------
 print("\nCRATE RULES -- pool")

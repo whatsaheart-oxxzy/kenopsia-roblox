@@ -156,9 +156,14 @@ crates and any credits purchase path (decisions #1/#2 pending).
   header; `MenuConfig.Palette` IS the spec's cold cyan, verbatim). The supply
   screens are in-facility and were built on the machine green set; a DEV-place
   mount of the same kit takes the cyan palette through its host.
-- **D-B Rarity colors**: color per diegetic tier; whether a holo "UNIQUE"-like
-  top tier should exist at all (nothing in the catalog is above `overseer`).
-- **D-C Promo codes**: ship at all? If yes, reward table.
+- **D-B Rarity colors — DECIDED by the user (01.09. evening)**: COMMON grey /
+  RARE blue `4A90E2` / VEX yellow `FFD700` (VEX is the legendary band; both
+  `clearance` and `overseer` map onto it). Pinned in `SupplyConfig.Rarity` and
+  asserted by tests/supply.lua. No holo tier.
+- **D-C Promo codes — DECIDED by the user (01.09. evening)**: yes, surface
+  now, rows later. Built as `Services/PromoService` (server-only empty CODES
+  table + atomic redeem mark in `KenopsiaPromo_v1`) + the ACCESS CODES panel;
+  adding a live code is one row in PromoService.
 - **D-D Odds visibility — TAKEN (01.09.)**: the MANIFEST modal ships for the
   earned crate, computed from the live pool via `CrateRules.odds` (it cannot
   drift from the server, which rolls with the same module).

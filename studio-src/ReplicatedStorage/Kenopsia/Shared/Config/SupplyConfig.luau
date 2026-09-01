@@ -2,10 +2,11 @@
 -- SUPPLY CONFIG (01.09.2026) -- what the supply terminal says, costs and shows.
 --
 -- The wardrobe + requisition screens (docs/MENU-SHOP-UIUX-SPEC.md, reworked by
--- docs/MENU-SHOP-UIUX-INTEGRATION.md) are IN-FACILITY surfaces, so every
--- colour is the MACHINE set from docs/place/04-GUI.md verbatim -- the cold
--- cyan of MenuConfig belongs to the front door outside, and a third palette
--- does not exist. WHITE is reserved for the tab-selection streak alone, the
+-- docs/MENU-SHOP-UIUX-INTEGRATION.md) are IN-FACILITY surfaces, so the CHROME
+-- is the MACHINE set from docs/place/04-GUI.md verbatim -- the cold cyan of
+-- MenuConfig belongs to the front door outside. The one sanctioned exception
+-- is the RARITY accent set below (user decision D-B): those hues appear on
+-- rarity strokes and tier tags and nowhere else. WHITE is reserved for the tab-selection streak alone, the
 -- same way MenuConfig reserves it; the FIRE red and the crosshair bone never
 -- appear here (Btn_FIRE/Btn_PUNCH and the hip crosshair own those two hexes,
 -- and tests/supply.lua greps this file to keep it that way).
@@ -31,16 +32,19 @@ Supply.Palette = {
 }
 
 -- RARITY FRAME LADDER ---------------------------------------------------------
--- The spec's escalation idea (stroke -> glow -> double frame) mapped onto the
--- DIEGETIC tiers the registry already uses -- standard/issue/clearance/
--- overseer, never RARE/EPIC/LEGENDARY. Colour per tier is intensity within
--- the existing phosphors; assigning real hues per tier is decision D-B and
--- stays a one-table edit here when it lands.
+-- Decision D-B, taken by the user 01.09.2026: the game's rarity language is
+-- COMMON (grey) / RARE (blue) / VEX (yellow, the legendary band). The registry
+-- keeps its diegetic keys (standard/issue/clearance/overseer -- renaming them
+-- would touch saved profiles), and this table maps each key onto the decided
+-- tier: `label` is what the player reads, `stroke` is the ONE place a
+-- non-machine hue may appear (rarity strokes and tier tags only -- panel
+-- chrome stays phosphor). Both clearance and overseer read VEX: they are the
+-- top band's two doors (rank vs pass), not two tiers.
 Supply.Rarity = {
-	standard = { stroke = "2E6B4A", pulse = false, double = false },
-	issue = { stroke = "8CE8AE", pulse = false, double = false },
-	clearance = { stroke = "78FFAA", pulse = true, double = false },
-	overseer = { stroke = "78FFAA", pulse = true, double = true },
+	standard = { label = "COMMON", stroke = "A8B2AD", pulse = false, double = false },
+	issue = { label = "RARE", stroke = "4A90E2", pulse = false, double = false },
+	clearance = { label = "VEX", stroke = "FFD700", pulse = true, double = false },
+	overseer = { label = "VEX", stroke = "FFD700", pulse = true, double = true },
 }
 
 -- CRATE ECONOMY ---------------------------------------------------------------
@@ -112,18 +116,42 @@ Supply.Strings = {
 	PRIVATE = "PRIVATE CYCLE",
 	DECRYPTING = "DECRYPTING...",
 	CLOSE = "CLOSE",
+	-- Access codes (decision D-C: build the surface now, rows later).
+	TAB_CODES = "ACCESS CODES",
+	CODE_PLACEHOLDER = "ENTER ACCESS CODE",
+	REDEEM = "REDEEM",
+	VERIFYING = "VERIFYING...",
+	CODE_OK = "CODE ACCEPTED",
+	CODE_INVALID = "SIGNAL CORRUPTED - INVALID CODE",
+	CODE_USED = "CODE ALREADY PROCESSED",
+	CODE_EXPIRED = "SIGNAL EXPIRED",
+	CODE_HINT = "CODES ARE ISSUED ON OFFICIAL CHANNELS",
 }
 
 -- LAYOUT ----------------------------------------------------------------------
 -- Authored against the same ~710 px reference height as every machine screen,
 -- so the existing UIScale story carries these numbers untouched.
+--
+-- v2 (01.09. evening, user): NOT a fullscreen surface. A slim sidebar rail
+-- slides in from the left edge; pressing an entry opens a MINIMAL panel
+-- anchored beside it. Fullscreen is reserved for the party/lobby wall of the
+-- menu-place redesign, which is not this file's job.
 Supply.Layout = {
-	PanelW = 920,
+	RailW = 176, -- the slide-in sidebar
+	RailTabW = 34, -- the collapsed toggle tab on the screen edge
+	RailTabH = 96,
+	PanelWardrobeW = 648,
+	PanelWardrobeH = 452,
+	PanelSupplyW = 484,
+	PanelSupplyH = 440,
+	PanelCodesW = 364,
+	PanelCodesH = 236,
+	PanelGap = 10, -- rail -> panel spacing
+	PanelW = 920, -- legacy reference width (kept for scale clamping)
 	PanelH = 560,
-	RailW = 168,
 	RailRowH = 44,
 	RailPad = 10,
-	HeaderH = 56,
+	HeaderH = 44,
 	PillH = 30,
 	PillGap = 8,
 	WheelSlot = 52,
@@ -138,6 +166,13 @@ Supply.Layout = {
 	TouchRowH = 48, -- >= 44 pt floor on phone/tablet
 	ButtonW = 132,
 	ButtonH = 40,
+}
+
+-- MOTION ----------------------------------------------------------------------
+-- The sidebar's whole feel is one number: the slide. Kept out of Layout so a
+-- feel pass can move it without touching geometry.
+Supply.Motion = {
+	SLIDE = 0.22, -- seconds, rail + panel slide/fade
 }
 
 return Supply

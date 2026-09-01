@@ -1,5 +1,34 @@
 # QA — Supply screens (wardrobe + requisition) + crate ceremony
 
+> **v2 addendum (same evening, after the user's ruling):** the centered
+> surface was replaced by a **slide-in sidebar + minimal anchored panels**
+> ("nicht in Vollbildschirm sondern minimal"): a slim `S/U/P/P/L/Y` edge tab
+> wakes a floating rail (one `Supply.Motion.SLIDE` tween); each entry opens a
+> compact panel beside it — wardrobe 648×452, requisition 484×440, access
+> codes 364×236 — and the DECRYPT reveal now covers only the requisition
+> panel. Fullscreen is explicitly reserved for the future lobby/party wall of
+> the menu-place redesign; nothing here ever takes the screen. Reference
+> language per the user's pointer (gameuidatabase id=439 = Cyberpunk 2077):
+> compact anchored panels, thin header rule, per-card colour notch, corner
+> tick chrome, eyebrow/value hierarchy. The reference VIDEO (youtu.be/
+> eh0oUHFiBHw, "Sidebar Menu Toggle" free model) could NOT be downloaded —
+> YouTube now requires PO tokens and the Chrome extension was offline — the
+> behaviour was implemented from its title/description + the user's text.
+>
+> Also in v2, two decisions landed: **D-B** — rarity is COMMON grey `A8B2AD`
+> / RARE blue `4A90E2` / VEX yellow `FFD700` (registry keys stay diegetic;
+> `SupplyConfig.Rarity` maps standard→COMMON, issue→RARE, clearance+overseer→
+> VEX; tests pin the hexes) — and **D-C** — access codes: `PromoService`
+> (NEW) ships with an EMPTY server-side `CODES` table (codes never replicate;
+> the client pre-checks only FORMAT via the pure shared `PromoRules`), one
+> atomic UpdateAsync check-and-mark per redeem on `KenopsiaPromo_v1`, rewards
+> through `Profiles.grantCrate` (NEW additive writer) + `EmoteService.grant`,
+> widget states idle/verifying/accepted/invalid/used/expired with a glitch
+> shake (never red). The radial lobby wheel stays **deliberately unbuilt**
+> (my call, as delegated): zero input binds until the one-dispatcher question
+> is settled in Play; the wardrobe panel already plays and edits all 8 slots.
+> Offline: `tests/supply.lua` now **155 checks**, full 15-suite battery green.
+
 Branch `docs/menu-shop-uiux`, commits `f5e5c1a` → `0c083f8`. Repo-only: **nothing
 was pushed to Studio or any live place from this session**, and `studio-src/`
 remains exactly as reconcilable against live as before plus these additive

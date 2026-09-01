@@ -1,20 +1,21 @@
 --!nonstrict
--- SUPPLY CLIENT (01.09.2026) -- the thin host under SupplyKit.
+-- SUPPLY CLIENT (01.09.2026, v2) -- the thin host under SupplyKit.
 --
--- Owns everything the kit deliberately does not: the ScreenGui with the
--- lobby button, the remotes, the MachineState subscription, the platform /
--- sound / motion answers, and the ONE stepped loop (Feel.Step.Fps, the
--- MainMenu rule -- no RenderStepped anywhere in this file or the kit).
+-- Owns everything the kit deliberately does not: the remotes, the
+-- MachineState subscription, the platform / sound / motion answers, and the
+-- ONE stepped loop (Feel.Step.Fps, the MainMenu rule -- no RenderStepped
+-- anywhere in this file or the kit). v2: the kit brings its own edge tab +
+-- sliding rail, so this host no longer builds a button -- it only decides
+-- WHEN the whole surface exists on screen.
 --
--- Visibility contract: the SUPPLY button lives in the lobby only. It hides
--- and the panel closes the moment the player's KenopsiaTrialId attribute is
--- set (MachineFlow stamps it per trial), and it stays out of the way while
--- the title terminal (KenopsiaMenu) is open. The gap between two trials can
--- show the button for a beat -- accepted; the SERVER is the gate that
--- matters and it denies every action for a session participant.
+-- Visibility contract: lobby only. The surface hides and every panel closes
+-- the moment the player's KenopsiaTrialId attribute is set (MachineFlow
+-- stamps it per trial), and it stays hidden while the title terminal
+-- (KenopsiaMenu) is open. The gap between two trials can flash the tab for a
+-- beat -- accepted; the SERVER gates every action for a session participant.
 --
 -- Zero KenopsiaClient edits, zero input binds: the standalone-LocalScript
--- pattern of SocialClient / GradeDirector, applied to the supply screens.
+-- pattern of SocialClient / GradeDirector, applied to the supply surface.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
@@ -31,15 +32,17 @@ local EmoteRegistry = require(Config:WaitForChild("EmoteRegistry"))
 local MonetizationConfig = require(Config:WaitForChild("MonetizationConfig"))
 local Feel = require(Config:WaitForChild("FeelConfig"))
 local CrateRules = require(Rules:WaitForChild("CrateRules"))
+local PromoRules = require(Rules:WaitForChild("PromoRules"))
 local ProgressionRules = require(Rules:WaitForChild("ProgressionRules"))
 local SupplyKit = require(script.Parent:WaitForChild("SupplyKit"))
 
 local STEP = Feel.stepSeconds()
 
 -- REMOTES ----------------------------------------------------------------------
--- MachineState exists from MachineFlow.start; CrateOpen/SupplySync are created
--- by CrateService.start. All waited with a timeout so a place that boots
--- without the service leaves a quiet, dead button instead of a hang.
+-- MachineState exists from MachineFlow.start; CrateOpen/SupplySync come from
+-- CrateService.start, PromoRedeem from PromoService.start. All waited with a
+-- timeout so a place that boots without a service leaves a quiet, dead
+-- surface instead of a hang.
 local remotesFolder = Kenopsia:WaitForChild("Remotes")
 local function remote(name)
 	local r = remotesFolder:WaitForChild(name, 30)
@@ -52,6 +55,7 @@ local emoteEquip = remote("EmoteEquip")
 local shopPrompt = remote("ShopPrompt")
 local crateOpen = remote("CrateOpen")
 local supplySync = remote("SupplySync")
+local promoRedeem = remote("PromoRedeem")
 
 local function fire(r, payload)
 	if r then pcall(r.FireServer, r, payload) end
@@ -95,9 +99,11 @@ local kit = SupplyKit.create({
 	reveal = SupplyConfig.Reveal,
 	strings = SupplyConfig.Strings,
 	layout = SupplyConfig.Layout,
+	motion = SupplyConfig.Motion,
 	registry = EmoteRegistry,
 	money = MonetizationConfig,
 	rules = CrateRules,
+	promo = PromoRules,
 	fragmentsPerKey = tonumber(ProgressionRules.FRAGMENTS_PER_KEY) or 3,
 	stepSeconds = STEP,
 	platform = isMobile,
@@ -119,8 +125,12 @@ local kit = SupplyKit.create({
 		sync = function()
 			fire(supplySync, {})
 		end,
+		redeem = function(code)
+			fire(promoRedeem, { code = code })
+		end,
 	},
 })
+kit:setVisible(false) -- the loop below decides when the surface exists
 
 if machineState then
 	machineState.OnClientEvent:Connect(function(packet)
@@ -129,49 +139,6 @@ if machineState then
 		end)
 	end)
 end
-
--- THE LOBBY BUTTON ---------------------------------------------------------------
-local btnGui = Instance.new("ScreenGui")
-btnGui.Name = "KenopsiaSupplyButton"
-btnGui.IgnoreGuiInset = true
-btnGui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
-btnGui.DisplayOrder = 54
-btnGui.ResetOnSpawn = false
-
-local btn = Instance.new("TextButton")
-btn.Name = "Btn_SUPPLY"
-btn.AutoButtonColor = false
-btn.AnchorPoint = Vector2.new(1, 1)
-btn.Position = UDim2.new(1, -16, 1, -16)
-btn.Size = UDim2.fromOffset(SupplyConfig.Layout.ButtonW, isMobile() and SupplyConfig.Layout.TouchRowH or SupplyConfig.Layout.ButtonH)
-btn.BackgroundColor3 = Color3.fromHex(SupplyConfig.Palette.PLATE)
-btn.BorderSizePixel = 0
-btn.Font = Enum.Font.Code
-btn.Text = SupplyConfig.Strings.BUTTON
-btn.TextSize = 18
-btn.TextColor3 = Color3.fromHex(SupplyConfig.Palette.GREEN_SOFT)
-btn.Parent = btnGui
-local btnStroke = Instance.new("UIStroke")
-btnStroke.Color = Color3.fromHex(SupplyConfig.Palette.GREEN_DIM)
-btnStroke.Transparency = 0.4
-btnStroke.Parent = btn
-
-btn.MouseEnter:Connect(function()
-	btn.TextColor3 = Color3.fromHex(SupplyConfig.Palette.GREEN)
-	sfx("Hover")
-end)
-btn.MouseLeave:Connect(function()
-	btn.TextColor3 = Color3.fromHex(SupplyConfig.Palette.GREEN_SOFT)
-end)
-btn.Activated:Connect(function()
-	sfx("Click")
-	if kit:isOpen() then
-		kit:close()
-	else
-		kit:open()
-	end
-end)
-btnGui.Parent = playerGui
 
 -- VISIBILITY ---------------------------------------------------------------------
 local function inTrial()
@@ -185,27 +152,23 @@ local function menuOpen()
 end
 
 player:GetAttributeChangedSignal("KenopsiaTrialId"):Connect(function()
-	if inTrial() then
-		kit:close()
-		btnGui.Enabled = false
-	end
+	if inTrial() then kit:setVisible(false) end
 end)
 
 -- ONE LOOP ------------------------------------------------------------------------
--- Kit animation only while the panel is open; the button's visibility check
+-- Kit animation only while the surface is on screen; the visibility check
 -- rides the same loop at a slower cadence (every ~0.25 s), compare-before-write.
 task.spawn(function()
 	local sinceVis = 0
 	while true do
 		task.wait(STEP)
 		local now = os.clock()
-		if kit:isOpen() then kit:step(now) end
+		if kit.gui and kit.gui.Enabled then kit:step(now) end
 		sinceVis = sinceVis + STEP
 		if sinceVis >= 0.25 then
 			sinceVis = 0
 			local want = not inTrial() and not menuOpen()
-			if btnGui.Enabled ~= want then btnGui.Enabled = want end
-			if not want and kit:isOpen() then kit:close() end
+			kit:setVisible(want)
 		end
 	end
 end)

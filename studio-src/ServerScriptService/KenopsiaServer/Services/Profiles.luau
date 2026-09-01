@@ -662,6 +662,19 @@ function Profiles.spendCrateKey(userId)
 	return true
 end
 
+-- The wallet's grant side (access codes, admin gifts). Whole non-negative
+-- amounts only; fragments granted here roll into keys at the next verdict,
+-- exactly like quest fragments do -- recordSession owns the roll-up.
+function Profiles.grantCrate(userId, keys, fragments)
+	local entry = live[userId]
+	if not entry then return false end
+	local crates = crateWallet(entry)
+	crates.keys = crates.keys + math.max(0, math.floor(tonumber(keys) or 0))
+	crates.fragments = crates.fragments + math.max(0, math.floor(tonumber(fragments) or 0))
+	entry.dirty = true
+	return true
+end
+
 -- Public re-send of profilestate, for a service that just changed what the
 -- packet carries (a spent key, a fresh grant). No-op for a player who left.
 function Profiles.pushState(userId)
