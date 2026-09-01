@@ -112,8 +112,12 @@ From INNER-GAME-PLAN §6, the parts that need a published place or belong to the
 - **Weekly OrderedDataStore subject wall** on a lobby CRT — needs a SurfaceGui, so it is Codex's.
 - **Lobby invite button** — `SocialService:PromptGameInvite` is a plain client call, so a button
   calls it directly; it deliberately is not a second popup in `SocialClient`.
-- **Emote wheel + shop screens** — Codex's. The contract is ready: `profile.emotes.wheel`, the
-  `emotestate` packet, and the `EmotePlay` / `EmoteEquip` / `ShopPrompt` remotes.
+- ~~**Emote wheel + shop screens**~~ — BUILT 01.09. in the repo (branch `docs/menu-shop-uiux`):
+  wardrobe + requisition screens (`SupplyKit`/`SupplyClient`), the crate ceremony
+  (`CrateService` + `CrateRules`, earned keys only, MANIFEST odds modal), wallet in
+  `profilestate`. NOT yet pushed to Studio and NOT run in Play — see
+  `docs/QA/2026-09-01-supply-screens.md`. Still open by design: promo codes (D-C),
+  the radial in-lobby wheel HUD, rarity colours per tier (D-B).
 - **Phase 6 audio** — blocked on #46 above.
 
 ## Known non-blockers (tracked)

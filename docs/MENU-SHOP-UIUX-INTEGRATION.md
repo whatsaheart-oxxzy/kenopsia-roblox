@@ -114,6 +114,11 @@ on a user decision except where noted):
 
 ## 5. What is buildable immediately (no pending decision)
 
+> **Status 01.09. evening:** items 1–5 below are BUILT on this branch
+> (`SupplyConfig`/`CrateRules`/`CrateService`/`SupplyKit`/`SupplyClient` +
+> `tests/supply.lua`, see `docs/QA/2026-09-01-supply-screens.md`); item 6
+> (promo codes) stays open on D-C. Not pushed to Studio, not run in Play.
+
 Ordered so each step ships alone; all client-side unless marked:
 
 1. **Wardrobe/emote screen** on the existing overlay stack: grid from
@@ -146,13 +151,19 @@ crates and any credits purchase path (decisions #1/#2 pending).
 
 ## 6. New decisions for the user (beyond RELEASE-CHECKLIST #1–#6)
 
-- **D-A Palette**: cold-cyan spec identity vs. Phosphor/Street for
-  shop/wardrobe screens (see §4 row 3).
+- **D-A Palette — RESOLVED BY CODE (01.09.)**: the world rule already exists —
+  "outside the facility is cold; inside it is green" (`MainMenu.client.luau`
+  header; `MenuConfig.Palette` IS the spec's cold cyan, verbatim). The supply
+  screens are in-facility and were built on the machine green set; a DEV-place
+  mount of the same kit takes the cyan palette through its host.
 - **D-B Rarity colors**: color per diegetic tier; whether a holo "UNIQUE"-like
   top tier should exist at all (nothing in the catalog is above `overseer`).
 - **D-C Promo codes**: ship at all? If yes, reward table.
-- **D-D Odds visibility**: show the (ⓘ) odds modal for earned crates now
-  (recommended) or only if a paid crate ever ships.
-- **D-E Which place hosts the shop/wardrobe screens**: the MainGame Machine
-  GUI, the DEV overlay stack (transferred later), or both — this decides which
-  client tree the screens are written into.
+- **D-D Odds visibility — TAKEN (01.09.)**: the MANIFEST modal ships for the
+  earned crate, computed from the live pool via `CrateRules.odds` (it cannot
+  drift from the server, which rolls with the same module).
+- **D-E Which place — RESOLVED BY CODE (01.09.)**: the menu place is real and
+  it is Kenopsia_DEV (`SoloExit.MENU_PLACE_ID = 129909297895850`), which is
+  also where EmoteRegistry directs the crate ceremony long-term. Built as a
+  portable kit hosted in MainGame's lobby NOW (the whole server contract lives
+  there); the DEV mount path is written out in the QA doc.

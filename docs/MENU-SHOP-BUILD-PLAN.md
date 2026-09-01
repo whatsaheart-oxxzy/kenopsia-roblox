@@ -105,18 +105,19 @@ CrateService.start(RoomService, EmoteService)
 --   { kind="crateresult", ok=true, emoteId, rarity, name, keys, fragments, reel={id,...} }
 --   { kind="crateresult", ok=false, reason="NO_KEYS"|"EMPTY", keys, fragments }
 
--- SupplyKit
+-- SupplyKit (as built: one packet dispatcher instead of three handlers)
 SupplyKit.create(deps) -> { open(), close(), destroy(), isOpen(),
-                            onEmoteState(p), onProfileState(p), onCrateResult(p) }
--- deps = { playerGui, palette, rarity, crate, reveal, strings, registry,
---          money, fragmentsPerKey, stepSeconds, platform(), sfx(name),
+                            onPacket(p), step(now) }
+-- deps = { playerGui, palette, rarity, crate, reveal, strings, layout,
+--          registry, money, rules, fragmentsPerKey, stepSeconds, platform(),
+--          sfx(name), motionOk(),
 --          send = { equip(slot,id), play(id), shop(sku), open(), sync() } }
 ```
 
 ## Tasks
 
 ### Task 1 — SupplyConfig + CrateRules, proven offline
-- [ ] Write `tests/supply.lua` first (loadPure sandbox from tests/emotes.lua):
+- [x] Write `tests/supply.lua` first (loadPure sandbox from tests/emotes.lua):
   config shape + palette values verbatim + deny `FF1818`/`EBF5EE` in file text
   + strings SHOUTED + timing bounds (total reveal < 15 s incl. worst bonus) +
   `WEIGHTS[r] > 0` for every rarity on a crate row (cross-load EmoteRegistry) +
@@ -124,26 +125,26 @@ SupplyKit.create(deps) -> { open(), close(), destroy(), isOpen(),
   excludes owned/non-crate + sorted; odds sum 100 / empty pool {}; roll nil on
   empty, member of pool over 200 seeded draws, deterministic at fixed r1/r2;
   reel length + fixed result index + members from pool.
-- [ ] Run `lua tests/supply.lua` → FAIL (files missing).
-- [ ] Implement both modules (pure Lua 5.1 subset: no `+=`, no generalized
+- [x] Run `lua tests/supply.lua` → FAIL (files missing).
+- [x] Implement both modules (pure Lua 5.1 subset: no `+=`, no generalized
   iteration, no type annotations — the MenuConfig rule).
-- [ ] `lua tests/supply.lua` → PASS; `StyLua --check` both files. Commit.
+- [x] `lua tests/supply.lua` → PASS; `StyLua --check` both files. Commit.
 
 ### Task 2 — Profiles additive members
-- [ ] Add `wallet` / `spendCrateKey` (normalise via the existing
+- [x] Add `wallet` / `spendCrateKey` (normalise via the existing
   `data.crates` guard) / `pushState`; add `keys`/`fragments` to sendState.
-- [ ] `StyLua --check`; full existing suite battery still green. Commit.
+- [x] `StyLua --check`; full existing suite battery still green. Commit.
 
 ### Task 3 — CrateService + boot wiring
-- [ ] Service with EmoteService's gate discipline (rateGate copy, inLobby via
+- [x] Service with EmoteService's gate discipline (rateGate copy, inLobby via
   RoomService, warnOnce, pcall every external). Open flow, synchronous to the
   spend: rate → lobby → wallet → pool → roll (math.random) → spendCrateKey →
   EmoteService.grant (flushes, sends emotestate) → reel → crateresult →
   pushState. Sync flow: sendState + pushState.
-- [ ] Wire into `Main.server.luau` after EmoteService. `StyLua --check`. Commit.
+- [x] Wire into `Main.server.luau` after EmoteService. `StyLua --check`. Commit.
 
 ### Task 4 — SupplyKit + SupplyClient
-- [ ] Kit: root ScreenGui `KenopsiaSupply`; left tab rail (streak selection,
+- [x] Kit: root ScreenGui `KenopsiaSupply`; left tab rail (streak selection,
   white ONLY there); wallet pills top-right with count-up juice; WARDROBE =
   wheel strip (8 slots) + catalog grid (rarity ladder frames, OWNED/SEALED
   states) + detail panel ([PLAY] via EmotePlay, slot assign via EmoteEquip);
@@ -153,20 +154,20 @@ SupplyKit.create(deps) -> { open(), close(), destroy(), isOpen(),
   MonetizationConfig (unarmed = OFFLINE, armed = ACQUIRE → ShopPrompt sku) +
   private-server tile only when price > 0. Mobile trims via platform().
   SFX: Click (ticks, throttled), Hover, Confirm (land/equip), Reject (denied).
-- [ ] Host: SUPPLY button (bottom-right, ≥44 pt touch), hidden while
+- [x] Host: SUPPLY button (bottom-right, ≥44 pt touch), hidden while
   `player:GetAttribute("KenopsiaTrialId") ~= ""` and auto-close on set; wires
   MachineState kinds emotestate/profilestate/crateresult to the kit; fires
   SupplySync on boot + open.
-- [ ] `StyLua --check` both. Commit.
+- [x] `StyLua --check` both. Commit.
 
 ### Task 5 — Truth docs + full battery + push
-- [ ] `docs/QA/2026-09-01-supply-screens.md`: what shipped, offline evidence,
+- [x] `docs/QA/2026-09-01-supply-screens.md`: what shipped, offline evidence,
   the in-Play debt (nothing pushed to Studio from this session), the DEV mount
   path for the redesign.
-- [ ] RELEASE-CHECKLIST: rewrite the "Emote wheel + shop screens — Codex's"
+- [x] RELEASE-CHECKLIST: rewrite the "Emote wheel + shop screens — Codex's"
   bullet to point at the built surface + remaining debt; integration doc: mark
   D-A/D-E resolved-by-code, build list → built.
-- [ ] Run ALL `tests/*.lua`; `StyLua --check` on every touched .luau. Commit,
+- [x] Run ALL `tests/*.lua`; `StyLua --check` on every touched .luau. Commit,
   push branch `docs/menu-shop-uiux`.
 
 ## Explicitly out of scope (and why)
